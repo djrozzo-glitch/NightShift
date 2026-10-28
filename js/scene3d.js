@@ -131,20 +131,20 @@ modelLoader.load('assets/models/poster.glb',gltf=>{
  posterWallModel=m;lastSignature='';
 },undefined,e=>console.warn('Poster wall model unavailable',e));
 function perimeterWall(parent,x,y,poster=false){
- if(y===15&&(x===7||x===8))return;
+ if(y===game.N-1&&(x===game.N/2-1||x===game.N/2))return;
  const wall=new THREE.Group();
  // Wall thickness is moved inward by half a grid tile. Segment centers
  // remain exactly one tile apart, including at the corners.
  if(y===0){wall.position.z=.5;}
- else if(y===15){wall.position.z=-.5;}
+ else if(y===game.N-1){wall.position.z=-.5;}
  else if(x===0){wall.position.x=.5;wall.rotation.y=Math.PI/2;}
- else if(x===15){wall.position.x=-.5;wall.rotation.y=Math.PI/2;}
+ else if(x===game.N-1){wall.position.x=-.5;wall.rotation.y=Math.PI/2;}
  if(poster&&posterWallModel)wall.add(posterWallModel.clone(true));
  else if(poster&&!posterWallModel&&wallModel){wall.add(wallModel.clone(true));box(wall,.68,.82,.06,neonPink,0,1.0,.15);}
  else if(wallModel)wall.add(wallModel.clone(true));
  else box(wall,1.035,1.65,.24,mats.wall,0,.825,0);
  parent.add(wall);
- if((x===0||x===15)&&(y===0||y===15)){
+ if((x===0||x===game.N-1)&&(y===0||y===game.N-1)){
   const corner=new THREE.Group();corner.rotation.y=Math.PI/2;
   corner.position.x=x===0?.5:-.5;
   corner.position.z=y===0?.5:-.5;
@@ -155,7 +155,7 @@ function perimeterWall(parent,x,y,poster=false){
 // Placeholder DJ performer; replace this mesh with a character GLB later.
 let performer=null;
 function syncPerformer(){if(performer){stage.remove(performer);performer=null}if(!game.running)return;for(let y=1;y<game.N-1;y++)for(let x=1;x<game.N-1;x++)if(game.map[y][x]==='dj'){
- performer=new THREE.Group();performer.position.set(x-7.5,0,y-7.5-.34);performer.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;
+ performer=new THREE.Group();performer.position.set(x-(game.N-1)/2,0,y-(game.N-1)/2-.34);performer.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;
  const mat=new THREE.MeshStandardMaterial({color:0x24202c,roughness:.8});const skin=new THREE.MeshStandardMaterial({color:0xd6a083});
  const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.18,.44,4,8),mat);torso.position.y=1.13;performer.add(torso);
  const head=new THREE.Mesh(new THREE.SphereGeometry(.14,12,10),skin);head.position.y=1.62;performer.add(head);
@@ -191,9 +191,9 @@ function fixture(parent,type){
  if(type==='light'||type==='laser'){box(parent,.35,.55,.35,mats.speaker,0,.5,0);box(parent,.28,.1,.28,type==='laser'?neonPink:neonViolet,0,.8,0);return}
 }
 function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
- const group=new THREE.Group();group.position.set(x-7.5,0,y-7.5);stage.add(group);tileGroups.set(x+','+y,group);
+ const group=new THREE.Group();group.position.set(x-(game.N-1)/2,0,y-(game.N-1)/2);stage.add(group);tileGroups.set(x+','+y,group);
  box(group,1,.14,1,(x+y)%2?groundMat:mats.speaker,0,-.07,0);
- const type=map[y]?.[x];if(type==='wall'||type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))perimeterWall(group,x,y,type==='poster');if(type&&type!=='wall'&&!(type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))&&type!=='dj_back'&&!type.startsWith('occupied:')){const item=new THREE.Group();item.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;group.add(item);item.userData.furniture=true;fixture(item,type);}if(x===7&&y===15){const entry=new THREE.Group();entry.position.set(.5,0,-.5);group.add(entry);if(extraModels.entrance)entry.add(extraModels.entrance.clone(true));else artwork(entry,'entrance')}
+ const type=map[y]?.[x];if(type==='wall'||type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))perimeterWall(group,x,y,type==='poster');if(type&&type!=='wall'&&!(type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))&&type!=='dj_back'&&!type.startsWith('occupied:')){const item=new THREE.Group();item.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;group.add(item);item.userData.furniture=true;fixture(item,type);}if(x===7&&y===game.N-1){const entry=new THREE.Group();entry.position.set(.5,0,-.5);group.add(entry);if(extraModels.entrance)entry.add(extraModels.entrance.clone(true));else artwork(entry,'entrance')}
  if(['dj','laser','light'].includes(type)){
  const color=type==='dj'?0x8e51ff:type==='laser'?0xff32c6:0x9367ff;
  // Actual SpotLight + a local PointLight for visible illumination of nearby props.
@@ -211,7 +211,7 @@ function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.rem
  lights.push({light,target,spill,beam,type,baseX:x,baseY:y});
 }
  }}syncPerformer();
-let lastSignature='';function signature(){return game.map.map(r=>r.join('|')).join(';')+'#'+JSON.stringify(game.rotations)}
+let lastSignature='';function signature(){return game.N+'#'+game.map.map(r=>r.join('|')).join(';')+'#'+JSON.stringify(game.rotations)}
 // Alpha 10.1: independently rigged and animated club guests.
 // Until additional characters are supplied, all guests share one model,
 // but each receives its own cloned skeleton, mixer and animation phase.
@@ -275,7 +275,7 @@ function updatePeople(t,dt){
   const previous=o.userData.lastPos;
   const movement=previous?Math.hypot(p.x-previous.x,p.y-previous.y)/Math.max(dt,.001):0;
   o.userData.lastPos={x:p.x,y:p.y};
-  o.position.set(p.x-7.5,0,p.y-7.5);
+  o.position.set(p.x-(game.N-1)/2,0,p.y-(game.N-1)/2);
   const ud=o.userData;
   if(ud.mixer){
    let desired=movement>.055?'Walking':p.state==='dance'&&!p.leaving&&game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor' ? ((p.variant||0)%2?'Funky_Walk':'Bass_Beats'):'Idle_3';
@@ -302,7 +302,7 @@ function updatePeople(t,dt){
 const camera=new THREE.OrthographicCamera(-11,11,8,-8,.1,160);const target=new THREE.Vector3(0,0,0);let azimuth=Math.PI/4,elevation=.85,distance=25,ortho=12;
 function cameraUpdate(){camera.position.set(target.x+distance*Math.cos(elevation)*Math.sin(azimuth),target.y+distance*Math.sin(elevation),target.z+distance*Math.cos(elevation)*Math.cos(azimuth));camera.lookAt(target);let w=mount.clientWidth||1000,h=mount.clientHeight||650,aspect=w/h;camera.left=-ortho*aspect;camera.right=ortho*aspect;camera.top=ortho;camera.bottom=-ortho;camera.updateProjectionMatrix();renderer.setSize(w,h,false)}
 const ray=new THREE.Raycaster(),pointer=new THREE.Vector2(),plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);let down=null;
-function hit(e){let r=renderer.domElement.getBoundingClientRect();pointer.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);ray.setFromCamera(pointer,camera);let out=new THREE.Vector3();if(!ray.ray.intersectPlane(plane,out))return null;return {x:Math.round(out.x+7.5),y:Math.round(out.z+7.5)}}
+function hit(e){let r=renderer.domElement.getBoundingClientRect();pointer.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);ray.setFromCamera(pointer,camera);let out=new THREE.Vector3();if(!ray.ray.intersectPlane(plane,out))return null;return {x:Math.round(out.x+(game.N-1)/2),y:Math.round(out.z+(game.N-1)/2)}}
 // Furniture editor: hover reveals a rotate handle, dragging a purchased object
 // moves it at no charge. Empty-floor drag still orbits the camera.
 const handle=document.createElement('button');handle.type='button';handle.id='objectRotate';handle.title='Повернуть предмет на 90°';handle.textContent='↻';handle.style.cssText='position:absolute;z-index:10;display:none;width:37px;height:37px;border:1px solid #9d74e9;border-radius:50%;background:#251632;color:#fff;font-size:27px;cursor:pointer;box-shadow:0 0 12px #c64efc99;pointer-events:auto';mount.appendChild(handle);
@@ -325,14 +325,14 @@ function updateDragPreview(d){
   stage.add(dragPreview);
   dragSource=original;dragSource.visible=false;
  }
- dragPreview.position.set(d.nx-7.5,.13,d.ny-7.5);
+ dragPreview.position.set(d.nx-(game.N-1)/2,.13,d.ny-(game.N-1)/2);
  const valid=previewValid(d);
  dragPreview.traverse(o=>{if(o.isMesh&&o.userData.previewMaterial){o.material.color.setHex(valid?0x90ffbf:0xff657e);o.material.needsUpdate=true}});
 }
 let hovered=null,dragObj=null,overRotateHandle=false;
 function nearRotateHandle(e){if(handle.style.display==='none')return false;const r=handle.getBoundingClientRect();const x=Math.max(r.left,Math.min(e.clientX,r.right)),y=Math.max(r.top,Math.min(e.clientY,r.bottom));return Math.hypot(e.clientX-x,e.clientY-y)<95;}
 function objectAt(e){const c=hit(e);if(!c)return null;const a=game.anchor(c.x,c.y),type=game.map[a.y]?.[a.x];return type&&game.types[type]&&type!=='floor'&&type!=='poster'?{x:a.x,y:a.y,type}:null}
-function showHandle(o){hovered=o;if(!o||game.running){handle.style.display='none';tip.style.display='none';return}const p=new THREE.Vector3(o.x-7.5,1.4,o.y-7.5);p.project(camera);const w=mount.clientWidth,h=mount.clientHeight;let px=(p.x+1)*w/2,py=(1-p.y)*h/2;handle.style.left=Math.max(5,Math.min(w-42,px+17))+'px';handle.style.top=Math.max(5,Math.min(h-42,py-18))+'px';handle.style.display='block';tip.style.left=Math.max(5,Math.min(w-180,px-75))+'px';tip.style.top=Math.max(5,py-55)+'px';tip.style.display='block'}
+function showHandle(o){hovered=o;if(!o||game.running){handle.style.display='none';tip.style.display='none';return}const p=new THREE.Vector3(o.x-(game.N-1)/2,1.4,o.y-(game.N-1)/2);p.project(camera);const w=mount.clientWidth,h=mount.clientHeight;let px=(p.x+1)*w/2,py=(1-p.y)*h/2;handle.style.left=Math.max(5,Math.min(w-42,px+17))+'px';handle.style.top=Math.max(5,Math.min(h-42,py-18))+'px';handle.style.display='block';tip.style.left=Math.max(5,Math.min(w-180,px-75))+'px';tip.style.top=Math.max(5,py-55)+'px';tip.style.display='block'}
 handle.addEventListener('pointerenter',()=>{overRotateHandle=true});
 handle.addEventListener('pointerleave',e=>{overRotateHandle=false;if(!nearRotateHandle(e))showHandle(null)});
 handle.addEventListener('pointerdown',e=>e.stopPropagation());handle.addEventListener('click',e=>{e.stopPropagation();if(hovered){if(!game.rotateObject(hovered.x,hovered.y))console.info('Rotation blocked by occupied or out-of-bounds tiles');showHandle(hovered)}});
@@ -348,7 +348,7 @@ renderer.domElement.addEventListener('pointerleave',e=>{if(!down&&!overRotateHan
 renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
 renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();ortho=THREE.MathUtils.clamp(ortho*Math.exp(e.deltaY*.001),4,25)},{passive:false});
 window.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea'))return;if(e.key==='Escape'){down=null;dragObj=null;clearDragPreview();showHandle(null);return}if(e.key.toLowerCase()==='q')azimuth-=Math.PI/2;if(e.key.toLowerCase()==='e')azimuth+=Math.PI/2});
-const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);
+const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);
  const targetNight=game.running?1:0;if(game.running&&!performer)syncPerformer();if(!game.running&&performer)syncPerformer();if(performer)performer.position.y=Math.sin(t*4)*.035;nightMix+=(targetNight-nightMix)*.025;
  ambient.intensity=THREE.MathUtils.lerp(3.0,.52,nightMix);
  sun.intensity=THREE.MathUtils.lerp(3.4,.42,nightMix);
