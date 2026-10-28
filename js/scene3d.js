@@ -55,9 +55,9 @@ for(const [kind,config] of Object.entries({
  rail:{width:.98,height:1.05,depth:.32},entrance:{width:1.96,height:1.85,depth:.78},
  floor:{width:1,height:.16,depth:1,tile:true},wc:{width:.92,height:1.65,depth:1.82},
  table:{width:.82,height:1.12,depth:.82},stool:{width:.65,height:.95,depth:.65},light:{width:.72,height:1.32,depth:.72},laser:{width:.72,height:1.15,depth:.72},
- sofa:{width:.92,height:1.05,depth:1.83},plant2:{width:.88,height:1.65,depth:.88}
+ sofa:{width:.92,height:1.05,depth:1.83},plant:{width:.88,height:1.65,depth:.88},plant2:{width:.88,height:1.65,depth:.88}
 })){
- modelLoader.load('assets/models/'+kind+'.glb',gltf=>{
+ modelLoader.load('assets/models/'+(kind==='plant'?'plant2':kind)+'.glb',gltf=>{
   const model=gltf.scene;model.updateMatrixWorld(true);
   let bounds=new THREE.Box3().setFromObject(model),dims=bounds.getSize(new THREE.Vector3());
   // The dance tile must have exactly one grid-cell footprint on X/Z.
@@ -278,9 +278,7 @@ function updatePeople(t,dt){
   o.position.set(p.x-7.5,0,p.y-7.5);
   const ud=o.userData;
   if(ud.mixer){
-   let desired=p.state==='dance'
-    ? ((p.variant||0)%2?'Funky_Walk':'Bass_Beats')
-    :movement>.055?'Walking':'Idle_3';
+   let desired=movement>.055?'Walking':p.state==='dance'&&!p.leaving&&game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor' ? ((p.variant||0)%2?'Funky_Walk':'Bass_Beats'):'Idle_3';
    if(!ud.actions[desired])desired=ud.actions.Idle_3? 'Idle_3':Object.keys(ud.actions)[0];
    if(desired&&ud.current!==desired){
     const next=ud.actions[desired];
