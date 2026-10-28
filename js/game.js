@@ -144,6 +144,7 @@ function place(x,y,erase=false){
  if(type==='erase'){const a=anchor(x,y),t=map[a.y]?.[a.x];if(TYPES[t]){occupiedCells(a.x,a.y).forEach(c=>map[c.y][c.x]=null);money+=TYPES[t].cost;delete rotations[key(a.x,a.y)]}}
  else if(TYPES[type]){if(level()<(UNLOCKS[type]||1)){log('Откроется на LVL '+UNLOCKS[type]);return}const cells=footprint(type,x,y);if(!validCells(cells))log('Нужно '+cells.length+' свободных клеток подряд.');else if(money<TYPES[type].cost)log('Недостаточно денег.');else{writeObject(type,x,y);money-=TYPES[type].cost}}updateUI()}
 function available(){return count('dj')>=1&&count('speaker')>=2&&count('bar')>=1&&count('floor')>=6}function nearest(type,p){let best=null,dist=Infinity;for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++)if(map[y][x]===type){let d=Math.hypot(x-p.x,y-p.y);if(d<dist){dist=d;best={x,y}}}return best}function walkableCell(x,y){return x>=1&&y>=1&&x<N-1&&y<N-1&&(!map[y][x]||map[y][x]==='floor'||map[y][x]==='door')}
+function clearForGuest(x,y){const radius=.28;return [[0,0],[radius,0],[-radius,0],[0,radius],[0,-radius],[radius,radius],[radius,-radius],[-radius,radius],[-radius,-radius]].every(([dx,dy])=>walkableCell(Math.round(x+dx),Math.round(y+dy)))}
 function path(start,target){
  if(!target)return[];
  const origin={x:Math.round(start.x),y:Math.round(start.y)};
@@ -167,12 +168,18 @@ function path(start,target){
  return[];
 }
 function danceTarget(p){
- let floors=[];for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++)if(map[y][x]==='floor')floors.push({x,y});
- if(!floors.length)return {x:8,y:8};
- let booths=[];for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++)if(map[y][x]==='dj')booths.push({x,y});
- const weighted=floors.map(f=>({f,w:booths.length?1/(1+Math.min(...booths.map(b=>Math.hypot(b.x-f.x,b.y-f.y)))*.5):1}));
- let sum=weighted.reduce((a,b)=>a+b.w,0),r=Math.random()*sum;
- for(const v of weighted){r-=v.w;if(r<=0)return v.f}return floors[0];
+ const booths=[];for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++)if(map[y][x]==='dj')booths.push({x,y});
+ const floors=[];
+ for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++)if(map[y][x]==='floor'&&clearForGuest(x,y)){
+  const route=path(p,{x,y});if(!route.length&&Math.hypot(p.x-x,p.y-y)>.35)continue;
+  const distance=booths.length?Math.min(...booths.map(b=>Math.hypot(b.x-x,b.y-y))):5;
+  const crowd=people.filter(q=>q!==p&&!q.leaving&&q.state==='dance'&&q.target&&Math.hypot(q.target.x-x,q.target.y-y)<.6).length;
+  floors.push({x,y,weight:1/(1+distance*.28+crowd*2)});
+ }
+ if(!floors.length)return null;
+ let sum=floors.reduce((n,f)=>n+f.weight,0),pick=Math.random()*sum;
+ for(const f of floors){pick-=f.weight;if(pick<=0)return{x:f.x,y:f.y}}
+ return{x:floors[0].x,y:floors[0].y};
 }
 function interactionTarget(type,p){
  let best=null,score=Infinity;
@@ -204,7 +211,23 @@ function exitGuest(p){
  }
  p.path=path(p,p.target);
 }
-function choose(p){if(p.leaving)return;let target;if(p.thirst>65&&count('bar')){p.state='bar';target=interactionTarget('bar',p)}else if(p.energy<20){p.state='rest';target=interactionTarget('sofa',p)||{x:N/2-1,y:N-3}}else{p.state='dance';target=danceTarget(p)}p.target=target;p.path=path(p,target);p.wait=rnd(1,3);if(!p.path.length&&target&&Math.hypot(p.x-target.x,p.y-target.y)>1)p.wait=1}function spawn(){if(people.filter(p=>!p.leaving).length>=Math.min(120,50+count('floor')*3)||served>=125)return;let p={x:N/2-1,y:N-2,thirst:rnd(5,40),energy:rnd(60,100),mood:rnd(50,90),variant:Math.floor(rnd(0,6)),color:['#d9558d','#5da4d4','#b7a0d5','#d9a74c','#68aa98'][Math.floor(rnd(0,5))],state:'enter',path:[],wait:0,leaving:false,spent:false};people.push(p);served++;revTickets+=ticketPrice;money+=ticketPrice;choose(p)}function simulate(dt){if(paused&&running)return;if(!running){if(people.length){const step=Math.min(dt,.05)*.85;for(const p of people){if(!p.leaving)exitGuest(p);if(!p.path.length&&Math.hypot(p.x-(N/2-1),p.y-(N-2))>.25)exitGuest(p);if(p.path.length){const a=p.path[0],dx=a.x-p.x,dy=a.y-p.y,d=Math.hypot(dx,dy);if(d<.08){p.x=a.x;p.y=a.y;p.path.shift()}else{p.x+=dx/d*Math.min(step,d);p.y+=dy/d*Math.min(step,d)}}}people=people.filter(p=>p.path.length||Math.hypot(p.x-(N/2-1),p.y-(N-2))>.25)}return}dt*=speed;elapsed+=dt;spawnTime+=dt;let density=Math.max(.2,Math.min(1.5,(rep/65)*(1+count('floor')/30)*DJS[chosenDJ].pull*(1+bonus('attendance'))*(1-Math.max(0,ticketPrice-15)*.025)));if(spawnTime>Math.max(.7,3/density)){spawnTime=0;spawn()}for(let p of people){p.thirst+=dt*.75;p.energy-=dt*.42;p.mood-=dt*(.08+Math.max(0,ticketPrice-20)*.02);p.mood+=dt*(DJS[chosenDJ].quality-65)*.008+dt*bonus('mood')*.008;p.mood=Math.min(100,p.mood);if(p.leaving&&p.path.length===0&&Math.hypot(p.x-(N/2-1),p.y-(N-2))>.25){exitGuest(p)}if(p.path.length){let a=p.path[0],dx=a.x-p.x,dy=a.y-p.y,d=Math.hypot(dx,dy);if(d<.07){p.x=a.x;p.y=a.y;p.path.shift()}else{let step=Math.min(d,dt*.85),nx=p.x+dx/d*step,ny=p.y+dy/d*step;const walkable=(xx,yy)=>walkableCell(Math.round(xx),Math.round(yy));if(walkable(nx,ny)&&walkable(nx+.2,ny)&&walkable(nx-.2,ny)&&walkable(nx,ny+.2)&&walkable(nx,ny-.2)){p.x=nx;p.y=ny}else{p.path=path(p,p.leaving?{x:N/2-1,y:N-2}:p.target||{x:N/2-1,y:N-3});p.wait=1}}}else{p.wait-=dt;if(p.wait<=0){if(p.leaving){p.wait=1;continue}if(p.state==='bar'){p.thirst=Math.max(0,p.thirst-75);if(!p.spent){const sale=Math.round(drinkPrice*(1+bonus('bar'))*100)/100;revBar+=sale;money+=Math.max(0,sale-(perk('management')?1.8:2));p.spent=true}p.wait=1}else if(p.state==='rest'){p.energy=Math.min(100,p.energy+40);p.wait=1}else if(p.state==='dance'){p.energy-=4;p.mood+=2;p.wait=1}p.spent=false;if(p.energy<=3||p.mood<=10||p.thirst>=105){exitGuest(p)}else choose(p)}}}people=people.filter(p=>!(p.leaving&&p.path.length===0&&Math.hypot(p.x-(N/2-1),p.y-(N-2))<.25));if(elapsed>=120){const nightProfit=revTickets+revBar-expenses;const nightMood=totalMood;const capacity=Math.min(120,50+count('floor')*3);const wasNewDJ=!firstDJs.includes(chosenDJ);const attendanceRecord=served>bestAttendance;const earned=20+(nightProfit>0?10:0)+(served>=capacity*.8?10:0)+(nightMood>85?10:0)+(wasNewDJ?15:0)+(attendanceRecord?15:0);if(wasNewDJ)firstDJs.push(chosenDJ);bestAttendance=Math.max(bestAttendance,served);running=false;window.dispatchEvent(new Event('nightshift:ended'));finished=true;rep=Math.max(0,Math.min(100,rep+(served>=20?Math.round((totalMood-50)/10)*(perk('cult')?1.15:1):-3)));awardXp(earned);log('Ночь окончена! '+served+' гостей · прибыль €'+Math.round(nightProfit)+' · +'+earned+' XP. '+(level()>1?'Уровень '+level()+'.':'') );for(const p of people)exitGuest(p);night++;updateUI()}}function updateChecklist(){
+function choose(p){
+ if(p.leaving)return;
+ const options=[];
+ if(p.thirst>65&&count('bar'))options.push(['bar',interactionTarget('bar',p)]);
+ if(p.energy<20&&count('sofa'))options.push(['rest',interactionTarget('sofa',p)]);
+ options.push(['dance',danceTarget(p)]);
+ for(const [state,target] of options){
+  if(!target||!clearForGuest(target.x,target.y))continue;
+  const route=path(p,target);
+  if(!route.length&&Math.hypot(p.x-target.x,p.y-target.y)>.35)continue;
+  p.state=state;p.target=target;p.path=route;
+  p.wait=state==='dance'?rnd(16,30):state==='bar'?rnd(4,7):rnd(7,12);
+  return;
+ }
+ p.state='idle';p.target={x:Math.round(p.x),y:Math.round(p.y)};p.path=[];p.wait=rnd(3,6);
+}
+function spawn(){if(people.filter(p=>!p.leaving).length>=Math.min(120,50+count('floor')*3)||served>=125)return;let p={x:N/2-1,y:N-2,thirst:rnd(5,40),energy:rnd(60,100),mood:rnd(50,90),variant:Math.floor(rnd(0,6)),color:['#d9558d','#5da4d4','#b7a0d5','#d9a74c','#68aa98'][Math.floor(rnd(0,5))],state:'enter',path:[],wait:0,leaving:false,spent:false};people.push(p);served++;revTickets+=ticketPrice;money+=ticketPrice;choose(p)}function simulate(dt){if(paused&&running)return;if(!running){if(people.length){const step=Math.min(dt,.05)*.85;for(const p of people){if(!p.leaving)exitGuest(p);if(!p.path.length&&Math.hypot(p.x-(N/2-1),p.y-(N-2))>.25)exitGuest(p);if(p.path.length){const a=p.path[0],dx=a.x-p.x,dy=a.y-p.y,d=Math.hypot(dx,dy);if(d<.08){p.x=a.x;p.y=a.y;p.path.shift()}else{p.x+=dx/d*Math.min(step,d);p.y+=dy/d*Math.min(step,d)}}}people=people.filter(p=>p.path.length||Math.hypot(p.x-(N/2-1),p.y-(N-2))>.25)}return}dt*=speed;elapsed+=dt;spawnTime+=dt;let density=Math.max(.2,Math.min(1.5,(rep/65)*(1+count('floor')/30)*DJS[chosenDJ].pull*(1+bonus('attendance'))*(1-Math.max(0,ticketPrice-15)*.025)));if(spawnTime>Math.max(.7,3/density)){spawnTime=0;spawn()}for(let p of people){p.thirst+=dt*.75;p.energy-=dt*(p.state==='dance'&&!p.path.length?.7:.42);p.mood-=dt*(.08+Math.max(0,ticketPrice-20)*.02);p.mood+=dt*(DJS[chosenDJ].quality-65)*.008+dt*bonus('mood')*.008;p.mood=Math.min(100,p.mood);if(p.leaving&&p.path.length===0&&Math.hypot(p.x-(N/2-1),p.y-(N-2))>.25){exitGuest(p)}if(p.path.length){let a=p.path[0],dx=a.x-p.x,dy=a.y-p.y,d=Math.hypot(dx,dy);if(d<.07){p.x=a.x;p.y=a.y;p.path.shift()}else{let step=Math.min(d,dt*.85),nx=p.x+dx/d*step,ny=p.y+dy/d*step;const walkable=(xx,yy)=>walkableCell(Math.round(xx),Math.round(yy));if(clearForGuest(nx,ny)){p.x=nx;p.y=ny}else{p.path=path(p,p.leaving?{x:N/2-1,y:N-2}:p.target||{x:N/2-1,y:N-3});if(!p.path.length&&!p.leaving)choose(p)}}}else{p.wait-=dt;if(p.wait<=0){if(p.leaving){p.wait=1;continue}if(p.state==='bar'){p.thirst=Math.max(0,p.thirst-75);if(!p.spent){const sale=Math.round(drinkPrice*(1+bonus('bar'))*100)/100;revBar+=sale;money+=Math.max(0,sale-(perk('management')?1.8:2));p.spent=true}}else if(p.state==='rest'){p.energy=Math.min(100,p.energy+40)}else if(p.state==='dance'){p.energy-=8;p.mood=Math.min(100,p.mood+5)}p.spent=false;if(p.energy<=3||p.mood<=10||p.thirst>=105){exitGuest(p)}else choose(p)}}}people=people.filter(p=>!(p.leaving&&p.path.length===0&&Math.hypot(p.x-(N/2-1),p.y-(N-2))<.25));if(elapsed>=120){const nightProfit=revTickets+revBar-expenses;const nightMood=totalMood;const capacity=Math.min(120,50+count('floor')*3);const wasNewDJ=!firstDJs.includes(chosenDJ);const attendanceRecord=served>bestAttendance;const earned=20+(nightProfit>0?10:0)+(served>=capacity*.8?10:0)+(nightMood>85?10:0)+(wasNewDJ?15:0)+(attendanceRecord?15:0);if(wasNewDJ)firstDJs.push(chosenDJ);bestAttendance=Math.max(bestAttendance,served);running=false;window.dispatchEvent(new Event('nightshift:ended'));finished=true;rep=Math.max(0,Math.min(100,rep+(served>=20?Math.round((totalMood-50)/10)*(perk('cult')?1.15:1):-3)));awardXp(earned);log('Ночь окончена! '+served+' гостей · прибыль €'+Math.round(nightProfit)+' · +'+earned+' XP. '+(level()>1?'Уровень '+level()+'.':'') );for(const p of people)exitGuest(p);night++;updateUI()}}function updateChecklist(){
  const panel=$('setupPanel'),el=$('readiness');if(!el||!panel)return;
  // Show only unmet, mandatory requirements. Optional lights and toilets
  // are not prerequisites for opening and therefore do not block dismissal.
