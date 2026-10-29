@@ -342,7 +342,7 @@ function requestCharacterState(index,mode){
   template.updateMatrixWorld(true);
   const fitted=new THREE.Box3().setFromObject(template),center=fitted.getCenter(new THREE.Vector3());
   template.position.x-=center.x;template.position.z-=center.z;template.position.y-=fitted.min.y;
-  template.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true;obj.frustumCulled=false}});
+  template.traverse(obj=>{if(obj.isMesh){obj.castShadow=false;obj.receiveShadow=true;obj.frustumCulled=true}});
   model.states[mode]={template,clip:gltf.animations[0]||null};
   console.info('NightShift: character state ready',url);
  },undefined,err=>{characterLoads.delete(key);console.warn('Character state failed to load',url,err)});
@@ -376,7 +376,7 @@ function showGuestMode(obj,p,mode){
 }
 function makePerson(p){
  const group=new THREE.Group();
- group.userData={current:null,character:null,mixer:null,fallback:null,lastPos:null,pendingMode:null,pendingSince:0};
+ group.userData={current:null,character:null,mixer:null,fallback:null,lastPos:null,pendingMode:null,pendingSince:0,animElapsed:Math.random()/30};
  showGuestMode(group,p,'idle');stage.add(group);return group;
 }
 function updatePeople(t,dt){
@@ -398,7 +398,12 @@ function updatePeople(t,dt){
   const ud=o.userData;
   if(mode!==ud.pendingMode){ud.pendingMode=mode;ud.pendingSince=t}
   if(!ud.character||mode!==ud.current&&t-ud.pendingSince>.65||ud.current!==mode&&raverModels[guestModelIndex(p)].states[mode]&&t-ud.pendingSince>.65)showGuestMode(o,p,mode);
-  if(o.userData.mixer)o.userData.mixer.update(Math.min(dt,.06));
+  if(o.userData.mixer){
+   // Skinning is expensive with crowds. Keep movement smooth at display FPS,
+   // but update skeletal animation at most 30 times/sec per guest.
+   ud.animElapsed=Math.min((ud.animElapsed||0)+Math.min(dt,.06),.12);
+   if(ud.animElapsed>=1/30){ud.mixer.update(ud.animElapsed);ud.animElapsed=0}
+  }
   else if(o.userData.fallback?.userData.fallbackBody){
    o.userData.fallback.userData.fallbackBody.position.y=.53+(mode==='dance'?.07*Math.sin(t*8+p.x*2):0);
   }
