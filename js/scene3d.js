@@ -381,4 +381,4 @@ for(let [i,fx] of lights.entries()){
  const dir=to.sub(from).normalize();
  fx.beam.quaternion.setFromUnitVectors(new THREE.Vector3(0,-1,0),dir);
 }cameraUpdate();if(hovered&&!down)showHandle(hovered);// Artwork stays in the same world coordinate system as the floor when camera orbits.
-renderer.render(scene,camera)}frame();
+renderer.render(scene,camera);if(!window.__nightshift3dReady){window.__nightshift3dReady=true;window.dispatchEvent(new Event('nightshift:3d-ready'))}}frame();
