@@ -104,6 +104,10 @@ for(const [kind,config] of Object.entries({
 // Bouncer is a static entrance prop, shared between scene rebuilds.
 let bouncerModel=null;
 let entranceGuard=null;
+let bouncerClip=null;
+let bouncerMixer=null;
+let bouncerAction=null;
+let bouncerWasRunning=false;
 modelLoader.load('assets/characters/bouncer.glb',gltf=>{
  const model=gltf.scene;
  model.updateMatrixWorld(true);
@@ -116,6 +120,8 @@ modelLoader.load('assets/characters/bouncer.glb',gltf=>{
  model.position.set(-center.x,.08-fitted.min.y,-center.z);
  model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
  bouncerModel=model;
+ bouncerClip=gltf.animations?.find(clip=>/idle|guard|stand|breath|look|watch/i.test(clip.name))||gltf.animations?.[0]||null;
+ console.info('NightShift bouncer animations:',gltf.animations?.map(a=>a.name)||[]);
  lastSignature='';
 },undefined,err=>console.warn('Cannot load bouncer GLB',err));
 
@@ -272,7 +278,7 @@ function fixture(parent,type){
  if(type==='plant'||type==='plant2'){box(parent,.48,.44,.48,mats.bar,0,.24,0);let crown=new THREE.Mesh(new THREE.IcosahedronGeometry(type==='plant2'?.55:.38,1),mats.plant);crown.position.y=type==='plant2'?1.05:.77;parent.add(crown);return}
  if(type==='light'||type==='laser'){box(parent,.35,.55,.35,mats.speaker,0,.5,0);box(parent,.28,.1,.28,type==='laser'?neonPink:neonViolet,0,.8,0);return}
 }
-function rebuild(){clearDragPreview();if(entranceGuard){stage.remove(entranceGuard);entranceGuard=null}for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;livePosters.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
+function rebuild(){clearDragPreview();if(entranceGuard){if(bouncerMixer){bouncerMixer.stopAllAction();bouncerMixer.uncacheRoot(entranceGuard.userData.actor);bouncerMixer=null;bouncerAction=null}stage.remove(entranceGuard);entranceGuard=null;bouncerWasRunning=false}for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;livePosters.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
  const group=new THREE.Group();group.position.set(x-(game.N-1)/2,0,y-(game.N-1)/2);stage.add(group);tileGroups.set(x+','+y,group);
  box(group,1,.14,1,(x+y)%2?groundMat:mats.speaker,0,-.07,0);
  const type=map[y]?.[x];if(type==='wall'||type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))perimeterWall(group,x,y,type==='poster');if(type&&type!=='wall'&&!(type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))&&type!=='dj_back'&&!type.startsWith('occupied:')){const item=new THREE.Group();item.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;group.add(item);item.userData.furniture=true;fixture(item,type);}if(x===game.N/2-1&&y===game.N-1){const entry=new THREE.Group();entry.position.set(.5,0,-.5);group.add(entry);if(extraModels.entrance)entry.add(extraModels.entrance.clone(true));else artwork(entry,'entrance');
@@ -280,9 +286,12 @@ function rebuild(){clearDragPreview();if(entranceGuard){stage.remove(entranceGua
   // Position in WORLD tile coordinates: outside the southern entrance.
   // Do not parent the guard to the entrance GLB, whose geometry can have offsets.
   const guard=new THREE.Group();
-  guard.position.set(.78,0,(game.N-1)/2+1.12);
-  guard.rotation.y=Math.PI;
-  guard.add(cloneSkeleton(bouncerModel));
+  guard.position.set(1.42,0,(game.N-1)/2+.68);
+  guard.rotation.y=0;
+  const actor=cloneSkeleton(bouncerModel);
+  guard.add(actor);
+  guard.userData.actor=actor;
+  if(bouncerClip){bouncerMixer=new THREE.AnimationMixer(actor);bouncerAction=bouncerMixer.clipAction(bouncerClip);bouncerAction.setLoop(THREE.LoopRepeat,Infinity)}
   stage.add(guard);
   entranceGuard=guard;
  }
@@ -452,6 +461,8 @@ renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
 renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();ortho=THREE.MathUtils.clamp(ortho*Math.exp(e.deltaY*.001),4,25)},{passive:false});
 window.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea'))return;if(e.key==='Escape'){down=null;dragObj=null;clearDragPreview();showHandle(null);return}if(e.key.toLowerCase()==='q')azimuth-=Math.PI/2;if(e.key.toLowerCase()==='e')azimuth+=Math.PI/2});
 const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);updateLivePosters();refreshEntranceSign();
+ if(bouncerAction&&game.running!==bouncerWasRunning){bouncerWasRunning=game.running;if(game.running)bouncerAction.reset().play();else bouncerAction.stop()}
+ if(bouncerMixer&&game.running&&!game.paused)bouncerMixer.update(Math.min(dt,.06));
  const targetNight=game.running?1:0;if(game.running&&!performer)syncPerformer();if(!game.running&&performer)syncPerformer();if(performer)performer.position.y=Math.sin(t*4)*.035;nightMix+=(targetNight-nightMix)*.025;
  ambient.intensity=THREE.MathUtils.lerp(3.0,.52,nightMix);
  sun.intensity=THREE.MathUtils.lerp(3.4,.42,nightMix);
