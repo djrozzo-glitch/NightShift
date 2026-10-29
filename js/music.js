@@ -8,7 +8,8 @@ const TRACKS={
  neonexus:{title:'neonexus — Backdoor Radio Mix',url:'https://soundcloud.com/amn303/backdoor-radio-mix-neonexus'},
  lowq:{title:'lowQ — Waves of Light',url:'https://soundcloud.com/shiftedrecordings/waves-of-light-1'},
  zlostniy:{title:'zlostniy — Shine (ft. zlostniy)',url:'https://soundcloud.com/velvet-37/shine-ft-zlostniy'},
- raison:{title:'Raison — Even Sexier Groove',url:'https://soundcloud.com/raison_d_etre/even-sexier-groove'}
+ raison:{title:'Raison — Even Sexier Groove',url:'https://soundcloud.com/raison_d_etre/even-sexier-groove'},
+ boriskhodok:{title:'DJ Boris Khodok — 8 March Mix',url:'https://soundcloud.com/dj-boris-khodok/8-march-mix'}
 };
 let widget=null,ready=false,playingWanted=false,pausedWanted=false,muted=false,volume=55,currentDJ=null,loadToken=0;
 const message=t=>{status.textContent=t};
