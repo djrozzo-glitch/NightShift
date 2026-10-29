@@ -87,6 +87,19 @@ function expandClub(){
  map=Array.from({length:N},()=>Array(N).fill(null));
  for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(!x||!y||x===N-1||y===N-1)map[y][x]='wall';
  for(let y=1;y<15;y++)for(let x=1;x<15;x++)if(old[y][x]&&old[y][x]!=='wall')map[y+shift][x+shift]=old[y][x];
+ // Move existing perimeter posters to the NEW outer walls.
+ // They were previously discarded because the expansion copied only interior cells.
+ for(let y=0;y<16;y++)for(let x=0;x<16;x++){
+  if(old[y]?.[x]!=='poster')continue;
+  let nx,ny;
+  if(y===0){nx=x+shift;ny=0}
+  else if(y===15){nx=x+shift;ny=N-1}
+  else if(x===0){nx=0;ny=y+shift}
+  else if(x===15){nx=N-1;ny=y+shift}
+  else continue;
+  if(ny===N-1&&(nx===N/2-1||nx===N/2))continue;
+  map[ny][nx]='poster';
+ }
  // Rebuild occupied markers using shifted anchors, including multi-cell furniture.
  for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++)if(typeof map[y][x]==='string'&&map[y][x].startsWith('occupied:')){
   const parts=map[y][x].split(':');map[y][x]='occupied:'+(+parts[1]+shift)+':'+(+parts[2]+shift);
