@@ -219,16 +219,7 @@ function perimeterWall(parent,x,y,poster=false){
   parent.add(corner);
  }
 }
-// Placeholder DJ performer; replace this mesh with a character GLB later.
-let performer=null;
-function syncPerformer(){if(performer){stage.remove(performer);performer=null}if(!game.running)return;for(let y=1;y<game.N-1;y++)for(let x=1;x<game.N-1;x++)if(game.map[y][x]==='dj'){
- performer=new THREE.Group();performer.position.set(x-(game.N-1)/2,0,y-(game.N-1)/2-.34);performer.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;
- const mat=new THREE.MeshStandardMaterial({color:0x24202c,roughness:.8});const skin=new THREE.MeshStandardMaterial({color:0xd6a083});
- const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.18,.44,4,8),mat);torso.position.y=1.13;performer.add(torso);
- const head=new THREE.Mesh(new THREE.SphereGeometry(.14,12,10),skin);head.position.y=1.62;performer.add(head);
- const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.055,.33,3,6),mat);arm.position.set(.23,1.11,.17);arm.rotation.x=.65;performer.add(arm);
- stage.add(performer);return}}
-
+// The DJ is represented by the music player and live event posters.
 // Raised illuminated venue sign, anchored over the permanent entrance.
 let entranceSign=null,entranceSignName='';
 function refreshEntranceSign(){
@@ -312,7 +303,7 @@ function rebuild(){clearDragPreview();if(entranceGuard){if(bouncerMixer){bouncer
  beam.frustumCulled=false;group.add(beam);beams.push(beam);
  lights.push({light,target,spill,beam,type,baseX:x,baseY:y});
 }
- }}syncPerformer();
+ }}
 let lastSignature='';function signature(){return game.N+'#'+game.map.map(r=>r.join('|')).join(';')+'#'+JSON.stringify(game.rotations)}
 // Each exported GLB owns its mesh, rig and animation. Never retarget between rigs.
 const humanColors=[0xee559d,0x7d98e8,0xc49fef,0xe6a759,0x54c9b6,0xd979aa];
@@ -458,12 +449,12 @@ renderer.domElement.addEventListener('pointermove',e=>{
 renderer.domElement.addEventListener('pointerup',e=>{if(!down)return;let moved=Math.hypot(e.clientX-down.x,e.clientY-down.y);if(down.obj){if(dragObj){previewValid(dragObj)&&game.moveObject(dragObj.x,dragObj.y,dragObj.nx,dragObj.ny)}else showHandle(down.obj)}else if(moved<7){let cell=hit(e);if(cell)game.place(cell.x,cell.y,e.button===2)}down=null;dragObj=null;clearDragPreview();tip.textContent='Перетащить · ↻ повернуть'});
 renderer.domElement.addEventListener('pointerleave',e=>{if(!down&&!overRotateHandle&&!nearRotateHandle(e))showHandle(null)});
 renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
-renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();ortho=THREE.MathUtils.clamp(ortho*Math.exp(e.deltaY*.001),4,25)},{passive:false});
+renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();ortho=THREE.MathUtils.clamp(ortho*Math.exp(e.deltaY*.001),1.8,25)},{passive:false});
 window.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea'))return;if(e.key==='Escape'){down=null;dragObj=null;clearDragPreview();showHandle(null);return}if(e.key.toLowerCase()==='q')azimuth-=Math.PI/2;if(e.key.toLowerCase()==='e')azimuth+=Math.PI/2});
 const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);updateLivePosters();refreshEntranceSign();
  if(bouncerAction&&game.running!==bouncerWasRunning){bouncerWasRunning=game.running;if(game.running)bouncerAction.reset().play();else bouncerAction.stop()}
  if(bouncerMixer&&game.running&&!game.paused)bouncerMixer.update(Math.min(dt,.06));
- const targetNight=game.running?1:0;if(game.running&&!performer)syncPerformer();if(!game.running&&performer)syncPerformer();if(performer)performer.position.y=Math.sin(t*4)*.035;nightMix+=(targetNight-nightMix)*.025;
+ const targetNight=game.running?1:0;nightMix+=(targetNight-nightMix)*.025;
  ambient.intensity=THREE.MathUtils.lerp(3.0,.52,nightMix);
  sun.intensity=THREE.MathUtils.lerp(3.4,.42,nightMix);
  scene.background.copy(dayColor).lerp(nightColor,nightMix);scene.fog.color.copy(scene.background);
