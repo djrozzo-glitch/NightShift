@@ -282,7 +282,7 @@ function rebuild(){clearDragPreview();if(entranceGuard){stage.remove(entranceGua
   const guard=new THREE.Group();
   guard.position.set(.78,0,(game.N-1)/2+1.12);
   guard.rotation.y=Math.PI;
-  guard.add(bouncerModel.clone(true));
+  guard.add(cloneSkeleton(bouncerModel));
   stage.add(guard);
   entranceGuard=guard;
  }
