@@ -3,7 +3,7 @@ const frame=document.getElementById('soundcloudPlayer'),status=document.getEleme
 const TRACKS={
  vanya:{title:'vanya velin — BCCO Premiere',url:'https://soundcloud.com/bcco/bcco-premiere-vanya-velin'},
  velvet37:{title:'velvet 37 — My Angel',url:'https://soundcloud.com/velvet-37/my-angel-1'},
- rozzo:{title:'rozzo — Velocity',url:'https://soundcloud.com/seethesearecords/velocity'},
+ rozzo:{title:'rozzo — Waste My Time (I Don’t)',url:'https://soundcloud.com/irozov/rozzo-waste-my-time-i-dont-1'},
  lutanina:{title:'lutanina — Two RNDM 06 02',url:'https://soundcloud.com/user-880945103/two-rndm-06-02'},
  neonexus:{title:'neonexus — Backdoor Radio Mix',url:'https://soundcloud.com/amn303/backdoor-radio-mix-neonexus'},
  lowq:{title:'lowQ — Waves of Light',url:'https://soundcloud.com/shiftedrecordings/waves-of-light-1'},
