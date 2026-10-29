@@ -20,4 +20,18 @@
    </div>
   </div>
  </div>
-</div><div id="nameDialog" class="club-name-modal" hidden><form id="clubNameForm" class="club-name-card"><div class="welcome-eyebrow">NIGHT SHIFT · NEW CLUB</div><h2>Как назовём клуб?</h2><p>Название будет отображаться в игре и сохраняться вместе с прогрессом.</p><label for="clubNameInput">Название клуба</label><input id="clubNameInput" maxlength="32" autocomplete="off" placeholder="Например, THE BASEMENT" required><button type="submit" class="welcome-play">НАЧАТЬ ИГРУ →</button></form></div><script src="https://w.soundcloud.com/player/api.js"></script><script src="js/music.js"></script><script src="js/game.js"></script><script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"}}</script><script type="module" src="js/scene3d.js"></script></body></html>
+</div><div id="nameDialog" class="club-name-modal" hidden><form id="clubNameForm" class="club-name-card"><div class="welcome-eyebrow">NIGHT SHIFT · NEW CLUB</div><h2>Как назовём клуб?</h2><p>Название будет отображаться в игре и сохраняться вместе с прогрессом.</p><label for="clubNameInput">Название клуба</label><input id="clubNameInput" maxlength="32" autocomplete="off" placeholder="Например, THE BASEMENT" required><button type="submit" class="welcome-play">НАЧАТЬ ИГРУ →</button></form></div><script src="https://w.soundcloud.com/player/api.js"></script><script src="js/music.js"></script><script src="js/game.js"></script><script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"}}</script><script>
+(function(){
+ const mount=document.getElementById('threeMount'),fallback=document.getElementById('game');
+ let ready=false;
+ function recover(message){
+  if(ready)return;
+  mount.style.display='none';fallback.style.visibility='visible';fallback.style.pointerEvents='auto';
+  console.error('NightShift 3D unavailable; switched to 2D:',message);
+ }
+ window.addEventListener('nightshift:3d-ready',()=>{ready=true;mount.style.display='';fallback.style.visibility='hidden';fallback.style.pointerEvents='none'});
+ window.addEventListener('error',e=>{if(!ready&&(e.filename?.includes('scene3d')||e.message?.includes('module')))recover(e.message)});
+ window.addEventListener('unhandledrejection',e=>{if(!ready)recover(String(e.reason))});
+ setTimeout(()=>{if(!ready)recover('3D initialization timeout')},12000);
+})();
+</script><script type="module" src="js/scene3d.js"></script></body></html>
