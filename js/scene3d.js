@@ -4,7 +4,7 @@ import {clone as cloneSkeleton} from 'three/addons/utils/SkeletonUtils.js';
 const game=window.NightShift3D;
 const mount=document.getElementById('threeMount');
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x080b18);scene.fog=new THREE.FogExp2(0x080b18,.017);
-const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;mount.appendChild(renderer.domElement);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;mount.appendChild(renderer.domElement);
 const ambient=new THREE.HemisphereLight(0xdbe8ff,0x443448,3.0);scene.add(ambient);let sun=new THREE.DirectionalLight(0xfff1d8,3.4);sun.position.set(-8,17,11);scene.add(sun);const nightColor=new THREE.Color(0x080b18),dayColor=new THREE.Color(0x151b2b);let nightMix=0;
 const stage=new THREE.Group();scene.add(stage);
 const groundMat=new THREE.MeshStandardMaterial({color:0x242332,roughness:.85});
@@ -309,68 +309,62 @@ for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk
   if(!gltf.animations.length)console.warn('GLB has no animation clip:',url);
   // Existing guests pick up newly loaded states without restarting the night.
   for(const [p,obj] of peopleMap)if(((p.variant||0)%6===0?2:(p.variant||0)%2)===index){
-   stage.remove(obj);for(const entry of Object.values(obj.userData.states||{}))entry.mixer?.stopAllAction();
+   releaseGuest(obj);
    peopleMap.delete(p);
   }
   console.info('Night Shift: character state ready',url,gltf.animations.map(clip=>clip.name));
  },undefined,err=>console.warn('Character state failed to load',url,err));
 }
+function guestModelIndex(p){return (p.variant||0)%6===0?2:(p.variant||0)%2}
+function releaseGuest(obj){
+ const ud=obj.userData;
+ if(ud.mixer){ud.mixer.stopAllAction();if(ud.character)ud.mixer.uncacheRoot(ud.character)}
+ if(ud.character){obj.remove(ud.character);ud.character=null}
+ if(ud.fallback){obj.remove(ud.fallback);ud.fallback=null}
+ stage.remove(obj);
+}
+function showGuestMode(obj,p,mode){
+ const ud=obj.userData,model=raverModels[guestModelIndex(p)];
+ const desired=model.states[mode]?mode:model.states.idle?'idle':model.states.walk?'walk':model.states.dance?'dance':null;
+ if(ud.current===desired&&ud.character)return;
+ if(ud.mixer){ud.mixer.stopAllAction();if(ud.character)ud.mixer.uncacheRoot(ud.character);ud.mixer=null}
+ if(ud.character){obj.remove(ud.character);ud.character=null}
+ if(!desired){
+  if(!ud.fallback){ud.fallback=makeRaverFallback(p);obj.add(ud.fallback)}
+  ud.current=null;return;
+ }
+ if(ud.fallback){obj.remove(ud.fallback);ud.fallback=null}
+ const asset=model.states[desired],character=cloneSkeleton(asset.template);
+ obj.add(character);ud.character=character;ud.current=desired;
+ if(asset.clip){
+  const mixer=new THREE.AnimationMixer(character),action=mixer.clipAction(asset.clip);
+  action.setLoop(THREE.LoopRepeat,Infinity);action.play();ud.mixer=mixer;
+ }
+}
 function makePerson(p){
- const group=new THREE.Group(),model=raverModels[((p.variant||0)%6===0?2:(p.variant||0)%2)],states={};
- for(const mode of ['idle','walk','dance']){
-  const asset=model.states[mode];if(!asset)continue;
-  const character=cloneSkeleton(asset.template);
-  character.visible=false;group.add(character);
-  const mixer=asset.clip?new THREE.AnimationMixer(character):null;
-  const action=mixer?.clipAction(asset.clip)||null;
-  if(action){action.setLoop(THREE.LoopRepeat,Infinity);action.play();action.paused=true}
-  states[mode]={character,mixer,action};
- }
- if(Object.keys(states).length){
-  group.userData={states,current:null,lastPos:null};
- }else{
-  const fallback=makeRaverFallback(p);
-  group.add(fallback);group.userData={fallbackBody:fallback.userData.fallbackBody,lastPos:null};
- }
- stage.add(group);return group;
+ const group=new THREE.Group();
+ group.userData={current:null,character:null,mixer:null,fallback:null,lastPos:null};
+ showGuestMode(group,p,'idle');stage.add(group);return group;
 }
 function updatePeople(t,dt){
  const alive=new Set(game.people);
- for(const [p,obj] of peopleMap)if(!alive.has(p)){
-  stage.remove(obj);
-  for(const entry of Object.values(obj.userData.states||{}))entry.mixer?.stopAllAction();
-  peopleMap.delete(p);
- }
+ for(const [p,obj] of peopleMap)if(!alive.has(p)){releaseGuest(obj);peopleMap.delete(p)}
  for(const p of game.people){
-  let o=peopleMap.get(p);
-  if(!o){o=makePerson(p);peopleMap.set(p,o)}
+  let o=peopleMap.get(p);if(!o){o=makePerson(p);peopleMap.set(p,o)}
   const previous=o.userData.lastPos;
   const movement=previous?Math.hypot(p.x-previous.x,p.y-previous.y)/Math.max(dt,.001):0;
   o.userData.lastPos={x:p.x,y:p.y};
   o.position.set(p.x-(game.N-1)/2,0,p.y-(game.N-1)/2);
-  const ud=o.userData;
   const onDancefloor=game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor';
   const mode=movement>.055?'walk':p.state==='dance'&&!p.leaving&&onDancefloor?'dance':'idle';
-  if(ud.states){
-   const desired=ud.states[mode]?mode:ud.states.idle?'idle':ud.states.walk?'walk':'dance';
-   if(ud.current!==desired){
-    for(const [key,entry] of Object.entries(ud.states)){
-     entry.character.visible=key===desired;
-     if(entry.action)entry.action.paused=key!==desired;
-    }
-    ud.current=desired;
-   }
-   const active=ud.states[desired];
-   if(active?.mixer)active.mixer.update(Math.min(dt,.06));
-  }else if(ud.fallbackBody){
-   ud.fallbackBody.position.y=.53+(mode==='dance'?.07*Math.sin(t*8+p.x*2):0);
+  showGuestMode(o,p,mode);
+  if(o.userData.mixer)o.userData.mixer.update(Math.min(dt,.06));
+  else if(o.userData.fallback?.userData.fallbackBody){
+   o.userData.fallback.userData.fallbackBody.position.y=.53+(mode==='dance'?.07*Math.sin(t*8+p.x*2):0);
   }
   const next=p.path?.[0];
-  if(next&&Math.hypot(next.x-p.x,next.y-p.y)>.05){
-   o.rotation.y=Math.atan2(next.x-p.x,next.y-p.y);
-  }else if(mode==='dance'){
-   o.rotation.y+=Math.sin(t*1.4+(p.variant||0))*.003;
-  }
+  if(next&&Math.hypot(next.x-p.x,next.y-p.y)>.05)o.rotation.y=Math.atan2(next.x-p.x,next.y-p.y);
+  else if(mode==='dance')o.rotation.y+=Math.sin(t*1.4+(p.variant||0))*.003;
  }
 }
 const camera=new THREE.OrthographicCamera(-11,11,8,-8,.1,160);const target=new THREE.Vector3(0,0,0);let azimuth=Math.PI/4,elevation=.85,distance=25,ortho=12;
