@@ -212,99 +212,98 @@ function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.rem
 }
  }}syncPerformer();
 let lastSignature='';function signature(){return game.N+'#'+game.map.map(r=>r.join('|')).join(';')+'#'+JSON.stringify(game.rotations)}
-// Multiple independent animated GLB guests. Each model has its own rig and clips.
+// Each exported GLB owns its mesh, rig and animation. Never retarget between rigs.
 const humanColors=[0xee559d,0x7d98e8,0xc49fef,0xe6a759,0x54c9b6,0xd979aa];
 const raverModels=[
- {url:'assets/characters/raver_m_01.glb',template:null,clips:{}},
- {url:'assets/characters/raver_f_01.glb.glb',template:null,clips:{}}
+ {id:'m',states:{idle:null,walk:null,dance:null}},
+ {id:'f',states:{idle:null,walk:null,dance:null}}
 ];
 const peopleMap=new Map();
 const humanHeight=1.48;
-for(const [index,model] of raverModels.entries()){
- modelLoader.load(model.url,gltf=>{
+function makeRaverFallback(p){
+ const group=new THREE.Group(),color=humanColors[(p.variant||0)%humanColors.length];
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(.13,.16,.48,7),new THREE.MeshStandardMaterial({color}));
+ body.position.y=.53;group.add(body);
+ const head=new THREE.Mesh(new THREE.SphereGeometry(.105,8,6),new THREE.MeshStandardMaterial({color:0xd7a58d}));
+ head.position.y=.94;group.add(head);
+ group.userData.fallbackBody=body;return group;
+}
+for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk','dance']){
+ const url='assets/characters/raver_'+model.id+'_'+mode+'.glb';
+ modelLoader.load(url,gltf=>{
   const template=gltf.scene;
   template.updateMatrixWorld(true);
-  const bounds=new THREE.Box3().setFromObject(template);
-  const size=bounds.getSize(new THREE.Vector3());
-  if(!Number.isFinite(size.y)||size.y<.001){console.warn('Invalid character bounds',model.url);return}
+  const bounds=new THREE.Box3().setFromObject(template),size=bounds.getSize(new THREE.Vector3());
+  if(!Number.isFinite(size.y)||size.y<.001){console.warn('Invalid GLB character bounds',url);return}
   template.scale.multiplyScalar(humanHeight/size.y);
   template.updateMatrixWorld(true);
-  const fitted=new THREE.Box3().setFromObject(template);
-  const center=fitted.getCenter(new THREE.Vector3());
+  const fitted=new THREE.Box3().setFromObject(template),center=fitted.getCenter(new THREE.Vector3());
   template.position.x-=center.x;template.position.z-=center.z;template.position.y-=fitted.min.y;
   template.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true;obj.frustumCulled=false}});
-  model.template=template;
-  for(const clip of gltf.animations)model.clips[clip.name]=clip;
-  // Replace placeholders for this type, without disrupting other guests.
+  model.states[mode]={template,clip:gltf.animations[0]||null};
+  if(!gltf.animations.length)console.warn('GLB has no animation clip:',url);
+  // Existing guests pick up newly loaded states without restarting the night.
   for(const [p,obj] of peopleMap)if((p.variant||0)%raverModels.length===index){
-   stage.remove(obj);obj.userData.mixer?.stopAllAction();peopleMap.delete(p);
+   stage.remove(obj);for(const entry of Object.values(obj.userData.states||{}))entry.mixer?.stopAllAction();
+   peopleMap.delete(p);
   }
-  console.info('Night Shift: raver loaded',model.url,Object.keys(model.clips));\n  if(!Object.keys(model.clips).some(name=>/walk/i.test(name)))console.warn('Night Shift: no walking animation found for',model.url);\n  if(!Object.keys(model.clips).some(name=>/dance|bass.beat|funk|groove|rave|hip.hop|boogie|shuffle/i.test(name)))console.warn('Night Shift: no dancing animation found for',model.url);
- },undefined,err=>console.warn('Raver GLB failed to load',model.url,err));
+  console.info('Night Shift: character state ready',url,gltf.animations.map(clip=>clip.name));
+ },undefined,err=>console.warn('Character state failed to load',url,err));
 }
 function makePerson(p){
- const group=new THREE.Group();
- const model=raverModels[(p.variant||0)%raverModels.length];
- if(model.template){
-  const character=cloneSkeleton(model.template);
-  group.add(character);
-  const mixer=new THREE.AnimationMixer(character),actions={};
-  for(const [name,clip] of Object.entries(model.clips)){
-   const action=mixer.clipAction(clip);action.setLoop(THREE.LoopRepeat,Infinity);actions[name]=action;
-  }
-  group.userData={mixer,actions,current:null,character,offset:(p.variant||0)*.21};
+ const group=new THREE.Group(),model=raverModels[(p.variant||0)%raverModels.length],states={};
+ for(const mode of ['idle','walk','dance']){
+  const asset=model.states[mode];if(!asset)continue;
+  const character=cloneSkeleton(asset.template);
+  character.visible=false;group.add(character);
+  const mixer=asset.clip?new THREE.AnimationMixer(character):null;
+  const action=mixer?.clipAction(asset.clip)||null;
+  if(action){action.setLoop(THREE.LoopRepeat,Infinity);action.play();action.paused=true}
+  states[mode]={character,mixer,action};
+ }
+ if(Object.keys(states).length){
+  group.userData={states,current:null,lastPos:null};
  }else{
-  const color=humanColors[(p.variant||0)%humanColors.length];
-  const body=new THREE.Mesh(new THREE.CylinderGeometry(.13,.16,.48,7),new THREE.MeshStandardMaterial({color}));
-  body.position.y=.53;group.add(body);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(.105,8,6),new THREE.MeshStandardMaterial({color:0xd7a58d}));
-  head.position.y=.94;group.add(head);
-  group.userData.fallbackBody=body;
+  const fallback=makeRaverFallback(p);
+  group.add(fallback);group.userData={fallbackBody:fallback.userData.fallbackBody,lastPos:null};
  }
  stage.add(group);return group;
 }
-function pickRaverAnimation(actions,mode,variant){
- const names=Object.keys(actions);if(!names.length)return null;
- const find=(patterns)=>names.find(name=>patterns.some(re=>re.test(name)));
- const idle=find([/^idle(?:[_ .-]?\d+)?$/i,/idle/i,/stand/i,/breath/i,/rest/i]);
- const walk=find([/^walking$/i,/^walk(?:ing)?(?:[_ .-]?\d+)?$/i,/walk/i,/locomotion/i,/stroll/i]);
- const dances=names.filter(name=>/dance|bass.beat|funk|groove|rave|hip.hop|boogie|shuffle/i.test(name));
- // Never use a running animation as a fallback for walking, idle or dance.
- if(mode==='walk')return walk||idle||null;
- if(mode==='dance')return dances.length?dances[(variant||0)%dances.length]:idle||null;
- return idle||null;
-}
 function updatePeople(t,dt){
  const alive=new Set(game.people);
- for(const [p,obj] of peopleMap){
-  if(!alive.has(p)){stage.remove(obj);obj.userData.mixer?.stopAllAction();peopleMap.delete(p);}
+ for(const [p,obj] of peopleMap)if(!alive.has(p)){
+  stage.remove(obj);
+  for(const entry of Object.values(obj.userData.states||{}))entry.mixer?.stopAllAction();
+  peopleMap.delete(p);
  }
  for(const p of game.people){
   let o=peopleMap.get(p);
-  if(!o){o=makePerson(p);peopleMap.set(p,o);}
+  if(!o){o=makePerson(p);peopleMap.set(p,o)}
   const previous=o.userData.lastPos;
   const movement=previous?Math.hypot(p.x-previous.x,p.y-previous.y)/Math.max(dt,.001):0;
   o.userData.lastPos={x:p.x,y:p.y};
   o.position.set(p.x-(game.N-1)/2,0,p.y-(game.N-1)/2);
   const ud=o.userData;
-  if(ud.mixer){
-   const mode=movement>.055?'walk':p.state==='dance'&&!p.leaving&&game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor'?'dance':'idle';
-   const desired=pickRaverAnimation(ud.actions,mode,p.variant);
-   if(!desired&&ud.current){ud.actions[ud.current]?.stop();ud.current=null}\n   if(desired&&ud.current!==desired){
-    const next=ud.actions[desired];
-    if(ud.current&&ud.actions[ud.current])ud.actions[ud.current].fadeOut(.22);
-    next.reset().fadeIn(.22).play();\n    next.timeScale=mode==='walk'?.72:1;
-    if(ud.current===null)next.time=((p.variant||0)*.41)%Math.max(next.getClip().duration,.01);
+  const onDancefloor=game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor';
+  const mode=movement>.055?'walk':p.state==='dance'&&!p.leaving&&onDancefloor?'dance':'idle';
+  if(ud.states){
+   const desired=ud.states[mode]?mode:ud.states.idle?'idle':ud.states.walk?'walk':'dance';
+   if(ud.current!==desired){
+    for(const [key,entry] of Object.entries(ud.states)){
+     entry.character.visible=key===desired;
+     if(entry.action)entry.action.paused=key!==desired;
+    }
     ud.current=desired;
    }
-   if(desired&&ud.actions[desired])ud.actions[desired].timeScale=mode==='walk'?.72:1;\n   ud.mixer.update(Math.min(dt,.06));
+   const active=ud.states[desired];
+   if(active?.mixer)active.mixer.update(Math.min(dt,.06));
   }else if(ud.fallbackBody){
-   ud.fallbackBody.position.y=.53+(p.state==='dance'?.07*Math.sin(t*8+p.x*2):0);
+   ud.fallbackBody.position.y=.53+(mode==='dance'?.07*Math.sin(t*8+p.x*2):0);
   }
   const next=p.path?.[0];
   if(next&&Math.hypot(next.x-p.x,next.y-p.y)>.05){
    o.rotation.y=Math.atan2(next.x-p.x,next.y-p.y);
-  }else if(p.state==='dance'){
+  }else if(mode==='dance'){
    o.rotation.y+=Math.sin(t*1.4+(p.variant||0))*.003;
   }
  }
