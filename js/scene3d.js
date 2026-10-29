@@ -324,27 +324,28 @@ function makeRaverFallback(p){
  head.position.y=.94;group.add(head);
  group.userData.fallbackBody=body;return group;
 }
-for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk','dance']){
+// Load character GLBs on demand: the empty club should not decode all 15 models.
+const characterLoads=new Map();
+function requestCharacterState(index,mode){
+ const model=raverModels[index];
+ if(!model||model.states[mode])return;
+ const key=index+':'+mode;
+ if(characterLoads.has(key))return;
  const url='assets/characters/'+(['fashion_f','baggy_m','jungle_f'].includes(model.id)?model.id:'raver_'+model.id)+'_'+mode+'.glb';
+ characterLoads.set(key,true);
  modelLoader.load(url,gltf=>{
   const template=gltf.scene;
   template.updateMatrixWorld(true);
   const bounds=new THREE.Box3().setFromObject(template),size=bounds.getSize(new THREE.Vector3());
-  if(!Number.isFinite(size.y)||size.y<.001){console.warn('Invalid GLB character bounds',url);return}
+  if(!Number.isFinite(size.y)||size.y<.001){console.warn('Invalid GLB character bounds',url);characterLoads.delete(key);return}
   template.scale.multiplyScalar(humanHeight/size.y);
   template.updateMatrixWorld(true);
   const fitted=new THREE.Box3().setFromObject(template),center=fitted.getCenter(new THREE.Vector3());
   template.position.x-=center.x;template.position.z-=center.z;template.position.y-=fitted.min.y;
   template.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true;obj.frustumCulled=false}});
   model.states[mode]={template,clip:gltf.animations[0]||null};
-  if(!gltf.animations.length)console.warn('GLB has no animation clip:',url);
-  // Existing guests pick up newly loaded states without restarting the night.
-  for(const [p,obj] of peopleMap)if(((p.variant||0)%6===0?2:(p.variant||0)%2)===index){
-   releaseGuest(obj);
-   peopleMap.delete(p);
-  }
-  console.info('Night Shift: character state ready',url,gltf.animations.map(clip=>clip.name));
- },undefined,err=>console.warn('Character state failed to load',url,err));
+  console.info('NightShift: character state ready',url);
+ },undefined,err=>{characterLoads.delete(key);console.warn('Character state failed to load',url,err)});
 }
 function guestModelIndex(p){return (p.variant||0)%raverModels.length}
 function releaseGuest(obj){
@@ -355,7 +356,8 @@ function releaseGuest(obj){
  stage.remove(obj);
 }
 function showGuestMode(obj,p,mode){
- const ud=obj.userData,model=raverModels[guestModelIndex(p)];
+ const ud=obj.userData,index=guestModelIndex(p),model=raverModels[index];
+ requestCharacterState(index,mode);
  const desired=model.states[mode]?mode:model.states.idle?'idle':model.states.walk?'walk':model.states.dance?'dance':null;
  if(ud.current===desired&&ud.character)return;
  if(ud.mixer){ud.mixer.stopAllAction();if(ud.character)ud.mixer.uncacheRoot(ud.character);ud.mixer=null}
@@ -392,7 +394,7 @@ function updatePeople(t,dt){
   // A transition must remain stable before loading the next animation.
   const ud=o.userData;
   if(mode!==ud.pendingMode){ud.pendingMode=mode;ud.pendingSince=t}
-  if(!ud.character||mode!==ud.current&&t-ud.pendingSince>.65)showGuestMode(o,p,mode);
+  if(!ud.character||mode!==ud.current&&t-ud.pendingSince>.65||ud.current!==mode&&raverModels[guestModelIndex(p)].states[mode]&&t-ud.pendingSince>.65)showGuestMode(o,p,mode);
   if(o.userData.mixer)o.userData.mixer.update(Math.min(dt,.06));
   else if(o.userData.fallback?.userData.fallbackBody){
    o.userData.fallback.userData.fallbackBody.position.y=.53+(mode==='dance'?.07*Math.sin(t*8+p.x*2):0);
