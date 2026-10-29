@@ -130,19 +130,62 @@ modelLoader.load('assets/models/poster.glb',gltf=>{
  m.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
  posterWallModel=m;lastSignature='';
 },undefined,e=>console.warn('Poster wall model unavailable',e));
+const livePosters=[];
+let livePosterName='',livePosterActive=false;
+function makeLivePosterTexture(name){
+ const canvas=document.createElement('canvas');canvas.width=768;canvas.height=1024;
+ const ctx=canvas.getContext('2d');
+ const gradient=ctx.createLinearGradient(0,0,768,1024);
+ gradient.addColorStop(0,'#21142e');gradient.addColorStop(.65,'#100d1d');gradient.addColorStop(1,'#32143d');
+ ctx.fillStyle=gradient;ctx.fillRect(0,0,768,1024);
+ ctx.strokeStyle='#e04bb7';ctx.lineWidth=15;ctx.strokeRect(24,24,720,976);
+ ctx.fillStyle='#ed6dcb';ctx.fillRect(65,92,638,6);
+ ctx.textAlign='center';ctx.fillStyle='#d4b4e9';ctx.font='bold 44px sans-serif';ctx.fillText('NIGHTSHIFT',384,185);
+ ctx.font='bold 35px sans-serif';ctx.fillStyle='#ed6dcb';ctx.fillText('●  NOW PLAYING',384,295);
+ const words=String(name||'DJ').trim().toUpperCase().split(/\s+/);
+ const lines=[];let line='';
+ for(const word of words){const candidate=line?line+' '+word:word;if(ctx.measureText(candidate).width>630&&line){lines.push(line);line=word}else line=candidate}
+ if(line)lines.push(line);
+ const display=lines.slice(0,3);
+ let fontSize=112;
+ do{ctx.font='900 '+fontSize+'px sans-serif';if(Math.max(...display.map(t=>ctx.measureText(t).width))<=640)break;fontSize-=4}while(fontSize>42);
+ ctx.fillStyle='#ffffff';const lineHeight=fontSize*1.12,firstY=570-(display.length-1)*lineHeight/2;
+ display.forEach((text,i)=>ctx.fillText(text,384,firstY+i*lineHeight));
+ ctx.fillStyle='#e04bb7';ctx.fillRect(65,795,638,5);
+ ctx.fillStyle='#c7b1d6';ctx.font='bold 33px sans-serif';ctx.fillText('UNDERGROUND ALL NIGHT',384,865);
+ const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=Math.min(renderer.capabilities.getMaxAnisotropy(),8);
+ return texture;
+}
+let livePosterMaterial=null;
+function updateLivePosters(){
+ const active=!!game.running;
+ const selected=document.getElementById('djSelect');
+ const name=selected?.selectedOptions?.[0]?.textContent?.split(' · ')[0]||'DJ';
+ if(active!==livePosterActive||active&&name!==livePosterName){
+  livePosterActive=active;livePosterName=name;
+  if(livePosterMaterial){livePosterMaterial.map?.dispose();livePosterMaterial.dispose();livePosterMaterial=null}
+  if(active)livePosterMaterial=new THREE.MeshBasicMaterial({map:makeLivePosterTexture(name),side:THREE.DoubleSide,depthWrite:true});
+ }
+ for(const panel of livePosters){panel.visible=active;if(active)panel.material=livePosterMaterial}
+}
 function perimeterWall(parent,x,y,poster=false){
  if(y===game.N-1&&(x===game.N/2-1||x===game.N/2))return;
  const wall=new THREE.Group();
- // Wall thickness is moved inward by half a grid tile. Segment centers
- // remain exactly one tile apart, including at the corners.
+ // Each poster wall's local +Z faces the club interior on all four edges.
  if(y===0){wall.position.z=.5;}
- else if(y===game.N-1){wall.position.z=-.5;}
+ else if(y===game.N-1){wall.position.z=-.5;if(poster)wall.rotation.y=Math.PI;}
  else if(x===0){wall.position.x=.5;wall.rotation.y=Math.PI/2;}
- else if(x===game.N-1){wall.position.x=-.5;wall.rotation.y=Math.PI/2;}
+ else if(x===game.N-1){wall.position.x=-.5;wall.rotation.y=poster?-Math.PI/2:Math.PI/2;}
  if(poster&&posterWallModel)wall.add(posterWallModel.clone(true));
  else if(poster&&!posterWallModel&&wallModel){wall.add(wallModel.clone(true));box(wall,.68,.82,.06,neonPink,0,1.0,.15);}
  else if(wallModel)wall.add(wallModel.clone(true));
  else box(wall,1.035,1.65,.24,mats.wall,0,.825,0);
+ if(poster){
+  // Separate luminous event graphic, placed slightly in front of the GLB artwork.
+  const panel=new THREE.Mesh(new THREE.PlaneGeometry(.76,1.10),new THREE.MeshBasicMaterial({color:0x24142c,side:THREE.DoubleSide}));
+  panel.position.set(0,.91,.18);panel.visible=false;panel.renderOrder=5;
+  wall.add(panel);livePosters.push(panel);
+ }
  parent.add(wall);
  if((x===0||x===game.N-1)&&(y===0||y===game.N-1)){
   const corner=new THREE.Group();corner.rotation.y=Math.PI/2;
@@ -190,7 +233,7 @@ function fixture(parent,type){
  if(type==='plant'||type==='plant2'){box(parent,.48,.44,.48,mats.bar,0,.24,0);let crown=new THREE.Mesh(new THREE.IcosahedronGeometry(type==='plant2'?.55:.38,1),mats.plant);crown.position.y=type==='plant2'?1.05:.77;parent.add(crown);return}
  if(type==='light'||type==='laser'){box(parent,.35,.55,.35,mats.speaker,0,.5,0);box(parent,.28,.1,.28,type==='laser'?neonPink:neonViolet,0,.8,0);return}
 }
-function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
+function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;livePosters.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
  const group=new THREE.Group();group.position.set(x-(game.N-1)/2,0,y-(game.N-1)/2);stage.add(group);tileGroups.set(x+','+y,group);
  box(group,1,.14,1,(x+y)%2?groundMat:mats.speaker,0,-.07,0);
  const type=map[y]?.[x];if(type==='wall'||type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))perimeterWall(group,x,y,type==='poster');if(type&&type!=='wall'&&!(type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))&&type!=='dj_back'&&!type.startsWith('occupied:')){const item=new THREE.Group();item.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;group.add(item);item.userData.furniture=true;fixture(item,type);}if(x===game.N/2-1&&y===game.N-1){const entry=new THREE.Group();entry.position.set(.5,0,-.5);group.add(entry);if(extraModels.entrance)entry.add(extraModels.entrance.clone(true));else artwork(entry,'entrance')}
@@ -357,7 +400,7 @@ renderer.domElement.addEventListener('pointerleave',e=>{if(!down&&!overRotateHan
 renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
 renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();ortho=THREE.MathUtils.clamp(ortho*Math.exp(e.deltaY*.001),4,25)},{passive:false});
 window.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea'))return;if(e.key==='Escape'){down=null;dragObj=null;clearDragPreview();showHandle(null);return}if(e.key.toLowerCase()==='q')azimuth-=Math.PI/2;if(e.key.toLowerCase()==='e')azimuth+=Math.PI/2});
-const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);
+const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);updateLivePosters();
  const targetNight=game.running?1:0;if(game.running&&!performer)syncPerformer();if(!game.running&&performer)syncPerformer();if(performer)performer.position.y=Math.sin(t*4)*.035;nightMix+=(targetNight-nightMix)*.025;
  ambient.intensity=THREE.MathUtils.lerp(3.0,.52,nightMix);
  sun.intensity=THREE.MathUtils.lerp(3.4,.42,nightMix);
