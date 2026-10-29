@@ -387,8 +387,11 @@ function updatePeople(t,dt){
   const previous=o.userData.lastPos;
   const movement=previous?Math.hypot(p.x-previous.x,p.y-previous.y)/Math.max(dt,.001):0;
   o.userData.lastPos={x:p.x,y:p.y};
-  o.position.set(p.x-(game.N-1)/2,0,p.y-(game.N-1)/2);
+  // Dancefloor GLB tiles are 0.16 world units tall and sit at y=0.005.
+  // Lift characters onto the tile surface rather than sinking their feet into it.
   const onDancefloor=game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor';
+  const floorHeight=onDancefloor?(extraModels.floor?.165:.075):0;
+  o.position.set(p.x-(game.N-1)/2,floorHeight,p.y-(game.N-1)/2);
   const mode=movement>.055?'walk':p.state==='dance'&&!p.leaving&&onDancefloor?'dance':'idle';
   // Avoid recreating a skinned GLB on every tiny velocity fluctuation.
   // A transition must remain stable before loading the next animation.
