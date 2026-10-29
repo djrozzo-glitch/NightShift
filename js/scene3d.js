@@ -212,46 +212,45 @@ function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.rem
 }
  }}syncPerformer();
 let lastSignature='';function signature(){return game.N+'#'+game.map.map(r=>r.join('|')).join(';')+'#'+JSON.stringify(game.rotations)}
-// Alpha 10.1: independently rigged and animated club guests.
-// Until additional characters are supplied, all guests share one model,
-// but each receives its own cloned skeleton, mixer and animation phase.
+// Multiple independent animated GLB guests. Each model has its own rig and clips.
 const humanColors=[0xee559d,0x7d98e8,0xc49fef,0xe6a759,0x54c9b6,0xd979aa];
-let raverTemplate=null,raverClips={};
+const raverModels=[
+ {url:'assets/characters/raver_m_01.glb',template:null,clips:{}},
+ {url:'assets/characters/raver_f_01.glb.glb',template:null,clips:{}}
+];
 const peopleMap=new Map();
 const humanHeight=1.48;
-modelLoader.load('assets/characters/raver_m_01.glb',gltf=>{
- const template=gltf.scene;
- template.updateMatrixWorld(true);
- const bounds=new THREE.Box3().setFromObject(template);
- const size=bounds.getSize(new THREE.Vector3());
- if(!Number.isFinite(size.y)||size.y<.001)throw Error('Invalid character bounds');
- const scale=humanHeight/size.y;
- template.scale.multiplyScalar(scale);
- template.updateMatrixWorld(true);
- const fitted=new THREE.Box3().setFromObject(template);
- const center=fitted.getCenter(new THREE.Vector3());
- template.position.x-=center.x;
- template.position.z-=center.z;
- template.position.y-=fitted.min.y;
- template.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true;obj.frustumCulled=false;}});
- raverTemplate=template;
- for(const clip of gltf.animations)raverClips[clip.name]=clip;
- // Existing guests switch from the placeholder to the GLB on next frame.
- for(const obj of peopleMap.values())stage.remove(obj);
- peopleMap.clear();
- console.info('Night Shift: animated clubber loaded',Object.keys(raverClips));
-},undefined,err=>console.warn('Clubber GLB could not be loaded, using fallback',err));
+for(const [index,model] of raverModels.entries()){
+ modelLoader.load(model.url,gltf=>{
+  const template=gltf.scene;
+  template.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(template);
+  const size=bounds.getSize(new THREE.Vector3());
+  if(!Number.isFinite(size.y)||size.y<.001){console.warn('Invalid character bounds',model.url);return}
+  template.scale.multiplyScalar(humanHeight/size.y);
+  template.updateMatrixWorld(true);
+  const fitted=new THREE.Box3().setFromObject(template);
+  const center=fitted.getCenter(new THREE.Vector3());
+  template.position.x-=center.x;template.position.z-=center.z;template.position.y-=fitted.min.y;
+  template.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true;obj.frustumCulled=false}});
+  model.template=template;
+  for(const clip of gltf.animations)model.clips[clip.name]=clip;
+  // Replace placeholders for this type, without disrupting other guests.
+  for(const [p,obj] of peopleMap)if((p.variant||0)%raverModels.length===index){
+   stage.remove(obj);obj.userData.mixer?.stopAllAction();peopleMap.delete(p);
+  }
+  console.info('Night Shift: raver loaded',model.url,Object.keys(model.clips));
+ },undefined,err=>console.warn('Raver GLB failed to load',model.url,err));
+}
 function makePerson(p){
  const group=new THREE.Group();
- if(raverTemplate){
-  const character=cloneSkeleton(raverTemplate);
+ const model=raverModels[(p.variant||0)%raverModels.length];
+ if(model.template){
+  const character=cloneSkeleton(model.template);
   group.add(character);
-  const mixer=new THREE.AnimationMixer(character);
-  const actions={};
-  for(const [name,clip] of Object.entries(raverClips)){
-   const action=mixer.clipAction(clip);
-   action.setLoop(THREE.LoopRepeat,Infinity);
-   actions[name]=action;
+  const mixer=new THREE.AnimationMixer(character),actions={};
+  for(const [name,clip] of Object.entries(model.clips)){
+   const action=mixer.clipAction(clip);action.setLoop(THREE.LoopRepeat,Infinity);actions[name]=action;
   }
   group.userData={mixer,actions,current:null,character,offset:(p.variant||0)*.21};
  }else{
@@ -263,6 +262,17 @@ function makePerson(p){
   group.userData.fallbackBody=body;
  }
  stage.add(group);return group;
+}
+function pickRaverAnimation(actions,mode,variant){
+ const names=Object.keys(actions);if(!names.length)return null;
+ const find=(patterns)=>names.find(name=>patterns.some(re=>re.test(name)));
+ if(mode==='walk')return find([/^walking$/i,/walk/i,/locomotion/i,/run/i])||find([/idle/i])||names[0];
+ if(mode==='dance'){
+  const candidates=names.filter(name=>/dance|bass.beat|funk|groove|rave|move|hip.hop/i.test(name));
+  if(candidates.length)return candidates[(variant||0)%candidates.length];
+  return find([/idle/i])||names[0];
+ }
+ return find([/^idle_?3$/i,/idle/i,/stand/i,/breath/i])||names[0];
 }
 function updatePeople(t,dt){
  const alive=new Set(game.people);
@@ -278,8 +288,8 @@ function updatePeople(t,dt){
   o.position.set(p.x-(game.N-1)/2,0,p.y-(game.N-1)/2);
   const ud=o.userData;
   if(ud.mixer){
-   let desired=movement>.055?'Walking':p.state==='dance'&&!p.leaving&&game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor' ? ((p.variant||0)%2?'Funky_Walk':'Bass_Beats'):'Idle_3';
-   if(!ud.actions[desired])desired=ud.actions.Idle_3? 'Idle_3':Object.keys(ud.actions)[0];
+   const mode=movement>.055?'walk':p.state==='dance'&&!p.leaving&&game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor'?'dance':'idle';
+   const desired=pickRaverAnimation(ud.actions,mode,p.variant);
    if(desired&&ud.current!==desired){
     const next=ud.actions[desired];
     if(ud.current&&ud.actions[ud.current])ud.actions[ud.current].fadeOut(.22);
