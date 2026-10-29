@@ -18,12 +18,19 @@ function selectTrack(force=false){const dj=select.value,t=TRACKS[dj];if(dj===cur
 vol.addEventListener('input',()=>{volume=Number(vol.value);if(volume>0)muted=false;setVolume()});
 mute.addEventListener('click',()=>{muted=!muted;setVolume()});
 select.addEventListener('change',selectTrack);
-window.addEventListener('nightshift:started',()=>{playingWanted=true;pausedWanted=false;selectTrack(true);sync()});
+window.addEventListener('nightshift:started',()=>{
+ playingWanted=true;pausedWanted=false;
+ // A direct user gesture is required by Chrome for embedded SoundCloud playback.
+ // Play the existing widget first; load the selected track only if it changed.
+ if(widget&&ready){if(currentDJ!==select.value)selectTrack(true);else sync()}
+ else selectTrack(true);
+});
 window.addEventListener('nightshift:pause',e=>{pausedWanted=!!e.detail.paused;sync()});
 window.addEventListener('nightshift:ended',()=>{playingWanted=false;pausedWanted=false;sync()});
-if(!window.SC||!window.SC.Widget){message('SoundCloud недоступен — проверь интернет или блокировщик');return}
+if(!window.SC||!window.SC.Widget){message('SoundCloud API не загрузился — проверь блокировщик или обнови страницу');return}
 widget=window.SC.Widget(frame);
 widget.bind(window.SC.Widget.Events.READY,()=>{ready=true;setVolume();selectTrack(true)});
-widget.bind(window.SC.Widget.Events.ERROR,()=>message('Не удалось загрузить выбранный трек SoundCloud'));
+widget.bind(window.SC.Widget.Events.ERROR,()=>{message('SoundCloud не загрузил трек. Нажми ▶ в плеере или выбери DJ заново.');console.warn('NightShift SoundCloud widget error',currentDJ)});
+widget.bind(window.SC.Widget.Events.PLAY,()=>{if(playingWanted&&!pausedWanted)message('♫ Играет · '+(TRACKS[currentDJ]?.title||'SoundCloud'))});
 widget.bind(window.SC.Widget.Events.FINISH,()=>{if(playingWanted&&!pausedWanted&&TRACKS[currentDJ]){widget.seekTo(0);widget.play()}});
 })();
