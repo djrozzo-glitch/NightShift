@@ -209,7 +209,7 @@ function syncPerformer(){if(performer){stage.remove(performer);performer=null}if
 let entranceSign=null,entranceSignName='';
 function refreshEntranceSign(){
  const name=String(game.clubName||'THE BASEMENT').trim().toUpperCase();
- if(name===entranceSignName&&entranceSign)return;
+ if(name===entranceSignName&&entranceSign){entranceSign.position.z=(game.N-1)/2-.35;return;}
  entranceSignName=name;
  if(entranceSign){stage.remove(entranceSign);entranceSign.traverse(o=>{if(o.isMesh&&o.userData.signTexture)o.userData.signTexture.dispose()});entranceSign=null}
  const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=256;
