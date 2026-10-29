@@ -101,6 +101,23 @@ for(const [kind,config] of Object.entries({
  },undefined,err=>console.warn('Cannot load '+kind+' GLB, using existing artwork',err));
 }
 
+// Bouncer is a static entrance prop, shared between scene rebuilds.
+let bouncerModel=null;
+modelLoader.load('assets/characters/bouncer.glb',gltf=>{
+ const model=gltf.scene;
+ model.updateMatrixWorld(true);
+ const bounds=new THREE.Box3().setFromObject(model);
+ const size=bounds.getSize(new THREE.Vector3());
+ if(!Number.isFinite(size.y)||size.y<.001){console.warn('Invalid bouncer model dimensions');return}
+ model.scale.multiplyScalar(1.52/size.y);
+ model.updateMatrixWorld(true);
+ const fitted=new THREE.Box3().setFromObject(model),center=fitted.getCenter(new THREE.Vector3());
+ model.position.set(-center.x,.08-fitted.min.y,-center.z);
+ model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
+ bouncerModel=model;
+ lastSignature='';
+},undefined,err=>console.warn('Cannot load bouncer GLB',err));
+
 // A full-height perimeter. Wall segments sit on the INNER edge of their
 // boundary tiles, with a small overlap so Meshy trim never exposes seams.
 let wallModel=null;
@@ -257,7 +274,9 @@ function fixture(parent,type){
 function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;livePosters.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
  const group=new THREE.Group();group.position.set(x-(game.N-1)/2,0,y-(game.N-1)/2);stage.add(group);tileGroups.set(x+','+y,group);
  box(group,1,.14,1,(x+y)%2?groundMat:mats.speaker,0,-.07,0);
- const type=map[y]?.[x];if(type==='wall'||type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))perimeterWall(group,x,y,type==='poster');if(type&&type!=='wall'&&!(type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))&&type!=='dj_back'&&!type.startsWith('occupied:')){const item=new THREE.Group();item.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;group.add(item);item.userData.furniture=true;fixture(item,type);}if(x===game.N/2-1&&y===game.N-1){const entry=new THREE.Group();entry.position.set(.5,0,-.5);group.add(entry);if(extraModels.entrance)entry.add(extraModels.entrance.clone(true));else artwork(entry,'entrance')}
+ const type=map[y]?.[x];if(type==='wall'||type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))perimeterWall(group,x,y,type==='poster');if(type&&type!=='wall'&&!(type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))&&type!=='dj_back'&&!type.startsWith('occupied:')){const item=new THREE.Group();item.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;group.add(item);item.userData.furniture=true;fixture(item,type);}if(x===game.N/2-1&&y===game.N-1){const entry=new THREE.Group();entry.position.set(.5,0,-.5);group.add(entry);if(extraModels.entrance)entry.add(extraModels.entrance.clone(true));else artwork(entry,'entrance');
+ if(bouncerModel){const guard=new THREE.Group();guard.position.set(.72,0,1.04);guard.rotation.y=Math.PI;guard.add(bouncerModel.clone(true));entry.add(guard)}
+ }
  if(['dj','laser','light'].includes(type)){
  const color=type==='dj'?0x8e51ff:type==='laser'?0xff32c6:0x9367ff;
  // Actual SpotLight + a local PointLight for visible illumination of nearby props.
