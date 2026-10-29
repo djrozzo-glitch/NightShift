@@ -281,7 +281,8 @@ const humanColors=[0xee559d,0x7d98e8,0xc49fef,0xe6a759,0x54c9b6,0xd979aa];
 const raverModels=[
  {id:'m',states:{idle:null,walk:null,dance:null}},
  {id:'f',states:{idle:null,walk:null,dance:null}},
- {id:'fashion_f',states:{idle:null,walk:null,dance:null}}
+ {id:'fashion_f',states:{idle:null,walk:null,dance:null}},
+ {id:'baggy_m',states:{idle:null,walk:null,dance:null}}
 ];
 const peopleMap=new Map();
 const humanHeight=1.48;
@@ -294,7 +295,7 @@ function makeRaverFallback(p){
  group.userData.fallbackBody=body;return group;
 }
 for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk','dance']){
- const url='assets/characters/'+(model.id==='fashion_f'?'fashion_f':'raver_'+model.id)+'_'+mode+'.glb';
+ const url='assets/characters/'+(['fashion_f','baggy_m'].includes(model.id)?model.id:'raver_'+model.id)+'_'+mode+'.glb';
  modelLoader.load(url,gltf=>{
   const template=gltf.scene;
   template.updateMatrixWorld(true);
@@ -315,7 +316,7 @@ for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk
   console.info('Night Shift: character state ready',url,gltf.animations.map(clip=>clip.name));
  },undefined,err=>console.warn('Character state failed to load',url,err));
 }
-function guestModelIndex(p){return (p.variant||0)%6===0?2:(p.variant||0)%2}
+function guestModelIndex(p){return (p.variant||0)%raverModels.length}
 function releaseGuest(obj){
  const ud=obj.userData;
  if(ud.mixer){ud.mixer.stopAllAction();if(ud.character)ud.mixer.uncacheRoot(ud.character)}
