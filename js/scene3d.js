@@ -239,7 +239,7 @@ for(const [index,model] of raverModels.entries()){
   for(const [p,obj] of peopleMap)if((p.variant||0)%raverModels.length===index){
    stage.remove(obj);obj.userData.mixer?.stopAllAction();peopleMap.delete(p);
   }
-  console.info('Night Shift: raver loaded',model.url,Object.keys(model.clips));
+  console.info('Night Shift: raver loaded',model.url,Object.keys(model.clips));\n  if(!Object.keys(model.clips).some(name=>/walk/i.test(name)))console.warn('Night Shift: no walking animation found for',model.url);\n  if(!Object.keys(model.clips).some(name=>/dance|bass.beat|funk|groove|rave|hip.hop|boogie|shuffle/i.test(name)))console.warn('Night Shift: no dancing animation found for',model.url);
  },undefined,err=>console.warn('Raver GLB failed to load',model.url,err));
 }
 function makePerson(p){
@@ -266,13 +266,13 @@ function makePerson(p){
 function pickRaverAnimation(actions,mode,variant){
  const names=Object.keys(actions);if(!names.length)return null;
  const find=(patterns)=>names.find(name=>patterns.some(re=>re.test(name)));
- if(mode==='walk')return find([/^walking$/i,/walk/i,/locomotion/i,/run/i])||find([/idle/i])||names[0];
- if(mode==='dance'){
-  const candidates=names.filter(name=>/dance|bass.beat|funk|groove|rave|move|hip.hop/i.test(name));
-  if(candidates.length)return candidates[(variant||0)%candidates.length];
-  return find([/idle/i])||names[0];
- }
- return find([/^idle_?3$/i,/idle/i,/stand/i,/breath/i])||names[0];
+ const idle=find([/^idle(?:[_ .-]?\d+)?$/i,/idle/i,/stand/i,/breath/i,/rest/i]);
+ const walk=find([/^walking$/i,/^walk(?:ing)?(?:[_ .-]?\d+)?$/i,/walk/i,/locomotion/i,/stroll/i]);
+ const dances=names.filter(name=>/dance|bass.beat|funk|groove|rave|hip.hop|boogie|shuffle/i.test(name));
+ // Never use a running animation as a fallback for walking, idle or dance.
+ if(mode==='walk')return walk||idle||null;
+ if(mode==='dance')return dances.length?dances[(variant||0)%dances.length]:idle||null;
+ return idle||null;
 }
 function updatePeople(t,dt){
  const alive=new Set(game.people);
@@ -290,14 +290,14 @@ function updatePeople(t,dt){
   if(ud.mixer){
    const mode=movement>.055?'walk':p.state==='dance'&&!p.leaving&&game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor'?'dance':'idle';
    const desired=pickRaverAnimation(ud.actions,mode,p.variant);
-   if(desired&&ud.current!==desired){
+   if(!desired&&ud.current){ud.actions[ud.current]?.stop();ud.current=null}\n   if(desired&&ud.current!==desired){
     const next=ud.actions[desired];
     if(ud.current&&ud.actions[ud.current])ud.actions[ud.current].fadeOut(.22);
-    next.reset().fadeIn(.22).play();
+    next.reset().fadeIn(.22).play();\n    next.timeScale=mode==='walk'?.72:1;
     if(ud.current===null)next.time=((p.variant||0)*.41)%Math.max(next.getClip().duration,.01);
     ud.current=desired;
    }
-   ud.mixer.update(Math.min(dt,.06));
+   if(desired&&ud.actions[desired])ud.actions[desired].timeScale=mode==='walk'?.72:1;\n   ud.mixer.update(Math.min(dt,.06));
   }else if(ud.fallbackBody){
    ud.fallbackBody.position.y=.53+(p.state==='dance'?.07*Math.sin(t*8+p.x*2):0);
   }
