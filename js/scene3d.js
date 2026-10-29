@@ -280,7 +280,8 @@ let lastSignature='';function signature(){return game.N+'#'+game.map.map(r=>r.jo
 const humanColors=[0xee559d,0x7d98e8,0xc49fef,0xe6a759,0x54c9b6,0xd979aa];
 const raverModels=[
  {id:'m',states:{idle:null,walk:null,dance:null}},
- {id:'f',states:{idle:null,walk:null,dance:null}}
+ {id:'f',states:{idle:null,walk:null,dance:null}},
+ {id:'fashion_f',states:{idle:null,walk:null,dance:null}}
 ];
 const peopleMap=new Map();
 const humanHeight=1.48;
@@ -293,7 +294,7 @@ function makeRaverFallback(p){
  group.userData.fallbackBody=body;return group;
 }
 for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk','dance']){
- const url='assets/characters/raver_'+model.id+'_'+mode+'.glb';
+ const url='assets/characters/'+(model.id==='fashion_f'?'fashion_f':'raver_'+model.id)+'_'+mode+'.glb';
  modelLoader.load(url,gltf=>{
   const template=gltf.scene;
   template.updateMatrixWorld(true);
@@ -307,7 +308,7 @@ for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk
   model.states[mode]={template,clip:gltf.animations[0]||null};
   if(!gltf.animations.length)console.warn('GLB has no animation clip:',url);
   // Existing guests pick up newly loaded states without restarting the night.
-  for(const [p,obj] of peopleMap)if((p.variant||0)%raverModels.length===index){
+  for(const [p,obj] of peopleMap)if(((p.variant||0)%6===0?2:(p.variant||0)%2)===index){
    stage.remove(obj);for(const entry of Object.values(obj.userData.states||{}))entry.mixer?.stopAllAction();
    peopleMap.delete(p);
   }
@@ -315,7 +316,7 @@ for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk
  },undefined,err=>console.warn('Character state failed to load',url,err));
 }
 function makePerson(p){
- const group=new THREE.Group(),model=raverModels[(p.variant||0)%raverModels.length],states={};
+ const group=new THREE.Group(),model=raverModels[((p.variant||0)%6===0?2:(p.variant||0)%2)],states={};
  for(const mode of ['idle','walk','dance']){
   const asset=model.states[mode];if(!asset)continue;
   const character=cloneSkeleton(asset.template);
