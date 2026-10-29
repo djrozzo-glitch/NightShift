@@ -461,7 +461,8 @@ renderer.domElement.addEventListener('pointerleave',e=>{if(!down&&!overRotateHan
 renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
 renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();ortho=THREE.MathUtils.clamp(ortho*Math.exp(e.deltaY*.001),1.8,25)},{passive:false});
 window.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea'))return;if(e.key==='Escape'){e.preventDefault();down=null;dragObj=null;clearDragPreview();showHandle(null);game.observeMode();return}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.shiftKey){if(game.undoEdit())e.preventDefault();return}if(e.key.toLowerCase()==='q')azimuth-=Math.PI/2;if(e.key.toLowerCase()==='e')azimuth+=Math.PI/2});
-const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);updateLivePosters();refreshEntranceSign();
+const clock=new THREE.Clock();let cameraExpanded=false;
+function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&!cameraExpanded){cameraExpanded=true;ortho=Math.max(ortho,16);cameraUpdate()}else if(game.N!==22){cameraExpanded=false}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);updateLivePosters();refreshEntranceSign();
  if(bouncerAction&&game.running!==bouncerWasRunning){bouncerWasRunning=game.running;if(game.running)bouncerAction.reset().play();else bouncerAction.stop()}
  if(bouncerMixer&&game.running&&!game.paused)bouncerMixer.update(Math.min(dt,.06));
  const targetNight=game.running?1:0;nightMix+=(targetNight-nightMix)*.025;
