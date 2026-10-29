@@ -103,6 +103,7 @@ for(const [kind,config] of Object.entries({
 
 // Bouncer is a static entrance prop, shared between scene rebuilds.
 let bouncerModel=null;
+let entranceGuard=null;
 modelLoader.load('assets/characters/bouncer.glb',gltf=>{
  const model=gltf.scene;
  model.updateMatrixWorld(true);
@@ -271,11 +272,20 @@ function fixture(parent,type){
  if(type==='plant'||type==='plant2'){box(parent,.48,.44,.48,mats.bar,0,.24,0);let crown=new THREE.Mesh(new THREE.IcosahedronGeometry(type==='plant2'?.55:.38,1),mats.plant);crown.position.y=type==='plant2'?1.05:.77;parent.add(crown);return}
  if(type==='light'||type==='laser'){box(parent,.35,.55,.35,mats.speaker,0,.5,0);box(parent,.28,.1,.28,type==='laser'?neonPink:neonViolet,0,.8,0);return}
 }
-function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;livePosters.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
+function rebuild(){clearDragPreview();if(entranceGuard){stage.remove(entranceGuard);entranceGuard=null}for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;livePosters.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
  const group=new THREE.Group();group.position.set(x-(game.N-1)/2,0,y-(game.N-1)/2);stage.add(group);tileGroups.set(x+','+y,group);
  box(group,1,.14,1,(x+y)%2?groundMat:mats.speaker,0,-.07,0);
  const type=map[y]?.[x];if(type==='wall'||type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))perimeterWall(group,x,y,type==='poster');if(type&&type!=='wall'&&!(type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))&&type!=='dj_back'&&!type.startsWith('occupied:')){const item=new THREE.Group();item.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;group.add(item);item.userData.furniture=true;fixture(item,type);}if(x===game.N/2-1&&y===game.N-1){const entry=new THREE.Group();entry.position.set(.5,0,-.5);group.add(entry);if(extraModels.entrance)entry.add(extraModels.entrance.clone(true));else artwork(entry,'entrance');
- if(bouncerModel){const guard=new THREE.Group();guard.position.set(.72,0,1.04);guard.rotation.y=Math.PI;guard.add(bouncerModel.clone(true));entry.add(guard)}
+ if(bouncerModel){
+  // Position in WORLD tile coordinates: outside the southern entrance.
+  // Do not parent the guard to the entrance GLB, whose geometry can have offsets.
+  const guard=new THREE.Group();
+  guard.position.set(.78,0,(game.N-1)/2+1.12);
+  guard.rotation.y=Math.PI;
+  guard.add(bouncerModel.clone(true));
+  stage.add(guard);
+  entranceGuard=guard;
+ }
  }
  if(['dj','laser','light'].includes(type)){
  const color=type==='dj'?0x8e51ff:type==='laser'?0xff32c6:0x9367ff;
