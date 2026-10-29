@@ -13,7 +13,7 @@ const EXTRA_SPRITES={"guest_0_0": "assets/sprites/sprite_12.png", "guest_0_1": "
 // Alpha 10: persistent progression per club, reset with New Game.
 const LEVEL_XP=[0,100,250,450,700,1000,1400,1900,2500,3300];
 const LEVEL_NAMES=['Illegal Basement','Word of Mouth','Local Favorite','Afterhours','Underground Institution','Citywide Buzz','Cult Following','Scene Leader','International Attention','Legendary Venue'];
-const UNLOCKS={poster:2,stool:2,plant:2,sofa:3,table:3,light:1,laser:5,rail:5};
+const UNLOCKS={poster:2,stool:3,plant:5,sofa:3,table:4,light:1,laser:2,rail:5};
 const PERKS={music:[{id:'connections',name:'Local Connections',desc:'−5% гонорара DJ',value:.05},{id:'resident',name:'Resident Deal',desc:'Ещё −10% гонорара DJ',value:.10},{id:'lineups',name:'Better Lineups',desc:'+8% гостей',value:.08}],bar:[{id:'happy',name:'Happy Hour',desc:'+5% выручки бара',value:.05},{id:'premium',name:'Premium Drinks',desc:'Ещё +10% выручки бара',value:.10},{id:'management',name:'Bar Management',desc:'−10% себестоимости напитков',value:.10}],community:[{id:'word',name:'Word of Mouth',desc:'+5% гостей',value:.05},{id:'regulars',name:'Regular Crowd',desc:'+10% гостей',value:.10},{id:'cult',name:'Cult Status',desc:'+15% прироста репутации',value:.15}]};
 let xp=0,unlockedPerks=[],firstDJs=[],bestAttendance=0,progressTab='music',lastXpGain=0;
 function level(){let n=1;for(let i=0;i<LEVEL_XP.length;i++)if(xp>=LEVEL_XP[i])n=i+1;return n}
