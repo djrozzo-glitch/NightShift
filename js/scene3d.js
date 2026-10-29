@@ -205,6 +205,27 @@ function syncPerformer(){if(performer){stage.remove(performer);performer=null}if
  const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.055,.33,3,6),mat);arm.position.set(.23,1.11,.17);arm.rotation.x=.65;performer.add(arm);
  stage.add(performer);return}}
 
+// Raised illuminated venue sign, anchored over the permanent entrance.
+let entranceSign=null,entranceSignName='';
+function refreshEntranceSign(){
+ const name=String(game.clubName||'THE BASEMENT').trim().toUpperCase();
+ if(name===entranceSignName&&entranceSign)return;
+ entranceSignName=name;
+ if(entranceSign){stage.remove(entranceSign);entranceSign.traverse(o=>{if(o.isMesh&&o.userData.signTexture)o.userData.signTexture.dispose()});entranceSign=null}
+ const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=256;
+ const ctx=canvas.getContext('2d');ctx.fillStyle='#100f1b';ctx.fillRect(0,0,1024,256);
+ ctx.strokeStyle='#b14dbe';ctx.lineWidth=13;ctx.strokeRect(8,8,1008,240);
+ ctx.fillStyle='#65f2d4';ctx.textAlign='center';ctx.textBaseline='middle';
+ let font=112;do{ctx.font='900 '+font+'px sans-serif';if(ctx.measureText(name).width<930)break;font-=4}while(font>28);
+ ctx.shadowColor='#39e8c4';ctx.shadowBlur=24;ctx.fillText(name,512,133);
+ const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+ const material=new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide});
+ const sign=new THREE.Group();sign.position.set(0,2.20,(game.N-1)/2-.35);
+ const board=new THREE.Mesh(new THREE.BoxGeometry(2.45,.69,.10),new THREE.MeshStandardMaterial({color:0x17131e,metalness:.45,roughness:.38}));sign.add(board);
+ const face=new THREE.Mesh(new THREE.PlaneGeometry(2.37,.60),material);face.position.z=.061;face.userData.signTexture=texture;sign.add(face);
+ const back=new THREE.Mesh(new THREE.PlaneGeometry(2.37,.60),material);back.position.z=-.061;back.rotation.y=Math.PI;sign.add(back);
+ stage.add(sign);entranceSign=sign;
+}
 const billboards=[];function artwork(parent,type){if(!art[type])return false;const [w,h]=artSizes[type]||[1.3,1.3];const plane=new THREE.Mesh(new THREE.PlaneGeometry(w,h),art[type]);plane.position.y=h/2+.03;plane.rotation.y=Math.PI/4;plane.renderOrder=2;parent.add(plane);billboards.push(plane);return true;}
 
 function mesh(g,m,x,y,z,parent){let o=new THREE.Mesh(g,m);o.position.set(x,y,z);(parent||stage).add(o);return o}
@@ -400,7 +421,7 @@ renderer.domElement.addEventListener('pointerleave',e=>{if(!down&&!overRotateHan
 renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
 renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();ortho=THREE.MathUtils.clamp(ortho*Math.exp(e.deltaY*.001),4,25)},{passive:false});
 window.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea'))return;if(e.key==='Escape'){down=null;dragObj=null;clearDragPreview();showHandle(null);return}if(e.key.toLowerCase()==='q')azimuth-=Math.PI/2;if(e.key.toLowerCase()==='e')azimuth+=Math.PI/2});
-const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);updateLivePosters();
+const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);updateLivePosters();refreshEntranceSign();
  const targetNight=game.running?1:0;if(game.running&&!performer)syncPerformer();if(!game.running&&performer)syncPerformer();if(performer)performer.position.y=Math.sin(t*4)*.035;nightMix+=(targetNight-nightMix)*.025;
  ambient.intensity=THREE.MathUtils.lerp(3.0,.52,nightMix);
  sun.intensity=THREE.MathUtils.lerp(3.4,.42,nightMix);
