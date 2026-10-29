@@ -41,12 +41,27 @@ function updateProgress(){
 const EXPANSION_COST=15000;
 function updateExpansionPanel(){
  const el=$('expansionPanel');if(!el)return;
- const lv=level(),expanded=N===22;
- el.hidden=lv<5&&!expanded;
- if(el.hidden)return;
- const button=$('expandClub'),description=$('expansionDescription');
- if(description)description.textContent=expanded?'Клуб расширен до 22×22 клеток. Можно строить в новых зонах.':'Арендуй соседнее помещение: 16×16 → 22×22. Сохраняются все установленные объекты. Нужно 70 репутации и €15 000.';
- if(button){button.hidden=expanded;button.disabled=running||people.length>0||lv<5||rep<70||money<EXPANSION_COST;button.textContent='РАСШИРИТЬ · €15 000'+(rep<70?' · нужна репутация 70':'');}
+ const expanded=N===22,lv=level(),cashReady=money>=EXPANSION_COST,repReady=rep>=70,levelReady=lv>=5;
+ el.hidden=false;el.classList.toggle('expansion-complete',expanded);
+ const description=$('expansionDescription'),button=$('expandClub');
+ if(description)description.textContent=expanded?'Новый зал открыт! 22×22 клетки, почти вдвое больше пространства для вечеринок.':'Твоя следующая большая цель: арендуй соседнее помещение и увеличь клуб с 16×16 до 22×22 клеток.';
+ const cash=$('expansionCash'),reputation=$('expansionRep'),levelLabel=$('expansionLevel');
+ if(cash)cash.textContent='€'+Math.floor(money).toLocaleString('ru')+' / €15 000';
+ if(reputation)reputation.textContent=Math.round(rep)+' / 70';
+ if(levelLabel)levelLabel.textContent='LVL '+lv+' / 5';
+ for(const [id,ratio] of [['expansionCashBar',money/EXPANSION_COST],['expansionRepBar',rep/70],['expansionLevelBar',lv/5]]){
+  const bar=$(id);if(bar)bar.style.width=Math.min(100,Math.max(0,ratio*100))+'%';
+ }
+ for(const [id,ok] of [['expansionCashCheck',cashReady],['expansionRepCheck',repReady],['expansionLevelCheck',levelReady]]){
+  const mark=$(id);if(mark)mark.textContent=ok?'✓':'○';
+ }
+ if(button){
+  button.hidden=expanded;
+  button.disabled=running||people.length>0||!levelReady||!repReady||!cashReady;
+  button.textContent=expanded?'РАСШИРЕНО':button.disabled?'🔒 РАСШИРИТЬ КЛУБ · €15 000':'✦ РАСШИРИТЬ КЛУБ · €15 000';
+ }
+ const note=$('expansionHint');
+ if(note)note.textContent=expanded?'Цель достигнута. Время строить новый танцпол!':running||people.length?'Дождись окончания вечеринки и ухода гостей.':!levelReady||!cashReady||!repReady?'Выполни все три условия, чтобы открыть расширение.':'Все условия выполнены! Можно расширяться.';
 }
 function expandClub(){
  if(N!==16||level()<5||rep<70||money<EXPANSION_COST||running||people.length)return;
