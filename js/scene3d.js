@@ -282,7 +282,8 @@ const raverModels=[
  {id:'m',states:{idle:null,walk:null,dance:null}},
  {id:'f',states:{idle:null,walk:null,dance:null}},
  {id:'fashion_f',states:{idle:null,walk:null,dance:null}},
- {id:'baggy_m',states:{idle:null,walk:null,dance:null}}
+ {id:'baggy_m',states:{idle:null,walk:null,dance:null}},
+ {id:'jungle_f',states:{idle:null,walk:null,dance:null}}
 ];
 const peopleMap=new Map();
 const humanHeight=1.48;
@@ -295,7 +296,7 @@ function makeRaverFallback(p){
  group.userData.fallbackBody=body;return group;
 }
 for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk','dance']){
- const url='assets/characters/'+(['fashion_f','baggy_m'].includes(model.id)?model.id:'raver_'+model.id)+'_'+mode+'.glb';
+ const url='assets/characters/'+(['fashion_f','baggy_m','jungle_f'].includes(model.id)?model.id:'raver_'+model.id)+'_'+mode+'.glb';
  modelLoader.load(url,gltf=>{
   const template=gltf.scene;
   template.updateMatrixWorld(true);
