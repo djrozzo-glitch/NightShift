@@ -10,7 +10,7 @@ const stage=new THREE.Group();scene.add(stage);
 const groundMat=new THREE.MeshStandardMaterial({color:0x242332,roughness:.85});
 const colors={wall:0x3d374b,floor:0x604080,dj:0x34254c,bar:0x8a5036,speaker:0x1c1d29,light:0x7c3798,sofa:0x833c63,wc:0x546b87,plant:0x276a55,table:0x53475d,door:0x96577c,poster:0xbf347d,rail:0x67556b,plant2:0x398064,stool:0x9b6a54,laser:0x5c2f88};
 const mats={};for(const [k,c] of Object.entries(colors))mats[k]=new THREE.MeshStandardMaterial({color:c,roughness:.62,metalness:k==='speaker'?.32:.08});
-const geo=(w,h,d)=>new THREE.BoxGeometry(w,h,d);
+const geometryCache=new Map();const geo=(w,h,d)=>{const key=w+','+h+','+d;let g=geometryCache.get(key);if(!g){g=new THREE.BoxGeometry(w,h,d);geometryCache.set(key,g)}return g};
 const floorGeo=geo(.99,.08,.99),boxGeo=geo(.8,.7,.8),wallGeo=geo(1,.85,1);
 const tileGroups=new Map(),lights=[],peopleMeshes=[],danceGlows=[],beams=[];
 // Original artwork: alpha-cutout billboards remain legible while camera rotates.
@@ -343,7 +343,7 @@ function showGuestMode(obj,p,mode){
 }
 function makePerson(p){
  const group=new THREE.Group();
- group.userData={current:null,character:null,mixer:null,fallback:null,lastPos:null};
+ group.userData={current:null,character:null,mixer:null,fallback:null,lastPos:null,pendingMode:null,pendingSince:0};
  showGuestMode(group,p,'idle');stage.add(group);return group;
 }
 function updatePeople(t,dt){
@@ -357,7 +357,11 @@ function updatePeople(t,dt){
   o.position.set(p.x-(game.N-1)/2,0,p.y-(game.N-1)/2);
   const onDancefloor=game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor';
   const mode=movement>.055?'walk':p.state==='dance'&&!p.leaving&&onDancefloor?'dance':'idle';
-  showGuestMode(o,p,mode);
+  // Avoid recreating a skinned GLB on every tiny velocity fluctuation.
+  // A transition must remain stable before loading the next animation.
+  const ud=o.userData;
+  if(mode!==ud.pendingMode){ud.pendingMode=mode;ud.pendingSince=t}
+  if(!ud.character||mode!==ud.current&&t-ud.pendingSince>.65)showGuestMode(o,p,mode);
   if(o.userData.mixer)o.userData.mixer.update(Math.min(dt,.06));
   else if(o.userData.fallback?.userData.fallbackBody){
    o.userData.fallback.userData.fallbackBody.position.y=.53+(mode==='dance'?.07*Math.sin(t*8+p.x*2):0);
