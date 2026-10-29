@@ -130,19 +130,62 @@ modelLoader.load('assets/models/poster.glb',gltf=>{
  m.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
  posterWallModel=m;lastSignature='';
 },undefined,e=>console.warn('Poster wall model unavailable',e));
+const livePosters=[];
+let livePosterName='',livePosterActive=false;
+function makeLivePosterTexture(name){
+ const canvas=document.createElement('canvas');canvas.width=768;canvas.height=1024;
+ const ctx=canvas.getContext('2d');
+ const gradient=ctx.createLinearGradient(0,0,768,1024);
+ gradient.addColorStop(0,'#21142e');gradient.addColorStop(.65,'#100d1d');gradient.addColorStop(1,'#32143d');
+ ctx.fillStyle=gradient;ctx.fillRect(0,0,768,1024);
+ ctx.strokeStyle='#e04bb7';ctx.lineWidth=15;ctx.strokeRect(24,24,720,976);
+ ctx.fillStyle='#ed6dcb';ctx.fillRect(65,92,638,6);
+ ctx.textAlign='center';ctx.fillStyle='#d4b4e9';ctx.font='bold 44px sans-serif';ctx.fillText('NIGHTSHIFT',384,185);
+ ctx.font='bold 35px sans-serif';ctx.fillStyle='#ed6dcb';ctx.fillText('●  NOW PLAYING',384,295);
+ const words=String(name||'DJ').trim().toUpperCase().split(/\s+/);
+ const lines=[];let line='';
+ for(const word of words){const candidate=line?line+' '+word:word;if(ctx.measureText(candidate).width>630&&line){lines.push(line);line=word}else line=candidate}
+ if(line)lines.push(line);
+ const display=lines.slice(0,3);
+ let fontSize=112;
+ do{ctx.font='900 '+fontSize+'px sans-serif';if(Math.max(...display.map(t=>ctx.measureText(t).width))<=640)break;fontSize-=4}while(fontSize>42);
+ ctx.fillStyle='#ffffff';const lineHeight=fontSize*1.12,firstY=570-(display.length-1)*lineHeight/2;
+ display.forEach((text,i)=>ctx.fillText(text,384,firstY+i*lineHeight));
+ ctx.fillStyle='#e04bb7';ctx.fillRect(65,795,638,5);
+ ctx.fillStyle='#c7b1d6';ctx.font='bold 33px sans-serif';ctx.fillText('UNDERGROUND ALL NIGHT',384,865);
+ const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=Math.min(renderer.capabilities.getMaxAnisotropy(),8);
+ return texture;
+}
+let livePosterMaterial=null;
+function updateLivePosters(){
+ const active=!!game.running;
+ const selected=document.getElementById('djSelect');
+ const name=selected?.selectedOptions?.[0]?.textContent?.split(' · ')[0]||'DJ';
+ if(active!==livePosterActive||active&&name!==livePosterName){
+  livePosterActive=active;livePosterName=name;
+  if(livePosterMaterial){livePosterMaterial.map?.dispose();livePosterMaterial.dispose();livePosterMaterial=null}
+  if(active)livePosterMaterial=new THREE.MeshBasicMaterial({map:makeLivePosterTexture(name),side:THREE.DoubleSide,depthWrite:true});
+ }
+ for(const panel of livePosters){panel.visible=active;if(active)panel.material=livePosterMaterial}
+}
 function perimeterWall(parent,x,y,poster=false){
  if(y===game.N-1&&(x===game.N/2-1||x===game.N/2))return;
  const wall=new THREE.Group();
- // Wall thickness is moved inward by half a grid tile. Segment centers
- // remain exactly one tile apart, including at the corners.
+ // Each poster wall's local +Z faces the club interior on all four edges.
  if(y===0){wall.position.z=.5;}
- else if(y===game.N-1){wall.position.z=-.5;}
+ else if(y===game.N-1){wall.position.z=-.5;if(poster)wall.rotation.y=Math.PI;}
  else if(x===0){wall.position.x=.5;wall.rotation.y=Math.PI/2;}
- else if(x===game.N-1){wall.position.x=-.5;wall.rotation.y=Math.PI/2;}
+ else if(x===game.N-1){wall.position.x=-.5;wall.rotation.y=poster?-Math.PI/2:Math.PI/2;}
  if(poster&&posterWallModel)wall.add(posterWallModel.clone(true));
  else if(poster&&!posterWallModel&&wallModel){wall.add(wallModel.clone(true));box(wall,.68,.82,.06,neonPink,0,1.0,.15);}
  else if(wallModel)wall.add(wallModel.clone(true));
  else box(wall,1.035,1.65,.24,mats.wall,0,.825,0);
+ if(poster){
+  // Separate luminous event graphic, placed slightly in front of the GLB artwork.
+  const panel=new THREE.Mesh(new THREE.PlaneGeometry(.76,1.10),new THREE.MeshBasicMaterial({color:0x24142c,side:THREE.DoubleSide}));
+  panel.position.set(0,.91,.18);panel.visible=false;panel.renderOrder=5;
+  wall.add(panel);livePosters.push(panel);
+ }
  parent.add(wall);
  if((x===0||x===game.N-1)&&(y===0||y===game.N-1)){
   const corner=new THREE.Group();corner.rotation.y=Math.PI/2;
@@ -162,6 +205,27 @@ function syncPerformer(){if(performer){stage.remove(performer);performer=null}if
  const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.055,.33,3,6),mat);arm.position.set(.23,1.11,.17);arm.rotation.x=.65;performer.add(arm);
  stage.add(performer);return}}
 
+// Raised illuminated venue sign, anchored over the permanent entrance.
+let entranceSign=null,entranceSignName='';
+function refreshEntranceSign(){
+ const name=String(game.clubName||'THE BASEMENT').trim().toUpperCase();
+ if(name===entranceSignName&&entranceSign){entranceSign.position.z=(game.N-1)/2-.35;return;}
+ entranceSignName=name;
+ if(entranceSign){stage.remove(entranceSign);entranceSign.traverse(o=>{if(o.isMesh&&o.userData.signTexture)o.userData.signTexture.dispose()});entranceSign=null}
+ const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=256;
+ const ctx=canvas.getContext('2d');ctx.fillStyle='#100f1b';ctx.fillRect(0,0,1024,256);
+ ctx.strokeStyle='#b14dbe';ctx.lineWidth=13;ctx.strokeRect(8,8,1008,240);
+ ctx.fillStyle='#65f2d4';ctx.textAlign='center';ctx.textBaseline='middle';
+ let font=112;do{ctx.font='900 '+font+'px sans-serif';if(ctx.measureText(name).width<930)break;font-=4}while(font>28);
+ ctx.shadowColor='#39e8c4';ctx.shadowBlur=24;ctx.fillText(name,512,133);
+ const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+ const material=new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide});
+ const sign=new THREE.Group();sign.position.set(0,2.20,(game.N-1)/2-.35);
+ const board=new THREE.Mesh(new THREE.BoxGeometry(2.45,.69,.10),new THREE.MeshStandardMaterial({color:0x17131e,metalness:.45,roughness:.38}));sign.add(board);
+ const face=new THREE.Mesh(new THREE.PlaneGeometry(2.37,.60),material);face.position.z=.061;face.userData.signTexture=texture;sign.add(face);
+ const back=new THREE.Mesh(new THREE.PlaneGeometry(2.37,.60),material);back.position.z=-.061;back.rotation.y=Math.PI;sign.add(back);
+ stage.add(sign);entranceSign=sign;
+}
 const billboards=[];function artwork(parent,type){if(!art[type])return false;const [w,h]=artSizes[type]||[1.3,1.3];const plane=new THREE.Mesh(new THREE.PlaneGeometry(w,h),art[type]);plane.position.y=h/2+.03;plane.rotation.y=Math.PI/4;plane.renderOrder=2;parent.add(plane);billboards.push(plane);return true;}
 
 function mesh(g,m,x,y,z,parent){let o=new THREE.Mesh(g,m);o.position.set(x,y,z);(parent||stage).add(o);return o}
@@ -190,7 +254,7 @@ function fixture(parent,type){
  if(type==='plant'||type==='plant2'){box(parent,.48,.44,.48,mats.bar,0,.24,0);let crown=new THREE.Mesh(new THREE.IcosahedronGeometry(type==='plant2'?.55:.38,1),mats.plant);crown.position.y=type==='plant2'?1.05:.77;parent.add(crown);return}
  if(type==='light'||type==='laser'){box(parent,.35,.55,.35,mats.speaker,0,.5,0);box(parent,.28,.1,.28,type==='laser'?neonPink:neonViolet,0,.8,0);return}
 }
-function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
+function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.remove(o);tileGroups.clear();lights.length=0;beams.length=0;billboards.length=0;danceGlows.length=0;livePosters.length=0;const map=game.map;for(let y=0;y<game.N;y++)for(let x=0;x<game.N;x++){
  const group=new THREE.Group();group.position.set(x-(game.N-1)/2,0,y-(game.N-1)/2);stage.add(group);tileGroups.set(x+','+y,group);
  box(group,1,.14,1,(x+y)%2?groundMat:mats.speaker,0,-.07,0);
  const type=map[y]?.[x];if(type==='wall'||type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))perimeterWall(group,x,y,type==='poster');if(type&&type!=='wall'&&!(type==='poster'&&(x===0||y===0||x===game.N-1||y===game.N-1))&&type!=='dj_back'&&!type.startsWith('occupied:')){const item=new THREE.Group();item.rotation.y=(game.rotations[x+','+y]||0)*Math.PI/2;group.add(item);item.userData.furniture=true;fixture(item,type);}if(x===game.N/2-1&&y===game.N-1){const entry=new THREE.Group();entry.position.set(.5,0,-.5);group.add(entry);if(extraModels.entrance)entry.add(extraModels.entrance.clone(true));else artwork(entry,'entrance')}
@@ -212,99 +276,98 @@ function rebuild(){clearDragPreview();for(let o of tileGroups.values())stage.rem
 }
  }}syncPerformer();
 let lastSignature='';function signature(){return game.N+'#'+game.map.map(r=>r.join('|')).join(';')+'#'+JSON.stringify(game.rotations)}
-// Multiple independent animated GLB guests. Each model has its own rig and clips.
+// Each exported GLB owns its mesh, rig and animation. Never retarget between rigs.
 const humanColors=[0xee559d,0x7d98e8,0xc49fef,0xe6a759,0x54c9b6,0xd979aa];
 const raverModels=[
- {url:'assets/characters/raver_m_01.glb',template:null,clips:{}},
- {url:'assets/characters/raver_f_01.glb.glb',template:null,clips:{}}
+ {id:'m',states:{idle:null,walk:null,dance:null}},
+ {id:'f',states:{idle:null,walk:null,dance:null}}
 ];
 const peopleMap=new Map();
 const humanHeight=1.48;
-for(const [index,model] of raverModels.entries()){
- modelLoader.load(model.url,gltf=>{
+function makeRaverFallback(p){
+ const group=new THREE.Group(),color=humanColors[(p.variant||0)%humanColors.length];
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(.13,.16,.48,7),new THREE.MeshStandardMaterial({color}));
+ body.position.y=.53;group.add(body);
+ const head=new THREE.Mesh(new THREE.SphereGeometry(.105,8,6),new THREE.MeshStandardMaterial({color:0xd7a58d}));
+ head.position.y=.94;group.add(head);
+ group.userData.fallbackBody=body;return group;
+}
+for(const [index,model] of raverModels.entries())for(const mode of ['idle','walk','dance']){
+ const url='assets/characters/raver_'+model.id+'_'+mode+'.glb';
+ modelLoader.load(url,gltf=>{
   const template=gltf.scene;
   template.updateMatrixWorld(true);
-  const bounds=new THREE.Box3().setFromObject(template);
-  const size=bounds.getSize(new THREE.Vector3());
-  if(!Number.isFinite(size.y)||size.y<.001){console.warn('Invalid character bounds',model.url);return}
+  const bounds=new THREE.Box3().setFromObject(template),size=bounds.getSize(new THREE.Vector3());
+  if(!Number.isFinite(size.y)||size.y<.001){console.warn('Invalid GLB character bounds',url);return}
   template.scale.multiplyScalar(humanHeight/size.y);
   template.updateMatrixWorld(true);
-  const fitted=new THREE.Box3().setFromObject(template);
-  const center=fitted.getCenter(new THREE.Vector3());
+  const fitted=new THREE.Box3().setFromObject(template),center=fitted.getCenter(new THREE.Vector3());
   template.position.x-=center.x;template.position.z-=center.z;template.position.y-=fitted.min.y;
   template.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true;obj.frustumCulled=false}});
-  model.template=template;
-  for(const clip of gltf.animations)model.clips[clip.name]=clip;
-  // Replace placeholders for this type, without disrupting other guests.
+  model.states[mode]={template,clip:gltf.animations[0]||null};
+  if(!gltf.animations.length)console.warn('GLB has no animation clip:',url);
+  // Existing guests pick up newly loaded states without restarting the night.
   for(const [p,obj] of peopleMap)if((p.variant||0)%raverModels.length===index){
-   stage.remove(obj);obj.userData.mixer?.stopAllAction();peopleMap.delete(p);
+   stage.remove(obj);for(const entry of Object.values(obj.userData.states||{}))entry.mixer?.stopAllAction();
+   peopleMap.delete(p);
   }
-  console.info('Night Shift: raver loaded',model.url,Object.keys(model.clips));\n  if(!Object.keys(model.clips).some(name=>/walk/i.test(name)))console.warn('Night Shift: no walking animation found for',model.url);\n  if(!Object.keys(model.clips).some(name=>/dance|bass.beat|funk|groove|rave|hip.hop|boogie|shuffle/i.test(name)))console.warn('Night Shift: no dancing animation found for',model.url);
- },undefined,err=>console.warn('Raver GLB failed to load',model.url,err));
+  console.info('Night Shift: character state ready',url,gltf.animations.map(clip=>clip.name));
+ },undefined,err=>console.warn('Character state failed to load',url,err));
 }
 function makePerson(p){
- const group=new THREE.Group();
- const model=raverModels[(p.variant||0)%raverModels.length];
- if(model.template){
-  const character=cloneSkeleton(model.template);
-  group.add(character);
-  const mixer=new THREE.AnimationMixer(character),actions={};
-  for(const [name,clip] of Object.entries(model.clips)){
-   const action=mixer.clipAction(clip);action.setLoop(THREE.LoopRepeat,Infinity);actions[name]=action;
-  }
-  group.userData={mixer,actions,current:null,character,offset:(p.variant||0)*.21};
+ const group=new THREE.Group(),model=raverModels[(p.variant||0)%raverModels.length],states={};
+ for(const mode of ['idle','walk','dance']){
+  const asset=model.states[mode];if(!asset)continue;
+  const character=cloneSkeleton(asset.template);
+  character.visible=false;group.add(character);
+  const mixer=asset.clip?new THREE.AnimationMixer(character):null;
+  const action=mixer?.clipAction(asset.clip)||null;
+  if(action){action.setLoop(THREE.LoopRepeat,Infinity);action.play();action.paused=true}
+  states[mode]={character,mixer,action};
+ }
+ if(Object.keys(states).length){
+  group.userData={states,current:null,lastPos:null};
  }else{
-  const color=humanColors[(p.variant||0)%humanColors.length];
-  const body=new THREE.Mesh(new THREE.CylinderGeometry(.13,.16,.48,7),new THREE.MeshStandardMaterial({color}));
-  body.position.y=.53;group.add(body);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(.105,8,6),new THREE.MeshStandardMaterial({color:0xd7a58d}));
-  head.position.y=.94;group.add(head);
-  group.userData.fallbackBody=body;
+  const fallback=makeRaverFallback(p);
+  group.add(fallback);group.userData={fallbackBody:fallback.userData.fallbackBody,lastPos:null};
  }
  stage.add(group);return group;
 }
-function pickRaverAnimation(actions,mode,variant){
- const names=Object.keys(actions);if(!names.length)return null;
- const find=(patterns)=>names.find(name=>patterns.some(re=>re.test(name)));
- const idle=find([/^idle(?:[_ .-]?\d+)?$/i,/idle/i,/stand/i,/breath/i,/rest/i]);
- const walk=find([/^walking$/i,/^walk(?:ing)?(?:[_ .-]?\d+)?$/i,/walk/i,/locomotion/i,/stroll/i]);
- const dances=names.filter(name=>/dance|bass.beat|funk|groove|rave|hip.hop|boogie|shuffle/i.test(name));
- // Never use a running animation as a fallback for walking, idle or dance.
- if(mode==='walk')return walk||idle||null;
- if(mode==='dance')return dances.length?dances[(variant||0)%dances.length]:idle||null;
- return idle||null;
-}
 function updatePeople(t,dt){
  const alive=new Set(game.people);
- for(const [p,obj] of peopleMap){
-  if(!alive.has(p)){stage.remove(obj);obj.userData.mixer?.stopAllAction();peopleMap.delete(p);}
+ for(const [p,obj] of peopleMap)if(!alive.has(p)){
+  stage.remove(obj);
+  for(const entry of Object.values(obj.userData.states||{}))entry.mixer?.stopAllAction();
+  peopleMap.delete(p);
  }
  for(const p of game.people){
   let o=peopleMap.get(p);
-  if(!o){o=makePerson(p);peopleMap.set(p,o);}
+  if(!o){o=makePerson(p);peopleMap.set(p,o)}
   const previous=o.userData.lastPos;
   const movement=previous?Math.hypot(p.x-previous.x,p.y-previous.y)/Math.max(dt,.001):0;
   o.userData.lastPos={x:p.x,y:p.y};
   o.position.set(p.x-(game.N-1)/2,0,p.y-(game.N-1)/2);
   const ud=o.userData;
-  if(ud.mixer){
-   const mode=movement>.055?'walk':p.state==='dance'&&!p.leaving&&game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor'?'dance':'idle';
-   const desired=pickRaverAnimation(ud.actions,mode,p.variant);
-   if(!desired&&ud.current){ud.actions[ud.current]?.stop();ud.current=null}\n   if(desired&&ud.current!==desired){
-    const next=ud.actions[desired];
-    if(ud.current&&ud.actions[ud.current])ud.actions[ud.current].fadeOut(.22);
-    next.reset().fadeIn(.22).play();\n    next.timeScale=mode==='walk'?.72:1;
-    if(ud.current===null)next.time=((p.variant||0)*.41)%Math.max(next.getClip().duration,.01);
+  const onDancefloor=game.map[Math.round(p.y)]?.[Math.round(p.x)]==='floor';
+  const mode=movement>.055?'walk':p.state==='dance'&&!p.leaving&&onDancefloor?'dance':'idle';
+  if(ud.states){
+   const desired=ud.states[mode]?mode:ud.states.idle?'idle':ud.states.walk?'walk':'dance';
+   if(ud.current!==desired){
+    for(const [key,entry] of Object.entries(ud.states)){
+     entry.character.visible=key===desired;
+     if(entry.action)entry.action.paused=key!==desired;
+    }
     ud.current=desired;
    }
-   if(desired&&ud.actions[desired])ud.actions[desired].timeScale=mode==='walk'?.72:1;\n   ud.mixer.update(Math.min(dt,.06));
+   const active=ud.states[desired];
+   if(active?.mixer)active.mixer.update(Math.min(dt,.06));
   }else if(ud.fallbackBody){
-   ud.fallbackBody.position.y=.53+(p.state==='dance'?.07*Math.sin(t*8+p.x*2):0);
+   ud.fallbackBody.position.y=.53+(mode==='dance'?.07*Math.sin(t*8+p.x*2):0);
   }
   const next=p.path?.[0];
   if(next&&Math.hypot(next.x-p.x,next.y-p.y)>.05){
    o.rotation.y=Math.atan2(next.x-p.x,next.y-p.y);
-  }else if(p.state==='dance'){
+  }else if(mode==='dance'){
    o.rotation.y+=Math.sin(t*1.4+(p.variant||0))*.003;
   }
  }
@@ -358,7 +421,7 @@ renderer.domElement.addEventListener('pointerleave',e=>{if(!down&&!overRotateHan
 renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
 renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();ortho=THREE.MathUtils.clamp(ortho*Math.exp(e.deltaY*.001),4,25)},{passive:false});
 window.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea'))return;if(e.key==='Escape'){down=null;dragObj=null;clearDragPreview();showHandle(null);return}if(e.key.toLowerCase()==='q')azimuth-=Math.PI/2;if(e.key.toLowerCase()==='e')azimuth+=Math.PI/2});
-const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);
+const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);let sig=signature();if(sig!==lastSignature){rebuild();lastSignature=sig;if(game.N===22&&ortho<16){ortho=16;cameraUpdate()}}let dt=clock.getDelta();let t=clock.elapsedTime;updatePeople(t,dt);updateLivePosters();refreshEntranceSign();
  const targetNight=game.running?1:0;if(game.running&&!performer)syncPerformer();if(!game.running&&performer)syncPerformer();if(performer)performer.position.y=Math.sin(t*4)*.035;nightMix+=(targetNight-nightMix)*.025;
  ambient.intensity=THREE.MathUtils.lerp(3.0,.52,nightMix);
  sun.intensity=THREE.MathUtils.lerp(3.4,.42,nightMix);
@@ -382,4 +445,4 @@ for(let [i,fx] of lights.entries()){
  const dir=to.sub(from).normalize();
  fx.beam.quaternion.setFromUnitVectors(new THREE.Vector3(0,-1,0),dir);
 }cameraUpdate();if(hovered&&!down)showHandle(hovered);// Artwork stays in the same world coordinate system as the floor when camera orbits.
-renderer.render(scene,camera)}frame();
+renderer.render(scene,camera);if(!window.__nightshift3dReady){window.__nightshift3dReady=true;window.dispatchEvent(new Event('nightshift:3d-ready'))}}frame();
