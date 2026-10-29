@@ -445,3 +445,17 @@ for(let [i,fx] of lights.entries()){
  fx.beam.quaternion.setFromUnitVectors(new THREE.Vector3(0,-1,0),dir);
 }cameraUpdate();if(hovered&&!down)showHandle(hovered);// Artwork stays in the same world coordinate system as the floor when camera orbits.
 renderer.render(scene,camera);if(!window.__nightshift3dReady){window.__nightshift3dReady=true;window.dispatchEvent(new Event('nightshift:3d-ready'))}}frame();
+window.nightshiftStats=function(){
+ const stats={
+  gameGuests:game.people.length,threeGuests:peopleMap.size,
+  geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures,
+  drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,
+  sceneObjects:0,skinnedMeshes:0,animationMixers:0,
+  loadedCharacterStates:raverModels.reduce((n,m)=>n+Object.values(m.states).filter(Boolean).length,0),
+  jsHeapMB:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):'not available'
+ };
+ scene.traverse(o=>{stats.sceneObjects++;if(o.isSkinnedMesh)stats.skinnedMeshes++});
+ for(const o of peopleMap.values())if(o.userData.mixer)stats.animationMixers++;
+ console.table(stats);return stats;
+};
+
