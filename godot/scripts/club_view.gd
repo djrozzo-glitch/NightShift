@@ -815,7 +815,7 @@ func _build_stage_lights() -> void:
 		var spot := SpotLight3D.new()
 		spot.name = "ClubSpot"
 		# Laser emission begins at the projector lens, not above its housing.
-		spot.position = Vector3(0.0, 0.12, 0.0) if str(record["kind"]) == "laser" else Vector3(0.0, 1.4, 0.0)
+		spot.position = Vector3(0.0, 0.12, 0.0) if str(record["kind"]) == "laser" else Vector3(0.0, 0.77, -0.19)
 		spot.spot_range = 11.0
 		spot.spot_angle = 34.0 if str(record["kind"]) == "light" else 13.0
 		spot.light_color = Color("#c15dff") if str(record["kind"]) == "light" else LASER_COLORS[0]
