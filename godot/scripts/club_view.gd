@@ -842,12 +842,12 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	spot.name = "ClubSpot"
 	# Laser emission begins at the projector lens, not above its housing.
 	spot.position = Vector3(0.0, 0.12, 0.0) if kind == "laser" else Vector3(0.0, 0.77, -0.19)
-	spot.spot_range = 11.0
-	spot.spot_angle = 34.0 if kind == "light" else 13.0
+	spot.spot_range = 14.0 if kind == "light" else 11.0
+	spot.spot_angle = 25.0 if kind == "light" else 13.0
 	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
 	spot.light_energy = 4.0 if night_active else 0.0
-	spot.shadow_enabled = false
-	spot.light_volumetric_fog_energy = 3.0 if kind == "light" else 0.0
+	spot.shadow_enabled = kind == "light"
+	spot.light_volumetric_fog_energy = 9.0 if kind == "light" else 0.0
 	fixture.add_child(spot)
 	# Aim the beam from the projector toward the room, slightly upward.
 	if kind == "laser":
@@ -872,7 +872,7 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	mat.albedo_color = Color(0.6, 0.25, 1.0, 0.09) if kind == "light" else Color(0.19, 1.0, 0.39, 0.95)
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if kind == "light":
-		beam.material_override = _disco_beam_material(0.085)
+		beam.material_override = _disco_beam_material(0.12)
 	else:
 		beam.material_override = mat
 	if kind == "laser":
@@ -907,10 +907,10 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		inner_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		inner_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		inner_mat.albedo_color = Color(0.65, 0.35, 1.0, 0.18)
-		inner.material_override = _disco_beam_material(0.13)
+		inner.material_override = _disco_beam_material(0.19)
 		beam.add_child(inner)
 	spot.add_child(beam)
-	beam.visible = night_active and kind == "laser"
+	beam.visible = night_active
 	beam_meshes.append(beam)
 	stage_lights.append(spot)
 	if kind == "light":
@@ -950,7 +950,7 @@ func _set_night_lighting(enabled: bool) -> void:
 	for beam in beam_meshes:
 		if is_instance_valid(beam):
 			# Only lasers use geometry; moving-head beams come from volumetric fog.
-			beam.visible = enabled and beam.get_node_or_null("LaserHalo") != null
+			beam.visible = enabled
 	for glow in dance_lights:
 		if is_instance_valid(glow):
 			glow.light_energy = 1.2 if enabled else 0.0
@@ -994,13 +994,13 @@ func _animate_stage_lights(delta: float) -> void:
 			var outer_mat := cone.material_override as ShaderMaterial
 			if outer_mat != null:
 				outer_mat.set_shader_parameter("beam_color", color)
-				outer_mat.set_shader_parameter("opacity", 0.07 + 0.035 * beat)
+				outer_mat.set_shader_parameter("opacity", 0.11 + 0.04 * beat)
 			var inner := cone.get_node_or_null("DiscoCore") as MeshInstance3D
 			if inner != null:
 				var inner_material := inner.material_override as ShaderMaterial
 				if inner_material != null:
 					inner_material.set_shader_parameter("beam_color", color)
-					inner_material.set_shader_parameter("opacity", 0.11 + 0.06 * beat)
+					inner_material.set_shader_parameter("opacity", 0.17 + 0.07 * beat)
 	# Each light has a different phase; no part of the floor goes fully dark.
 	for index in range(dance_lights.size()):
 		var glow := dance_lights[index]
@@ -1350,7 +1350,7 @@ func _build_world() -> void:
 	env.ambient_light_energy = 0.85
 	# Forward+ volumetric haze: low density keeps the club readable.
 	env.volumetric_fog_enabled = false
-	env.volumetric_fog_density = 0.018
+	env.volumetric_fog_density = 0.035
 	env.volumetric_fog_albedo = Color("#b6a7d4")
 	env.volumetric_fog_emission = Color("#08050e")
 	env.volumetric_fog_emission_energy = 0.15
