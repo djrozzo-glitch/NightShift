@@ -45,6 +45,13 @@ var dj_picker: OptionButton
 var start_night_button: Button
 var night_active := false
 var night_number := 0
+var guest_layer: Node3D
+var guests: Array[Dictionary] = []
+var guest_spawn_clock := 0.0
+var guest_count := 0
+const MAX_GUESTS := 28
+const GUEST_ENTRY := Vector2i(7, 14)
+const WALK_DIRS := [Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1)]
 const DJ_ROSTER := [
 	{"name": "Vanya Velin", "fee": 400},
 	{"name": "Velvet 37", "fee": 300},
@@ -54,6 +61,9 @@ const DJ_ROSTER := [
 
 func _ready() -> void:
 	_build_world()
+	guest_layer = Node3D.new()
+	guest_layer.name = "Guests"
+	add_child(guest_layer)
 	_build_camera()
 	_build_overlay()
 	_build_hover()
@@ -256,13 +266,114 @@ func _refresh_readiness() -> void:
 		return
 	var issues := _readiness_issues()
 	if night_active:
-		readiness_label.text = "NIGHT %d IN PROGRESS" % night_number
+		readiness_label.text = "NIGHT %d  |  %d GUESTS" % [night_number, guest_count]
 	elif issues.is_empty():
 		readiness_label.text = "READY TO OPEN  ✓"
 	else:
 		readiness_label.text = "NEEDS: " + ", ".join(issues)
 	if start_night_button != null:
 		start_night_button.disabled = not night_active and not issues.is_empty()
+
+func _walkable(cell: Vector2i) -> bool:
+	return cell.x > 0 and cell.x < SIZE - 1 and cell.y > 0 and cell.y < SIZE - 1 and not occupied.has(cell)
+
+func _path_to(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if not _walkable(start) or not _walkable(goal):
+		return result
+	var queue: Array[Vector2i] = [start]
+	var previous: Dictionary = {start: start}
+	var index := 0
+	while index < queue.size():
+		var current: Vector2i = queue[index]
+		index += 1
+		if current == goal:
+			break
+		for direction in WALK_DIRS:
+			var neighbor: Vector2i = current + direction
+			if _walkable(neighbor) and not previous.has(neighbor):
+				previous[neighbor] = current
+				queue.append(neighbor)
+	if not previous.has(goal):
+		return result
+	var cell := goal
+	while cell != start:
+		result.push_front(cell)
+		cell = previous[cell]
+	return result
+
+func _cell_position(cell: Vector2i) -> Vector3:
+	return Vector3(cell.x - 7.5, float(floor_heights.get(cell, 0.0)) + 0.05, cell.y - 7.5)
+
+func _dance_destination() -> Vector2i:
+	for attempt in range(35):
+		var candidate := Vector2i(randi_range(3, 12), randi_range(3, 9))
+		if _walkable(candidate) and not _path_to(GUEST_ENTRY, candidate).is_empty():
+			return candidate
+	return Vector2i(-1, -1)
+
+func _spawn_guest() -> void:
+	if guests.size() >= MAX_GUESTS or not _walkable(GUEST_ENTRY):
+		return
+	var destination := _dance_destination()
+	if destination.x < 0:
+		return
+	var path := _path_to(GUEST_ENTRY, destination)
+	if path.is_empty():
+		return
+	var person := Node3D.new()
+	guest_layer.add_child(person)
+	person.position = _cell_position(GUEST_ENTRY)
+	var color := Color.from_hsv(randf(), 0.35, randf_range(0.48, 0.85))
+	_make_box(person, Vector3(0, 0.36, 0), Vector3(0.24, 0.48, 0.18), color)
+	var head := SphereMesh.new()
+	head.radius = 0.13
+	head.height = 0.26
+	var head_mesh := MeshInstance3D.new()
+	head_mesh.mesh = head
+	head_mesh.position.y = 0.73
+	person.add_child(head_mesh)
+	guests.append({"node": person, "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85)})
+	guest_count += 1
+	_refresh_readiness()
+
+func _process(delta: float) -> void:
+	if not night_active:
+		return
+	guest_spawn_clock += delta
+	if guest_spawn_clock >= 1.1 and guests.size() < MAX_GUESTS:
+		guest_spawn_clock = 0.0
+		_spawn_guest()
+	for guest in guests:
+		var person: Node3D = guest["node"]
+		if not is_instance_valid(person):
+			continue
+		if guest["dance"]:
+			guest["phase"] = float(guest["phase"]) + delta * 5.0
+			person.rotation.y += delta * 1.8
+			person.scale.y = 1.0 + sin(float(guest["phase"])) * 0.08
+			continue
+		var path: Array = guest["path"]
+		if path.is_empty():
+			guest["dance"] = true
+			continue
+		var target := _cell_position(path[0])
+		var direction := target - person.position
+		if direction.length() < 0.07:
+			path.pop_front()
+			if path.is_empty():
+				guest["dance"] = true
+		else:
+			person.position = person.position.move_toward(target, float(guest["speed"]) * delta)
+			person.rotation.y = atan2(direction.x, direction.z)
+
+func _clear_guests() -> void:
+	for guest in guests:
+		var person: Node3D = guest["node"]
+		if is_instance_valid(person):
+			person.queue_free()
+	guests.clear()
+	guest_spawn_clock = 0.0
 
 func _start_night() -> void:
 	_refresh_readiness()
@@ -273,6 +384,8 @@ func _start_night() -> void:
 	cash -= fee
 	night_number += 1
 	night_active = true
+	_clear_guests()
+	guest_count = 0
 	build_mode = false
 	erase_mode = false
 	_refresh_preview()
@@ -286,9 +399,10 @@ func _end_night() -> void:
 	if not night_active:
 		return
 	night_active = false
+	_clear_guests()
 	start_night_button.text = "START NIGHT"
 	_refresh_readiness()
-	_notify("Night %d ended  |  Revenue simulation coming next" % night_number)
+	_notify("Night %d ended  |  %d guests visited  |  Revenue coming next" % [night_number, guest_count])
 
 func _night_button_pressed() -> void:
 	if night_active:
