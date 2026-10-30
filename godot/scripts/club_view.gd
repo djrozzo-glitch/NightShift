@@ -501,7 +501,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(12, 48), "thirst": randf_range(0.25, 0.65), "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
 	guest_count += 1
 	night_ticket_income += TICKET_PRICE
 	cash += TICKET_PRICE
@@ -668,6 +668,9 @@ func _process(delta: float) -> void:
 		guest_spawn_clock = 0.0
 		_spawn_guest()
 	for guest in guests:
+		# Guest needs evolve during the night and influence where they go.
+		guest["thirst"] = minf(1.0, float(guest["thirst"]) + step * (0.0025 if bool(guest["dance"]) else 0.001))
+		guest["energy"] = maxf(0.0, float(guest["energy"]) - step * (0.0018 if bool(guest["dance"]) else 0.0005))
 		var state: String = guest["state"]
 		if state in ["dancing", "ordering", "resting", "sitting", "standing"]:
 			guest["wait"] = float(guest["wait"]) - step
@@ -687,11 +690,15 @@ func _process(delta: float) -> void:
 						guest["dance"] = true
 						guest["wait"] = 5.0
 				elif state == "ordering":
-					night_drinks_sold += 1
-					night_drink_income += DRINK_PRICE
-					cash += DRINK_PRICE
-					_update_night_stats()
-					_refresh_economy()
+					# A guest only buys when thirsty enough and able to pay.
+					if float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= DRINK_PRICE:
+						night_drinks_sold += 1
+						night_drink_income += DRINK_PRICE
+						cash += DRINK_PRICE
+						guest["wallet"] = int(guest["wallet"]) - DRINK_PRICE
+						guest["thirst"] = maxf(0.0, float(guest["thirst"]) - 0.65)
+						_update_night_stats()
+						_refresh_economy()
 					guest["visits"] = int(guest["visits"]) + 1
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
@@ -699,9 +706,11 @@ func _process(delta: float) -> void:
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
 				else:
-					var activity := "bar" if randf() < 0.65 and int(guest["visits"]) < 3 else "sofa"
+					var wants_drink := float(guest["thirst"]) > 0.55 and int(guest["wallet"]) >= DRINK_PRICE
+					var wants_rest := float(guest["energy"]) < 0.45
+					var activity := "bar" if wants_drink else "sofa" if wants_rest else ("bar" if randf() < 0.3 and int(guest["wallet"]) >= DRINK_PRICE else "sofa")
 					if not _guest_route(guest, activity):
-						if not _guest_route(guest, "bar" if activity == "sofa" else "sofa"):
+						if not _guest_route(guest, "sofa" if activity == "bar" else "dance"):
 							guest["wait"] = 8.0
 		var person: Node3D = guest["node"]
 		if not is_instance_valid(person):
