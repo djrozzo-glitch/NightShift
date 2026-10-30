@@ -871,7 +871,10 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.albedo_color = Color(0.6, 0.25, 1.0, 0.09) if kind == "light" else Color(0.19, 1.0, 0.39, 0.95)
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	beam.material_override = _disco_beam_material(0.085) if kind == "light" else mat
+	if kind == "light":
+		beam.material_override = _disco_beam_material(0.085)
+	else:
+		beam.material_override = mat
 	if kind == "laser":
 		# Soft translucent halo around the bright, narrow laser core.
 		var halo := MeshInstance3D.new()
