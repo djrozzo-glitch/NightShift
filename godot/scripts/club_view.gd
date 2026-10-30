@@ -367,12 +367,12 @@ func _destination_taken(cell: Vector2i, except_guest: Dictionary = {}) -> bool:
 			return true
 	return false
 
-func _guest_too_close(position: Vector3, except_guest: Dictionary, minimum_distance: float = 0.46) -> bool:
+func _guest_too_close(check_position: Vector3, except_guest: Dictionary, minimum_distance: float = 0.46) -> bool:
 	for other in guests:
 		if other == except_guest or bool(other.get("seated", false)):
 			continue
 		var other_node: Node3D = other["node"]
-		if is_instance_valid(other_node) and other_node.position.distance_squared_to(position) < minimum_distance * minimum_distance:
+		if is_instance_valid(other_node) and other_node.position.distance_squared_to(check_position) < minimum_distance * minimum_distance:
 			return true
 	return false
 
