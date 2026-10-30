@@ -156,8 +156,8 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 		elif y == 0:
 			pivot_node.rotation.y = PI
 	if not models.has(kind):
-		var color := Color("#5d456a") if kind in TWO_CELL else Color("#53505b")
-		_make_box(pivot_node, Vector3(0, 0.4, 0.5 if kind in TWO_CELL else 0),
+		var color: Color = Color("#5d456a") if kind in TWO_CELL else Color("#53505b")
+		_make_box(pivot_node, Vector3(0, 0.4, 0.5 if kind in TWO_CELL else 0.0),
 			Vector3(0.8, 0.8, 1.8 if kind in TWO_CELL else 0.8), color)
 		return pivot_node
 
