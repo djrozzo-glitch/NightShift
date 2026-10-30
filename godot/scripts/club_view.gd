@@ -1,4 +1,5 @@
 extends Node3D
+const UIStyle = preload("res://scripts/ui_style.gd")
 ## First migration milestone: a playable 3D camera and procedural club shell.
 ## Controls: left-drag rotate, shift+left-drag pan, wheel zoom, R reset.
 
@@ -283,7 +284,7 @@ func _end_night() -> void:
 	if not night_active:
 		return
 	night_active = false
-	start_night_button.text = "Start Night"
+	start_night_button.text = "START NIGHT"
 	_refresh_readiness()
 	_notify("Night %d ended  |  Revenue simulation coming next" % night_number)
 
@@ -546,9 +547,10 @@ func _build_overlay() -> void:
 	var ui := CanvasLayer.new()
 	add_child(ui)
 	var title := Label.new()
-	title.text = "NIGHTSHIFT  /  GODOT PROTOTYPE"
+	title.text = "NIGHTSHIFT  /  CLUB MANAGER"
+	UIStyle.decorate_label(title, 25)
 	title.position = Vector2(20, 20)
-	title.add_theme_font_size_override("font_size", 24)
+	
 	ui.add_child(title)
 	if not missing_models.is_empty():
 		var warning := Label.new()
@@ -558,48 +560,59 @@ func _build_overlay() -> void:
 		ui.add_child(warning)
 	economy_label = Label.new()
 	economy_label.position = Vector2(20, 91)
-	economy_label.add_theme_font_size_override("font_size", 18)
+	UIStyle.decorate_label(economy_label, 18)
 	ui.add_child(economy_label)
 	_refresh_economy()
 	notice_label = Label.new()
 	notice_label.position = Vector2(20, 120)
+	UIStyle.decorate_label(notice_label, 13, true)
 	ui.add_child(notice_label)
 	status_label = Label.new()
 	status_label.position = Vector2(20, 151)
 	status_label.text = "MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
+	UIStyle.decorate_label(status_label, 13, true)
 	ui.add_child(status_label)
 	build_panel = PanelContainer.new()
 	build_panel.position = Vector2(20, 190)
+	UIStyle.decorate_panel(build_panel)
 	ui.add_child(build_panel)
 	var choices := VBoxContainer.new()
 	build_panel.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
 		button.text = "%s   €%d" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), int(BUILD_PRICES.get(kind, 0))]
-		button.custom_minimum_size = Vector2(130, 27)
+		button.custom_minimum_size = Vector2(164, 32)
+		UIStyle.decorate_button(button)
 		button.pressed.connect(_choose_kind.bind(kind))
 		choices.add_child(button)
 	var erase_button := Button.new()
-	erase_button.text = "Erase (X)"
+	erase_button.text = "ERASE  [X]"
+	UIStyle.decorate_button(erase_button)
 	erase_button.pressed.connect(_enable_erase)
 	choices.add_child(erase_button)
 	var night_panel := PanelContainer.new()
 	night_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	night_panel.position = Vector2(-295, 20)
+	night_panel.offset_left = -315
+	night_panel.offset_right = -20
+	night_panel.offset_top = 20
+	night_panel.offset_bottom = 20
+	UIStyle.decorate_panel(night_panel)
 	night_panel.custom_minimum_size = Vector2(275, 0)
 	ui.add_child(night_panel)
 	var night_controls := VBoxContainer.new()
 	night_panel.add_child(night_controls)
 	var heading := Label.new()
 	heading.text = "CLUB OPENING"
-	heading.add_theme_font_size_override("font_size", 18)
+	UIStyle.decorate_label(heading, 19)
 	night_controls.add_child(heading)
 	readiness_label = Label.new()
 	readiness_label.custom_minimum_size = Vector2(255, 40)
+	UIStyle.decorate_label(readiness_label, 14)
 	readiness_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	night_controls.add_child(readiness_label)
 	var dj_label := Label.new()
 	dj_label.text = "BOOK A DJ"
+	UIStyle.decorate_label(dj_label, 13, true)
 	night_controls.add_child(dj_label)
 	dj_picker = OptionButton.new()
 	for dj in DJ_ROSTER:
@@ -609,12 +622,14 @@ func _build_overlay() -> void:
 	night_controls.add_child(dj_picker)
 	start_night_button = Button.new()
 	start_night_button.text = "Start Night"
+	UIStyle.decorate_button(start_night_button, true)
 	start_night_button.pressed.connect(_night_button_pressed)
 	night_controls.add_child(start_night_button)
 	_refresh_readiness()
 	var help := Label.new()
 	help.text = "Drag: rotate   Shift+drag: pan   Wheel/pinch or +/-: zoom   R: reset"
 	help.position = Vector2(20, 58)
+	UIStyle.decorate_label(help, 13, true)
 	ui.add_child(help)
 
 func _input(event: InputEvent) -> void:
