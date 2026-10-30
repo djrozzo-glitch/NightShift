@@ -854,7 +854,10 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		spot.look_at(Vector3(0.0, 2.4, 0.0), Vector3.UP)
 	else:
 		# Aim from the fixture lens forward and slightly upward.
-		spot.look_at(Vector3(0.0, 1.65, 0.0), Vector3.UP)
+		var lens_forward := fixture.global_basis * Vector3(0.0, 0.0, 1.0)
+		lens_forward.y = 0.0
+		lens_forward = lens_forward.normalized()
+		spot.look_at(spot.global_position + lens_forward * 3.0 + Vector3.UP * 1.4, Vector3.UP)
 	var beam := MeshInstance3D.new()
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.012 if kind == "laser" else 0.035
@@ -969,10 +972,15 @@ func _animate_stage_lights(delta: float) -> void:
 			spot.look_at(aim, Vector3.UP)
 		else:
 			# Keep the beam pointing away from the lens, above the horizon.
-			# Aim every fixture toward a moving point over the dance floor,
-			# regardless of the placed model's rotation.
-			var target := Vector3(sin(phase) * 2.8, 1.5 + sin(phase * 0.7) * 0.55, cos(phase * 0.83) * 2.3)
-			spot.look_at(target, Vector3.UP)
+			# Sweep outward from the physical lens, with a constant upward tilt.
+			var fixture := spot.get_parent() as Node3D
+			var forward := fixture.global_basis * Vector3(0.0, 0.0, 1.0)
+			var sideways := fixture.global_basis * Vector3(1.0, 0.0, 0.0)
+			forward.y = 0.0
+			sideways.y = 0.0
+			var direction := forward.normalized() * 3.0 + sideways.normalized() * sin(phase) * 0.85
+			direction.y = 1.4 + 0.25 * sin(phase * 0.7)
+			spot.look_at(spot.global_position + direction, Vector3.UP)
 		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
 	# Independent color changes and a restrained rhythmic flash for moving heads.
 	for index in range(disco_spots.size()):
