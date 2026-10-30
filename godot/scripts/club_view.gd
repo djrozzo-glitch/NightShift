@@ -438,13 +438,59 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85)})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "destination": destination})
 	guest_count += 1
 	night_ticket_income += TICKET_PRICE
 	cash += TICKET_PRICE
 	_update_night_stats()
 	_refresh_economy()
 	_refresh_readiness()
+
+func _service_destination(kind: String, start: Vector2i) -> Vector2i:
+	var best := Vector2i(-1, -1)
+	var best_length := 999999
+	for record in placed_objects.values():
+		if str(record["kind"]) != kind:
+			continue
+		for furniture_cell in record["cells"]:
+			for direction in WALK_DIRS:
+				var candidate: Vector2i = furniture_cell + direction
+				if not _walkable(candidate):
+					continue
+				var path := _path_to(start, candidate)
+				if candidate != start and path.is_empty():
+					continue
+				if path.size() < best_length:
+					best = candidate
+					best_length = path.size()
+	return best
+
+func _guest_route(guest: Dictionary, kind: String) -> bool:
+	var start: Vector2i = guest["cell"]
+	var target := _dance_destination() if kind == "dance" else _service_destination(kind, start)
+	if target.x < 0:
+		return false
+	var path := _path_to(start, target)
+	if target != start and path.is_empty():
+		return false
+	guest["path"] = path
+	guest["destination"] = target
+	guest["state"] = "walk_" + kind
+	guest["dance"] = false
+	return true
+
+func _guest_arrived(guest: Dictionary) -> void:
+	var state: String = guest["state"]
+	if state == "walk_bar":
+		guest["state"] = "ordering"
+		guest["wait"] = randf_range(2.0, 4.0)
+	elif state == "walk_sofa":
+		guest["state"] = "resting"
+		guest["wait"] = randf_range(5.0, 9.0)
+	else:
+		guest["state"] = "dancing"
+		guest["dance"] = true
+		guest["wait"] = randf_range(9.0, 17.0)
 
 func _process(delta: float) -> void:
 	if not night_active or night_paused:
@@ -456,18 +502,33 @@ func _process(delta: float) -> void:
 		return
 	if night_time_label != null:
 		var remaining := ceili(NIGHT_DURATION - night_elapsed)
-		night_time_label.text = "TIME LEFT  %d:%02d  |  €%d TICKETS  €%d BAR" % [remaining / 60, remaining % 60, night_ticket_income, night_drink_income]
+		night_time_label.text = "TIME LEFT  %d:%02d  |  €%d TICKETS  €%d BAR" % [int(remaining / 60.0), remaining % 60, night_ticket_income, night_drink_income]
 	guest_spawn_clock += step
 	if guest_spawn_clock >= 5.0 and guests.size() < MAX_GUESTS:
 		guest_spawn_clock = 0.0
 		_spawn_guest()
 	for guest in guests:
-		if bool(guest["dance"]) and randf() < step * 0.022 * mini(_count_kind("bar"), 4):
-			night_drinks_sold += 1
-			night_drink_income += DRINK_PRICE
-			cash += DRINK_PRICE
-			_update_night_stats()
-			_refresh_economy()
+		var state: String = guest["state"]
+		if state in ["dancing", "ordering", "resting"]:
+			guest["wait"] = float(guest["wait"]) - step
+			if float(guest["wait"]) <= 0.0:
+				if state == "ordering":
+					night_drinks_sold += 1
+					night_drink_income += DRINK_PRICE
+					cash += DRINK_PRICE
+					_update_night_stats()
+					_refresh_economy()
+					guest["visits"] = int(guest["visits"]) + 1
+					if not _guest_route(guest, "dance"):
+						guest["wait"] = 4.0
+				elif state == "resting":
+					if not _guest_route(guest, "dance"):
+						guest["wait"] = 4.0
+				else:
+					var activity := "bar" if randf() < 0.65 and int(guest["visits"]) < 3 else "sofa"
+					if not _guest_route(guest, activity):
+						if not _guest_route(guest, "bar" if activity == "sofa" else "sofa"):
+							guest["wait"] = 8.0
 		var person: Node3D = guest["node"]
 		if not is_instance_valid(person):
 			continue
@@ -484,7 +545,9 @@ func _process(delta: float) -> void:
 				(arms[index] as Node3D).rotation.z = limb_side * (0.4 if guest["dance"] else 0.08)
 				(legs[index] as Node3D).rotation.x = sin(phase + float(index) * PI) * (0.23 if guest["dance"] else 0.45)
 		if guest["imported"]:
-			var desired_motion: String = "dance" if bool(guest["dance"]) else "walk"
+			var desired_motion: String = "dance" if bool(guest["dance"]) else ("idle" if str(guest["state"]) in ["ordering", "resting"] else "walk")
+			if desired_motion == "idle" and not (guest["motions"] as Dictionary).has("idle"):
+				desired_motion = "walk"
 			if guest["motion"] != desired_motion:
 				var motions: Dictionary = guest["motions"]
 				for motion_name in motions:
@@ -495,16 +558,20 @@ func _process(delta: float) -> void:
 			visual.rotation.z = sin(phase * 0.5) * 0.11
 			continue
 		visual.rotation.z = 0.0
+		if str(guest["state"]) in ["ordering", "resting"]:
+			continue
 		var path: Array = guest["path"]
 		if path.is_empty():
-			guest["dance"] = true
+			_guest_arrived(guest)
 			continue
-		var target := _cell_position(path[0])
+		var target_cell: Vector2i = path[0]
+		var target := _cell_position(target_cell)
 		var direction := target - person.position
 		if direction.length() < 0.07:
 			path.pop_front()
+			guest["cell"] = target_cell
 			if path.is_empty():
-				guest["dance"] = true
+				_guest_arrived(guest)
 		else:
 			person.position = person.position.move_toward(target, float(guest["speed"]) * step)
 			person.rotation.y = atan2(direction.x, direction.z)
@@ -613,7 +680,7 @@ func _erase_hovered() -> void:
 		return
 	var record := _remove_object(id)
 	if not record.is_empty():
-		var refund := int(BUILD_PRICES.get(record["kind"], 0)) / 2 if record["paid"] else 0
+		var refund: int = int(int(BUILD_PRICES.get(record["kind"], 0)) / 2.0) if bool(record["paid"]) else 0
 		cash += refund
 		action_history.append({"action": "erase", "record": record, "refund": refund})
 		_refresh_economy()
