@@ -934,7 +934,8 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		inner.material_override = _disco_beam_material(0.19)
 		beam.add_child(inner)
 	spot.add_child(beam)
-	beam.visible = night_active and kind == "laser"
+	# TEMP DIAGNOSTIC: show the actual spotlight axis for DJ-side heads.
+	beam.visible = night_active and (kind == "laser" or (kind == "light" and fixture.position.z > 0.0 and absf(fixture.position.x) < 5.5))
 	beam_meshes.append(beam)
 	stage_lights.append(spot)
 	if kind == "light":
@@ -994,7 +995,9 @@ func _set_night_lighting(enabled: bool) -> void:
 	for beam in beam_meshes:
 		if is_instance_valid(beam):
 			# Only lasers use geometry; moving-head beams come from volumetric fog.
-			beam.visible = enabled and beam.get_node_or_null("LaserHalo") != null
+			var fixture := beam.get_parent().get_parent() as Node3D
+			var is_dj_light := fixture.name.begins_with("light_") and fixture.position.z > 0.0 and absf(fixture.position.x) < 5.5
+			beam.visible = enabled and (beam.get_node_or_null("LaserHalo") != null or is_dj_light)
 	for glow in dance_lights:
 		if is_instance_valid(glow):
 			glow.light_energy = 1.2 if enabled else 0.0
