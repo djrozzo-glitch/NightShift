@@ -323,6 +323,39 @@ func _path_to(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 		cell = previous[cell]
 	return result
 
+func _path_around_guests(start: Vector2i, goal: Vector2i, self_guest: Dictionary) -> Array[Vector2i]:
+	var blocked: Dictionary = {}
+	for other in guests:
+		if other == self_guest or bool(other.get("seated", false)):
+			continue
+		var other_node: Node3D = other["node"]
+		if not is_instance_valid(other_node):
+			continue
+		var location := Vector2i(roundi(other_node.position.x + 7.5), roundi(other_node.position.z + 7.5))
+		if location != start and location != goal:
+			blocked[location] = true
+	var queue: Array[Vector2i] = [start]
+	var previous: Dictionary = {start: start}
+	var index := 0
+	while index < queue.size():
+		var current: Vector2i = queue[index]
+		index += 1
+		if current == goal:
+			break
+		for direction in WALK_DIRS:
+			var neighbor: Vector2i = current + direction
+			if _walkable(neighbor) and not blocked.has(neighbor) and not previous.has(neighbor):
+				previous[neighbor] = current
+				queue.append(neighbor)
+	var result: Array[Vector2i] = []
+	if not previous.has(goal):
+		return result
+	var cell := goal
+	while cell != start:
+		result.push_front(cell)
+		cell = previous[cell]
+	return result
+
 func _cell_position(cell: Vector2i) -> Vector3:
 	return Vector3(cell.x - 7.5, float(floor_heights.get(cell, 0.0)) + 0.05, cell.y - 7.5)
 
@@ -457,7 +490,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "destination": destination, "service_object": -1})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
 	guest_count += 1
 	night_ticket_income += TICKET_PRICE
 	cash += TICKET_PRICE
@@ -514,6 +547,8 @@ func _guest_route(guest: Dictionary, kind: String) -> bool:
 	guest["destination"] = target
 	guest["service_object"] = service_object
 	guest["state"] = "walk_" + kind
+	guest["blocked_time"] = 0.0
+	guest["repath_cooldown"] = 0.0
 	guest["dance"] = false
 	return true
 
@@ -716,7 +751,15 @@ func _process(delta: float) -> void:
 		else:
 			var next_position := person.position.move_toward(target, float(guest["speed"]) * step)
 			if _guest_too_close(next_position, guest):
+				guest["blocked_time"] = float(guest.get("blocked_time", 0.0)) + step
+				guest["repath_cooldown"] = maxf(0.0, float(guest.get("repath_cooldown", 0.0)) - step)
+				if float(guest["blocked_time"]) >= 0.65 and float(guest["repath_cooldown"]) <= 0.0:
+					var detour := _path_around_guests(guest["cell"], guest["destination"], guest)
+					if not detour.is_empty():
+						guest["path"] = detour
+					guest["repath_cooldown"] = randf_range(0.7, 1.3)
 				continue
+			guest["blocked_time"] = 0.0
 			person.position = next_position
 			person.rotation.y = atan2(direction.x, direction.z)
 
