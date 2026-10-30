@@ -1638,13 +1638,14 @@ func _build_overlay() -> void:
 	add_child(ui)
 	var theme_root := Control.new()
 	theme_root.theme = UIStyle.make_theme()
+	theme_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(theme_root)
 	# Compact management dropdown; all actions stay in the game.
 	var manage_button := MenuButton.new()
-	manage_button.text = "☰  CLUB"
-	manage_button.position = Vector2(330, 18)
-	manage_button.custom_minimum_size = Vector2(120, 38)
+	manage_button.text = "☰  CLUB MENU"
+	manage_button.position = Vector2(20, 150)
+	manage_button.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(manage_button)
 	theme_root.add_child(manage_button)
 	var popup := manage_button.get_popup()
@@ -1667,7 +1668,8 @@ func _build_overlay() -> void:
 	new_confirmation.confirmed.connect(_new_club)
 	var title := Label.new()
 	title.text = "ABLETON GYM"
-	UIStyle.decorate_label(title, 23)
+	UIStyle.decorate_label(title, 24)
+	title.add_theme_color_override("font_color", Color("#f4eafa"))
 	title.position = Vector2(20, 20)
 	
 	theme_root.add_child(title)
@@ -1678,28 +1680,28 @@ func _build_overlay() -> void:
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
 		theme_root.add_child(warning)
 	economy_label = Label.new()
-	economy_label.position = Vector2(20, 57)
-	UIStyle.decorate_label(economy_label, 18)
+	economy_label.position = Vector2(20, 63)
+	UIStyle.decorate_label(economy_label, 15)
 	theme_root.add_child(economy_label)
 	_refresh_economy()
 	notice_label = Label.new()
-	notice_label.position = Vector2(20, 86)
+	notice_label.position = Vector2(20, 97)
 	UIStyle.decorate_label(notice_label, 13, true)
 	theme_root.add_child(notice_label)
 	status_label = Label.new()
-	status_label.position = Vector2(20, 113)
+	status_label.position = Vector2(20, 122)
 	status_label.text = "MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
 	UIStyle.decorate_label(status_label, 13, true)
 	theme_root.add_child(status_label)
 	build_toggle = Button.new()
 	build_toggle.text = "BUILD  [B]"
-	build_toggle.position = Vector2(20, 151)
+	build_toggle.position = Vector2(20, 202)
 	build_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(build_toggle, true)
 	build_toggle.pressed.connect(_toggle_build_panel)
 	theme_root.add_child(build_toggle)
 	build_panel = PanelContainer.new()
-	build_panel.position = Vector2(20, 198)
+	build_panel.position = Vector2(20, 296)
 	build_panel.visible = false
 	UIStyle.decorate_panel(build_panel)
 	theme_root.add_child(build_panel)
@@ -1720,7 +1722,7 @@ func _build_overlay() -> void:
 	choices.add_child(erase_button)
 	var progression_toggle := Button.new()
 	progression_toggle.text = "★ PROGRESSION"
-	progression_toggle.position = Vector2(20, 205)
+	progression_toggle.position = Vector2(20, 249)
 	progression_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(progression_toggle, true)
 	progression_toggle.pressed.connect(func() -> void:
@@ -1731,7 +1733,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(progression_toggle)
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
-	progression_panel.position = Vector2(20, 255)
+	progression_panel.position = Vector2(20, 296)
 	progression_panel.custom_minimum_size = Vector2(290, 0)
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
@@ -1771,7 +1773,7 @@ func _build_overlay() -> void:
 	_refresh_progression()
 	var night_panel := PanelContainer.new()
 	night_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	night_panel.offset_left = -315
+	night_panel.offset_left = -335
 	night_panel.offset_right = -20
 	night_panel.offset_top = 20
 	night_panel.offset_bottom = 20
@@ -1831,10 +1833,10 @@ func _build_overlay() -> void:
 	speed_controls.add_child(night_speed_button)
 	night_report_panel = PanelContainer.new()
 	night_report_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	night_report_panel.offset_left = -315
+	night_report_panel.offset_left = -335
 	night_report_panel.offset_right = -20
-	night_report_panel.offset_top = 300
-	night_report_panel.offset_bottom = 300
+	night_report_panel.offset_top = 330
+	night_report_panel.offset_bottom = 330
 	night_report_panel.custom_minimum_size = Vector2(275, 0)
 	night_report_panel.visible = false
 	UIStyle.decorate_panel(night_report_panel)
@@ -1850,13 +1852,13 @@ func _build_overlay() -> void:
 	_refresh_readiness()
 	var help_button := Button.new()
 	help_button.text = "?  HELP"
-	help_button.position = Vector2(200, 205)
+	help_button.position = Vector2(200, 249)
 	UIStyle.decorate_button(help_button)
 	help_button.pressed.connect(_toggle_help)
 	theme_root.add_child(help_button)
 	help_label = Label.new()
 	help_label.text = "Drag: rotate   Shift+drag: pan\nWheel/pinch or +/-: zoom\nR: rotate furniture / reset camera\nB: build   X: erase   Ctrl/Cmd+Z: undo"
-	help_label.position = Vector2(330, 205)
+	help_label.position = Vector2(330, 249)
 	help_label.visible = false
 	UIStyle.decorate_label(help_label, 13, true)
 	theme_root.add_child(help_label)
