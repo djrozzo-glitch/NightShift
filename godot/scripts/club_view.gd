@@ -827,7 +827,7 @@ func _build_stage_lights() -> void:
 			spot.look_at(Vector3(0.0, 2.4, 0.0), Vector3.UP)
 		else:
 			# Aim from the fixture lens forward and slightly upward.
-			spot.look_at(spot.global_position + fixture.global_basis * Vector3(0.0, 0.8, -3.0), Vector3.UP)
+			spot.look_at(spot.global_position + fixture.global_basis * Vector3(0.0, 0.8, 3.0), Vector3.UP)
 		var beam := MeshInstance3D.new()
 		var cone := CylinderMesh.new()
 		cone.top_radius = 0.035
@@ -894,7 +894,7 @@ func _animate_stage_lights(delta: float) -> void:
 		else:
 			# Keep the beam pointing away from the lens, above the horizon.
 			var fixture := spot.get_parent() as Node3D
-			var direction := Vector3(sin(phase) * 0.65, 0.8 + sin(phase * 0.7) * 0.25, -3.0)
+			var direction := Vector3(sin(phase) * 0.65, 0.8 + sin(phase * 0.7) * 0.25, 3.0)
 			spot.look_at(spot.global_position + fixture.global_basis * direction, Vector3.UP)
 		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
 	# Each light has a different phase; no part of the floor goes fully dark.
