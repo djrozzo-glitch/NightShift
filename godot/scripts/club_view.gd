@@ -49,6 +49,21 @@ var guest_layer: Node3D
 var guests: Array[Dictionary] = []
 var guest_spawn_clock := 0.0
 var guest_count := 0
+const NIGHT_DURATION := 180.0
+const TICKET_PRICE := 20
+const DRINK_PRICE := 8
+const STAFF_COST := 120
+var night_elapsed := 0.0
+var night_speed := 1.0
+var night_paused := false
+var night_ticket_income := 0
+var night_drink_income := 0
+var night_dj_fee := 0
+var night_drinks_sold := 0
+var night_time_label: Label
+var night_speed_button: Button
+var night_pause_button: Button
+var night_report: AcceptDialog
 const MAX_GUESTS := 28
 const GUEST_CHARACTER_NAMES := ["baggy_m", "fashion_f", "jungle_f", "raver_f", "raver_m"]
 var guest_models: Dictionary = {}
@@ -423,20 +438,36 @@ func _spawn_guest() -> void:
 	var appearance := _guest_visual(person)
 	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85)})
 	guest_count += 1
+	night_ticket_income += TICKET_PRICE
+	cash += TICKET_PRICE
+	_refresh_economy()
 	_refresh_readiness()
 
 func _process(delta: float) -> void:
-	if not night_active:
+	if not night_active or night_paused:
 		return
-	guest_spawn_clock += delta
-	if guest_spawn_clock >= 1.1 and guests.size() < MAX_GUESTS:
+	var step := delta * night_speed
+	night_elapsed += step
+	if night_elapsed >= NIGHT_DURATION:
+		_end_night()
+		return
+	if night_time_label != null:
+		var remaining := ceili(NIGHT_DURATION - night_elapsed)
+		night_time_label.text = "TIME LEFT  %d:%02d  |  €%d TICKETS  €%d BAR" % [remaining / 60, remaining % 60, night_ticket_income, night_drink_income]
+	guest_spawn_clock += step
+	if guest_spawn_clock >= 5.0 and guests.size() < MAX_GUESTS:
 		guest_spawn_clock = 0.0
 		_spawn_guest()
 	for guest in guests:
+		if bool(guest["dance"]) and randf() < step * 0.022 * mini(_count_kind("bar"), 4):
+			night_drinks_sold += 1
+			night_drink_income += DRINK_PRICE
+			cash += DRINK_PRICE
+			_refresh_economy()
 		var person: Node3D = guest["node"]
 		if not is_instance_valid(person):
 			continue
-		guest["phase"] = float(guest["phase"]) + delta * (5.0 if guest["dance"] else 8.0)
+		guest["phase"] = float(guest["phase"]) + step * (5.0 if guest["dance"] else 8.0)
 		var phase := float(guest["phase"])
 		var visual: Node3D = guest["visual"]
 		visual.position.y = absf(sin(phase)) * (0.07 if guest["dance"] else 0.025)
@@ -456,7 +487,7 @@ func _process(delta: float) -> void:
 					(motions[motion_name] as Node3D).visible = motion_name == desired_motion
 				guest["motion"] = desired_motion
 		if guest["dance"]:
-			person.rotation.y += delta * 0.5
+			person.rotation.y += step * 0.5
 			visual.rotation.z = sin(phase * 0.5) * 0.11
 			continue
 		visual.rotation.z = 0.0
@@ -471,7 +502,7 @@ func _process(delta: float) -> void:
 			if path.is_empty():
 				guest["dance"] = true
 		else:
-			person.position = person.position.move_toward(target, float(guest["speed"]) * delta)
+			person.position = person.position.move_toward(target, float(guest["speed"]) * step)
 			person.rotation.y = atan2(direction.x, direction.z)
 
 func _clear_guests() -> void:
@@ -489,6 +520,15 @@ func _start_night() -> void:
 	var dj: Dictionary = DJ_ROSTER[dj_picker.selected]
 	var fee := int(dj["fee"])
 	cash -= fee
+	night_dj_fee = fee
+	night_elapsed = 0.0
+	night_paused = false
+	night_speed = 1.0
+	night_ticket_income = 0
+	night_drink_income = 0
+	night_drinks_sold = 0
+	if night_report != null:
+		night_report.hide()
 	night_number += 1
 	night_active = true
 	_clear_guests()
@@ -501,15 +541,31 @@ func _start_night() -> void:
 	_refresh_readiness()
 	_notify("NIGHT %d  |  %s booked  |  -€%d" % [night_number, dj["name"], fee])
 	start_night_button.text = "END NIGHT"
+	night_pause_button.disabled = false
+	night_speed_button.disabled = false
+	night_pause_button.text = "PAUSE"
+	night_speed_button.text = "1× SPEED"
+	night_time_label.text = "TIME LEFT  3:00  |  €0 TICKETS  €0 BAR"
 
 func _end_night() -> void:
 	if not night_active:
 		return
 	night_active = false
+	var costs := night_dj_fee + STAFF_COST
+	cash -= STAFF_COST
 	_clear_guests()
+	_refresh_economy()
+	night_pause_button.disabled = true
+	night_speed_button.disabled = true
+	night_time_label.text = "NIGHT COMPLETE"
+	var revenue := night_ticket_income + night_drink_income
+	var profit := revenue - costs
+	night_report.title = "NIGHT %d REPORT" % night_number
+	night_report.dialog_text = "GUESTS: %d\nTICKETS: €%d\nDRINKS SOLD: %d\nBAR REVENUE: €%d\n\nTOTAL REVENUE: €%d\nDJ FEE: -€%d\nSTAFF: -€%d\n\nNET PROFIT: %s€%d" % [guest_count, night_ticket_income, night_drinks_sold, night_drink_income, revenue, night_dj_fee, STAFF_COST, "+" if profit >= 0 else "-", absi(profit)]
+	night_report.popup_centered(Vector2i(410, 350))
 	start_night_button.text = "START NIGHT"
 	_refresh_readiness()
-	_notify("Night %d ended  |  %d guests visited  |  Revenue coming next" % [night_number, guest_count])
+	_notify("Night %d ended  |  %d guests visited  |  Profit %s€%d" % [night_number, "+" if profit >= 0 else "-", absi(profit)])
 
 func _night_button_pressed() -> void:
 	if night_active:
@@ -866,6 +922,33 @@ func _build_overlay() -> void:
 	start_night_button.pressed.connect(_night_button_pressed)
 	start_night_button.custom_minimum_size = Vector2(255, 48)
 	night_controls.add_child(start_night_button)
+	night_time_label = Label.new()
+	night_time_label.text = "3-MINUTE NIGHT  |  TICKETS €20  |  DRINKS €8"
+	UIStyle.decorate_label(night_time_label, 12, true)
+	night_controls.add_child(night_time_label)
+	var speed_controls := HBoxContainer.new()
+	night_controls.add_child(speed_controls)
+	night_pause_button = Button.new()
+	night_pause_button.text = "PAUSE"
+	night_pause_button.disabled = true
+	UIStyle.decorate_button(night_pause_button)
+	night_pause_button.pressed.connect(func() -> void:
+		night_paused = not night_paused
+		night_pause_button.text = "RESUME" if night_paused else "PAUSE"
+	)
+	speed_controls.add_child(night_pause_button)
+	night_speed_button = Button.new()
+	night_speed_button.text = "1× SPEED"
+	night_speed_button.disabled = true
+	UIStyle.decorate_button(night_speed_button)
+	night_speed_button.pressed.connect(func() -> void:
+		night_speed = 2.0 if night_speed == 1.0 else 1.0
+		night_speed_button.text = "2× SPEED" if night_speed == 2.0 else "1× SPEED"
+	)
+	speed_controls.add_child(night_speed_button)
+	night_report = AcceptDialog.new()
+	night_report.title = "NIGHT REPORT"
+	ui.add_child(night_report)
 	_refresh_readiness()
 	var help_button := Button.new()
 	help_button.text = "?  HELP"
