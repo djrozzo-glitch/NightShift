@@ -1005,6 +1005,11 @@ func _animate_stage_lights(delta: float) -> void:
 		var spot := stage_lights[index]
 		if not is_instance_valid(spot):
 			continue
+		# TEMP DIAGNOSTIC: isolate the two moving heads beside the DJ booth.
+		# Other moving heads stay off even while the animation updates.
+		if disco_spots.has(spot) and spot.get_parent().name not in ["light_5_10", "light_10_10"]:
+			spot.light_energy = 0.0
+			continue
 		var phase := lighting_clock * (0.8 + float(index % 4) * 0.17) + float(index) * 1.7
 		if laser_spots.has(spot):
 			var aim := Vector3(sin(phase) * 1.8, 2.4 + sin(phase * 0.7) * 0.45, cos(phase * 0.8) * 1.8)
@@ -1033,6 +1038,8 @@ func _animate_stage_lights(delta: float) -> void:
 		disco.light_color = color
 		var beat := pow(maxf(0.0, sin(lighting_clock * 4.0 + float(index) * 1.7)), 8.0)
 		disco.light_energy = 3.2 + 2.2 * beat
+		if disco.get_parent().name not in ["light_5_10", "light_10_10"]:
+			disco.light_energy = 0.0
 		var cone := disco.get_node_or_null("VisibleBeam") as MeshInstance3D
 		if cone == null:
 			# Older beams are unnamed; locate the first mesh child.
