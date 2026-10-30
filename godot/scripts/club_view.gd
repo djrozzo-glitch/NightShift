@@ -809,6 +809,29 @@ func _build_bouncer() -> void:
 				player.play(animation_name)
 				break
 
+func _disco_beam_material(opacity: float) -> ShaderMaterial:
+	var shader := Shader.new()
+	shader.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never;
+uniform vec4 beam_color : source_color = vec4(0.6, 0.3, 1.0, 1.0);
+uniform float opacity = 0.08;
+void fragment() {
+	float along = UV.y;
+	float fade_start = smoothstep(0.0, 0.22, along);
+	float fade_end = 1.0 - smoothstep(0.68, 1.0, along);
+	float edge_softness = 0.35 + 0.65 * abs(dot(normalize(NORMAL), normalize(VIEW)));
+	ALBEDO = beam_color.rgb;
+	EMISSION = beam_color.rgb * 0.65;
+	ALPHA = opacity * fade_start * fade_end * edge_softness;
+}
+"""
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	material.set_shader_parameter("opacity", opacity)
+	return material
+
+
 func _build_stage_lights() -> void:
 	for record in placed_objects.values():
 		if str(record["kind"]) not in ["light", "laser"]:
@@ -833,17 +856,20 @@ func _build_stage_lights() -> void:
 		var beam := MeshInstance3D.new()
 		var cone := CylinderMesh.new()
 		cone.top_radius = 0.012 if str(record["kind"]) == "laser" else 0.035
-		cone.bottom_radius = 0.95 if str(record["kind"]) == "light" else 0.012
-		cone.height = 7.0 if str(record["kind"]) == "laser" else 3.5
+		cone.bottom_radius = 0.62 if str(record["kind"]) == "light" else 0.012
+		cone.height = 7.0 if str(record["kind"]) == "laser" else 3.8
+		if str(record["kind"]) == "light":
+			cone.cap_top = false
+			cone.cap_bottom = false
 		beam.mesh = cone
 		beam.rotation_degrees.x = 90.0
-		beam.position = Vector3(0.0, 0.0, -3.5 if str(record["kind"]) == "laser" else -1.75)
+		beam.position = Vector3(0.0, 0.0, -3.5 if str(record["kind"]) == "laser" else -1.9)
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.albedo_color = Color(0.6, 0.25, 1.0, 0.09) if str(record["kind"]) == "light" else Color(0.19, 1.0, 0.39, 0.95)
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		beam.material_override = mat
+		beam.material_override = _disco_beam_material(0.085) if str(record["kind"]) == "light" else mat
 		if str(record["kind"]) == "laser":
 			# Soft translucent halo around the bright, narrow laser core.
 			var halo := MeshInstance3D.new()
@@ -866,15 +892,17 @@ func _build_stage_lights() -> void:
 			inner.name = "DiscoCore"
 			var inner_mesh := CylinderMesh.new()
 			inner_mesh.top_radius = 0.02
-			inner_mesh.bottom_radius = 0.34
-			inner_mesh.height = 3.5
+			inner_mesh.bottom_radius = 0.23
+			inner_mesh.height = 3.8
+			inner_mesh.cap_top = false
+			inner_mesh.cap_bottom = false
 			inner.mesh = inner_mesh
 			var inner_mat := StandardMaterial3D.new()
 			inner_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			inner_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			inner_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 			inner_mat.albedo_color = Color(0.65, 0.35, 1.0, 0.18)
-			inner.material_override = inner_mat
+			inner.material_override = _disco_beam_material(0.13)
 			beam.add_child(inner)
 		spot.add_child(beam)
 		beam.visible = false
@@ -951,18 +979,16 @@ func _animate_stage_lights(delta: float) -> void:
 					cone = child as MeshInstance3D
 					break
 		if cone != null:
-			var outer_mat := cone.material_override as StandardMaterial3D
+			var outer_mat := cone.material_override as ShaderMaterial
 			if outer_mat != null:
-				var outer_color := color
-				outer_color.a = 0.075 + 0.045 * beat
-				outer_mat.albedo_color = outer_color
+				outer_mat.set_shader_parameter("beam_color", color)
+				outer_mat.set_shader_parameter("opacity", 0.07 + 0.035 * beat)
 			var inner := cone.get_node_or_null("DiscoCore") as MeshInstance3D
 			if inner != null:
-				var inner_material := inner.material_override as StandardMaterial3D
+				var inner_material := inner.material_override as ShaderMaterial
 				if inner_material != null:
-					var core_color := color
-					core_color.a = 0.15 + 0.11 * beat
-					inner_material.albedo_color = core_color
+					inner_material.set_shader_parameter("beam_color", color)
+					inner_material.set_shader_parameter("opacity", 0.11 + 0.06 * beat)
 	# Each light has a different phase; no part of the floor goes fully dark.
 	for index in range(dance_lights.size()):
 		var glow := dance_lights[index]
