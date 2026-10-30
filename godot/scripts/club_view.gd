@@ -337,7 +337,7 @@ func _load_guest_models() -> void:
 	guest_models.clear()
 	for character_name in GUEST_CHARACTER_NAMES:
 		var variants: Dictionary = {}
-		for motion in ["idle", "walk", "dance"]:
+		for motion in ["idle", "walk", "dance", "sit", "drink", "chat"]:
 			var path := "res://characters/%s_%s.glb" % [character_name, motion]
 			if ResourceLoader.exists(path):
 				var packed := load(path) as PackedScene
@@ -390,7 +390,7 @@ func _guest_visual(parent: Node3D) -> Dictionary:
 		var character_name: String = guest_models.keys().pick_random()
 		var variants: Dictionary = guest_models[character_name]
 		var imported_nodes: Dictionary = {}
-		for motion in ["idle", "walk", "dance"]:
+		for motion in ["idle", "walk", "dance", "sit", "drink", "chat"]:
 			if not variants.has(motion):
 				continue
 			var imported := _guest_animated_model(variants[motion], visual)
@@ -545,9 +545,21 @@ func _process(delta: float) -> void:
 				(arms[index] as Node3D).rotation.z = limb_side * (0.4 if guest["dance"] else 0.08)
 				(legs[index] as Node3D).rotation.x = sin(phase + float(index) * PI) * (0.23 if guest["dance"] else 0.45)
 		if guest["imported"]:
-			var desired_motion: String = "dance" if bool(guest["dance"]) else ("idle" if str(guest["state"]) in ["ordering", "resting"] else "walk")
-			if desired_motion == "idle" and not (guest["motions"] as Dictionary).has("idle"):
-				desired_motion = "walk"
+			var desired_motion: String = "walk"
+			var motions: Dictionary = guest["motions"]
+			if bool(guest["dance"]):
+				desired_motion = "dance"
+			elif str(guest["state"]) == "resting":
+				desired_motion = "sit" if motions.has("sit") else "idle"
+			elif str(guest["state"]) == "ordering":
+				if motions.has("drink"):
+					desired_motion = "drink"
+				elif motions.has("chat"):
+					desired_motion = "chat"
+				else:
+					desired_motion = "idle"
+			if not motions.has(desired_motion):
+				desired_motion = "idle" if motions.has("idle") else "walk"
 			if guest["motion"] != desired_motion:
 				var motions: Dictionary = guest["motions"]
 				for motion_name in motions:
