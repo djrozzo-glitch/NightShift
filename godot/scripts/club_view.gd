@@ -40,6 +40,23 @@ var reputation := 100
 var club_level := 1
 var club_xp := 0
 var total_xp := 0
+var perk_points := 0
+var unlocked_perks: Array[String] = []
+var progression_panel: PanelContainer
+var progression_details: Label
+var perk_buttons: Array[Button] = []
+var expansion_details: Label
+const LEVEL_NAMES := ["Illegal Basement", "Word of Mouth", "Local Favorite", "Afterhours", "Underground Institution", "Citywide Buzz", "Cult Following", "Scene Leader", "International Attention", "Legendary Venue"]
+const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "laser": 2, "sofa": 3, "table": 4}
+const PERK_OPTIONS := [
+	{"id": "connections", "name": "Local Connections", "effect": "-5% DJ fees", "branch": "MUSIC"},
+	{"id": "resident", "name": "Resident Deal", "effect": "-10% DJ fees", "branch": "MUSIC"},
+	{"id": "lineups", "name": "Better Lineups", "effect": "+8% attendance", "branch": "MUSIC"},
+	{"id": "happy", "name": "Happy Hour", "effect": "+5% bar revenue", "branch": "BAR"},
+	{"id": "premium", "name": "Premium Drinks", "effect": "+10% bar revenue", "branch": "BAR"},
+	{"id": "word", "name": "Word of Mouth", "effect": "+5% attendance", "branch": "COMMUNITY"},
+	{"id": "regulars", "name": "Regular Crowd", "effect": "+10% attendance", "branch": "COMMUNITY"}
+]
 var last_rep_change := 0
 var last_xp_gain := 0
 var economy_label: Label
@@ -82,6 +99,7 @@ func _award_xp(amount: int) -> int:
 	while club_xp >= _xp_needed(club_level):
 		club_xp -= _xp_needed(club_level)
 		club_level += 1
+		perk_points += 1
 		gained_levels += 1
 	return gained_levels
 
@@ -287,6 +305,7 @@ func _refresh_economy() -> void:
 	_refresh_readiness()
 	if economy_label != null:
 		economy_label.text = "CASH  €%d     REP  %d/100     LEVEL  %d  |  XP %d/%d" % [cash, reputation, club_level, club_xp, _xp_needed(club_level)]
+	_refresh_progression()
 
 func _count_kind(kind: String) -> int:
 	var count := 0
@@ -306,7 +325,7 @@ func _readiness_issues() -> Array[String]:
 	if _count_kind("wc") < 1:
 		issues.append("restroom")
 	if dj_picker != null and dj_picker.selected >= 0:
-		var fee := int(DJ_ROSTER[dj_picker.selected]["fee"])
+		var fee := _dj_fee(dj_picker.selected)
 		if cash < fee:
 			issues.append("€%d DJ fee" % fee)
 	return issues
@@ -682,7 +701,7 @@ func _process(delta: float) -> void:
 		var remaining := ceili(NIGHT_DURATION - night_elapsed)
 		night_time_label.text = "TIME LEFT  %d:%02d  |  €%d TICKETS  €%d BAR" % [int(remaining / 60.0), remaining % 60, night_ticket_income, night_drink_income]
 	guest_spawn_clock += step
-	if guest_spawn_clock >= clampf(6.5 - float(club_level - 1) * 0.12 - float(reputation) * 0.018, 2.4, 7.0) and guests.size() < MAX_GUESTS:
+	if guest_spawn_clock >= clampf((6.5 - float(club_level - 1) * 0.12 - float(reputation) * 0.018) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < MAX_GUESTS:
 		guest_spawn_clock = 0.0
 		_spawn_guest()
 	for guest in guests:
@@ -711,8 +730,9 @@ func _process(delta: float) -> void:
 					# A guest only buys when thirsty enough and able to pay.
 					if float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= DRINK_PRICE:
 						night_drinks_sold += 1
-						night_drink_income += DRINK_PRICE
-						cash += DRINK_PRICE
+						var sale := roundi(float(DRINK_PRICE) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0)))
+						night_drink_income += sale
+						cash += sale
 						guest["wallet"] = int(guest["wallet"]) - DRINK_PRICE
 						guest["thirst"] = maxf(0.0, float(guest["thirst"]) - 0.65)
 						_update_night_stats()
@@ -1103,7 +1123,7 @@ func _start_night() -> void:
 	if night_active or not _readiness_issues().is_empty() or dj_picker.selected < 0:
 		return
 	var dj: Dictionary = DJ_ROSTER[dj_picker.selected]
-	var fee := int(dj["fee"])
+	var fee := _dj_fee(dj_picker.selected)
 	cash -= fee
 	night_dj_fee = fee
 	night_elapsed = 0.0
@@ -1323,6 +1343,9 @@ func _update_hover(screen_pos: Vector2) -> void:
 		_refresh_preview()
 
 func _place_selected() -> void:
+	if club_level < int(LEVEL_UNLOCKS.get(selected_kind, 1)):
+		_notify("Unlock at level %d" % int(LEVEL_UNLOCKS[selected_kind]))
+		return
 	if not _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn):
 		return
 	if night_active:
@@ -1363,6 +1386,9 @@ func _toggle_help() -> void:
 
 func _choose_kind(kind: String) -> void:
 	if night_active:
+		return
+	if club_level < int(LEVEL_UNLOCKS.get(kind, 1)):
+		_notify("%s unlocks at level %d" % [kind.capitalize(), int(LEVEL_UNLOCKS[kind])])
 		return
 	selected_kind = kind
 	erase_mode = false
@@ -1456,6 +1482,46 @@ func _update_camera() -> void:
 	pivot.rotation = Vector3(tilt, yaw, 0)
 	camera.size = zoom
 
+func _dj_fee(index: int) -> int:
+	var discount := (0.05 if unlocked_perks.has("connections") else 0.0) + (0.10 if unlocked_perks.has("resident") else 0.0)
+	return roundi(float(DJ_ROSTER[index]["fee"]) * (1.0 - discount))
+
+
+func _buy_perk(id: String) -> void:
+	if perk_points <= 0 or unlocked_perks.has(id):
+		return
+	var option_index := -1
+	for i in range(PERK_OPTIONS.size()):
+		if PERK_OPTIONS[i]["id"] == id:
+			option_index = i
+			break
+	if option_index < 0:
+		return
+	# Perks in each branch are purchased in order.
+	if option_index > 0 and PERK_OPTIONS[option_index - 1]["branch"] == PERK_OPTIONS[option_index]["branch"] and not unlocked_perks.has(str(PERK_OPTIONS[option_index - 1]["id"])):
+		_notify("Unlock the previous perk in this branch first")
+		return
+	perk_points -= 1
+	unlocked_perks.append(id)
+	_refresh_progression()
+	_refresh_readiness()
+	_notify("PERK UNLOCKED: %s" % PERK_OPTIONS[option_index]["name"])
+
+
+func _refresh_progression() -> void:
+	if progression_details == null:
+		return
+	var level_name: String = LEVEL_NAMES[mini(club_level - 1, LEVEL_NAMES.size() - 1)]
+	progression_details.text = "LVL %d  ·  %s\nXP %d / %d     ·     PERK POINTS %d" % [club_level, level_name, club_xp, _xp_needed(club_level), perk_points]
+	for i in range(perk_buttons.size()):
+		var option: Dictionary = PERK_OPTIONS[i]
+		var owned := unlocked_perks.has(str(option["id"]))
+		perk_buttons[i].text = "%s %s  ·  %s" % ["✓" if owned else "✦", option["name"], option["effect"]]
+		perk_buttons[i].disabled = owned or perk_points <= 0
+	if expansion_details != null:
+		expansion_details.text = "NEXT BIG GOAL  ·  EXPAND 16×16 → 22×22\n€%d / €15,000   ·   REP %d/70   ·   LVL %d/5\n%s" % [cash, reputation, club_level, "Requirements met — expansion coming next" if cash >= 15000 and reputation >= 70 and club_level >= 5 else "Build your club to unlock expansion"]
+
+
 func _build_overlay() -> void:
 	var ui := CanvasLayer.new()
 	add_child(ui)
@@ -1502,7 +1568,7 @@ func _build_overlay() -> void:
 	build_panel.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
-		button.text = "%s   €%d" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), int(BUILD_PRICES.get(kind, 0))]
+		button.text = "%s   €%d%s" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), int(BUILD_PRICES.get(kind, 0)), "  [LVL %d]" % int(LEVEL_UNLOCKS[kind]) if LEVEL_UNLOCKS.has(kind) else ""]
 		button.custom_minimum_size = Vector2(142, 34)
 		UIStyle.decorate_button(button)
 		button.pressed.connect(_choose_kind.bind(kind))
@@ -1512,6 +1578,45 @@ func _build_overlay() -> void:
 	UIStyle.decorate_button(erase_button)
 	erase_button.pressed.connect(_enable_erase)
 	choices.add_child(erase_button)
+	# Browser-style progression and perks, positioned under the build controls.
+	progression_panel = PanelContainer.new()
+	progression_panel.position = Vector2(20, 255)
+	progression_panel.custom_minimum_size = Vector2(290, 0)
+	UIStyle.decorate_panel(progression_panel)
+	ui.add_child(progression_panel)
+	var progress_content := VBoxContainer.new()
+	progress_content.add_theme_constant_override("separation", 6)
+	progression_panel.add_child(progress_content)
+	var progress_heading := Label.new()
+	progress_heading.text = "CLUB PROGRESSION"
+	UIStyle.decorate_label(progress_heading, 16)
+	progress_content.add_child(progress_heading)
+	progression_details = Label.new()
+	UIStyle.decorate_label(progression_details, 13)
+	progress_content.add_child(progression_details)
+	for branch in ["MUSIC", "BAR", "COMMUNITY"]:
+		var branch_label := Label.new()
+		branch_label.text = "✦ " + branch + " PERKS"
+		UIStyle.decorate_label(branch_label, 12, true)
+		progress_content.add_child(branch_label)
+		for option in PERK_OPTIONS:
+			if option["branch"] != branch:
+				continue
+			var perk_button := Button.new()
+			perk_button.custom_minimum_size = Vector2(270, 30)
+			UIStyle.decorate_button(perk_button)
+			perk_button.pressed.connect(_buy_perk.bind(str(option["id"])))
+			progress_content.add_child(perk_button)
+			perk_buttons.append(perk_button)
+	var expansion_heading := Label.new()
+	expansion_heading.text = "✦ NEXT BIG GOAL"
+	UIStyle.decorate_label(expansion_heading, 14)
+	progress_content.add_child(expansion_heading)
+	expansion_details = Label.new()
+	UIStyle.decorate_label(expansion_details, 12, true)
+	expansion_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	progress_content.add_child(expansion_details)
+	_refresh_progression()
 	var night_panel := PanelContainer.new()
 	night_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	night_panel.offset_left = -315
