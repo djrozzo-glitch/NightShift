@@ -847,7 +847,7 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
 	spot.light_energy = 4.0 if night_active else 0.0
 	spot.shadow_enabled = false
-	spot.light_volumetric_fog_energy = 75.0 if kind == "light" else 0.0
+	spot.light_volumetric_fog_energy = 6.0 if kind == "light" else 0.0
 	fixture.add_child(spot)
 	if kind == "light":
 		# Each moving head gets its own small fog field, so beams are
@@ -858,8 +858,8 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		fog.size = Vector3(3.2, 3.2, 8.0)
 		fog.position = Vector3(0.0, 0.0, -3.5)
 		var fog_material := FogMaterial.new()
-		fog_material.density = 0.12
-		fog_material.albedo = Color("#d0c8dd")
+		fog_material.density = 0.018
+		fog_material.albedo = Color("#8c829e")
 		fog.material = fog_material
 		# Follow the spotlight's animated direction instead of the static fixture.
 		spot.add_child(fog)
