@@ -823,14 +823,15 @@ func _build_stage_lights() -> void:
 		spot.shadow_enabled = false
 		fixture.add_child(spot)
 		# Aim the beam from the projector toward the room, slightly upward.
-		spot.rotation_degrees.x = -58.0 if str(record["kind"]) == "laser" else -90.0
+		spot.rotation_degrees.x = 22.0 if str(record["kind"]) == "laser" else -90.0
 		var beam := MeshInstance3D.new()
 		var cone := CylinderMesh.new()
 		cone.top_radius = 0.035
 		cone.bottom_radius = 0.7 if str(record["kind"]) == "light" else 0.055
 		cone.height = 3.5
 		beam.mesh = cone
-		beam.position = Vector3(0.0, -1.75, 0.0)
+		beam.rotation_degrees.x = 90.0
+		beam.position = Vector3(0.0, 0.0, -1.75)
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -884,7 +885,7 @@ func _animate_stage_lights(delta: float) -> void:
 			continue
 		var phase := lighting_clock * (0.8 + float(index % 4) * 0.17) + float(index) * 1.7
 		if laser_spots.has(spot):
-			spot.rotation = Vector3(deg_to_rad(-58.0) + sin(phase) * 0.13, sin(phase * 0.6) * 0.45, cos(phase) * 0.16)
+			spot.rotation = Vector3(deg_to_rad(22.0) + sin(phase) * 0.10, sin(phase * 0.6) * 0.45, cos(phase) * 0.10)
 		else:
 			spot.rotation = Vector3(-PI * 0.5 + sin(phase) * 0.25, sin(phase * 0.6) * 0.45, cos(phase) * 0.25)
 		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
