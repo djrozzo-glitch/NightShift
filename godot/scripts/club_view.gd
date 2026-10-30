@@ -842,10 +842,6 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	spot.name = "ClubSpot"
 	# Laser emission begins at the projector lens, not above its housing.
 	spot.position = Vector3(0.0, 0.12, 0.0) if kind == "laser" else Vector3(0.0, 0.77, -0.19)
-	# Diagnostic: lift the DJ-side lights clear of the fixture housing.
-	# If these beams appear, the previous lens offset was inside the GLB.
-	if kind == "light" and fixture.position.z > 0.0 and absf(fixture.position.x) < 5.5:
-		spot.position = Vector3(0.0, 1.35, -0.45)
 	spot.spot_range = 14.0 if kind == "light" else 11.0
 	spot.spot_angle = 25.0 if kind == "light" else 13.0
 	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
@@ -872,13 +868,9 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	if kind == "laser":
 		spot.look_at(Vector3(0.0, 2.4, 0.0), Vector3.UP)
 	else:
-		# Aim inward from the lens, slightly upward, regardless of build rotation.
-		var inward := Vector3(-spot.global_position.x, 0.0, -spot.global_position.z)
-		if inward.length_squared() < 0.01:
-			inward = fixture.global_basis * Vector3(0.0, 0.0, 1.0)
-			inward.y = 0.0
-		inward = inward.normalized()
-		spot.look_at(spot.global_position + inward * 4.0 + Vector3.UP * 1.5, Vector3.UP)
+		# The fixture's local +Z is the front of its lens.
+		var forward := fixture.global_basis * Vector3(0.0, 0.0, 3.0)
+		spot.look_at(spot.global_position + forward + Vector3.UP * 0.8, Vector3.UP)
 	var beam := MeshInstance3D.new()
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.012 if kind == "laser" else 0.035
@@ -1012,29 +1004,15 @@ func _animate_stage_lights(delta: float) -> void:
 		var spot := stage_lights[index]
 		if not is_instance_valid(spot):
 			continue
-		# TEMP DIAGNOSTIC: isolate the two moving heads beside the DJ booth.
-		# Other moving heads stay off even while the animation updates.
-		if disco_spots.has(spot) and spot.get_parent().name not in ["light_5_10", "light_10_10"]:
-			spot.light_energy = 0.0
-			continue
 		var phase := lighting_clock * (0.8 + float(index % 4) * 0.17) + float(index) * 1.7
 		if laser_spots.has(spot):
 			var aim := Vector3(sin(phase) * 1.8, 2.4 + sin(phase * 0.7) * 0.45, cos(phase * 0.8) * 1.8)
 			spot.look_at(aim, Vector3.UP)
 		else:
-			# Every fixture sweeps toward the club interior from its own lens.
-			# This also handles fixtures rotated 90/180 degrees in BUILD mode.
-			var inward := Vector3(-spot.global_position.x, 0.0, -spot.global_position.z)
-			if inward.length_squared() < 0.01:
-				var fixture := spot.get_parent() as Node3D
-				inward = fixture.global_basis * Vector3(0.0, 0.0, 1.0)
-				inward.y = 0.0
-			inward = inward.normalized()
-			var sideways := Vector3(-inward.z, 0.0, inward.x)
-			var direction := inward * 4.0 + sideways * sin(phase) * 1.2
-			# Diagnostic: sweep almost horizontally across the fog, not upward
-			# toward the overhead camera. Keep the lens as the light origin.
-			direction.y = -0.35 + 0.12 * sin(phase * 0.7)
+			# Rotate the beam with the placed fixture, never toward club center.
+			var fixture := spot.get_parent() as Node3D
+			var local_direction := Vector3(sin(phase) * 0.65, 0.8 + sin(phase * 0.7) * 0.25, 3.0)
+			var direction := fixture.global_basis * local_direction
 			spot.look_at(spot.global_position + direction, Vector3.UP)
 		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
 	# Independent color changes and a restrained rhythmic flash for moving heads.
@@ -1047,8 +1025,6 @@ func _animate_stage_lights(delta: float) -> void:
 		disco.light_color = color
 		var beat := pow(maxf(0.0, sin(lighting_clock * 4.0 + float(index) * 1.7)), 8.0)
 		disco.light_energy = 3.2 + 2.2 * beat
-		if disco.get_parent().name not in ["light_5_10", "light_10_10"]:
-			disco.light_energy = 0.0
 		var cone := disco.get_node_or_null("VisibleBeam") as MeshInstance3D
 		if cone == null:
 			# Older beams are unnamed; locate the first mesh child.
