@@ -910,7 +910,7 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		inner.material_override = _disco_beam_material(0.19)
 		beam.add_child(inner)
 	spot.add_child(beam)
-	beam.visible = night_active
+	beam.visible = night_active and kind == "laser"
 	beam_meshes.append(beam)
 	stage_lights.append(spot)
 	if kind == "light":
@@ -950,7 +950,7 @@ func _set_night_lighting(enabled: bool) -> void:
 	for beam in beam_meshes:
 		if is_instance_valid(beam):
 			# Only lasers use geometry; moving-head beams come from volumetric fog.
-			beam.visible = enabled
+			beam.visible = enabled and beam.get_node_or_null("LaserHalo") != null
 	for glow in dance_lights:
 		if is_instance_valid(glow):
 			glow.light_energy = 1.2 if enabled else 0.0
@@ -1350,8 +1350,8 @@ func _build_world() -> void:
 	env.ambient_light_energy = 0.85
 	# Forward+ volumetric haze: low density keeps the club readable.
 	env.volumetric_fog_enabled = false
-	env.volumetric_fog_density = 0.035
-	env.volumetric_fog_albedo = Color("#b6a7d4")
+	env.volumetric_fog_density = 0.075
+	env.volumetric_fog_albedo = Color("#8c829e")
 	env.volumetric_fog_emission = Color("#08050e")
 	env.volumetric_fog_emission_energy = 0.15
 	env.volumetric_fog_anisotropy = 0.55
