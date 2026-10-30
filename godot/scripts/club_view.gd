@@ -112,6 +112,9 @@ var stage_lights: Array[SpotLight3D] = []
 var lighting_clock := 0.0
 var dance_lights: Array[OmniLight3D] = []
 var beam_meshes: Array[MeshInstance3D] = []
+var laser_spots: Array[SpotLight3D] = []
+var laser_beams: Array[MeshInstance3D] = []
+const LASER_COLORS := [Color("#31ff64"), Color("#287cff"), Color("#ffffff"), Color("#ff334d")]
 
 func _load_models() -> void:
 	for kind in MODEL_TYPES:
@@ -814,7 +817,7 @@ func _build_stage_lights() -> void:
 		spot.position = Vector3(0.0, 1.4, 0.0)
 		spot.spot_range = 11.0
 		spot.spot_angle = 34.0 if str(record["kind"]) == "light" else 13.0
-		spot.light_color = Color("#c15dff") if str(record["kind"]) == "light" else Color("#ff3acb")
+		spot.light_color = Color("#c15dff") if str(record["kind"]) == "light" else LASER_COLORS[0]
 		spot.light_energy = 0.0
 		spot.shadow_enabled = false
 		fixture.add_child(spot)
@@ -829,22 +832,29 @@ func _build_stage_lights() -> void:
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.albedo_color = Color(0.6, 0.25, 1.0, 0.08) if str(record["kind"]) == "light" else Color(1.0, 0.15, 0.7, 0.35)
+		mat.albedo_color = Color(0.6, 0.25, 1.0, 0.08) if str(record["kind"]) == "light" else Color(0.19, 1.0, 0.39, 0.45)
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		beam.material_override = mat
 		spot.add_child(beam)
 		beam.visible = false
 		beam_meshes.append(beam)
 		stage_lights.append(spot)
-	for index in range(6):
-		var glow := OmniLight3D.new()
-		glow.position = Vector3(-3.0 + float(index % 3) * 3.0, 0.6, -2.0 + float(index / 3.0) * 3.0)
-		glow.omni_range = 3.8
-		glow.light_color = Color("#b456ff") if index % 2 == 0 else Color("#ff429c")
-		glow.light_energy = 0.0
-		glow.shadow_enabled = false
-		club.add_child(glow)
-		dance_lights.append(glow)
+		if str(record["kind"]) == "laser":
+			laser_spots.append(spot)
+			laser_beams.append(beam)
+	# Evenly cover the entire 10 x 7 tile dance floor with overlapping
+	# moving pools of colored light rather than leaving dark corners.
+	for row_index in range(3):
+		for column_index in range(4):
+			var index := row_index * 4 + column_index
+			var glow := OmniLight3D.new()
+			glow.position = Vector3(-3.45 + float(column_index) * 2.3, 0.75, -3.65 + float(row_index) * 2.3)
+			glow.omni_range = 3.2
+			glow.light_color = Color.from_hsv(fmod(0.73 + float(index) * 0.075, 1.0), 0.8, 1.0)
+			glow.light_energy = 0.0
+			glow.shadow_enabled = false
+			club.add_child(glow)
+			dance_lights.append(glow)
 
 func _set_night_lighting(enabled: bool) -> void:
 	if club_environment != null:
@@ -873,10 +883,29 @@ func _animate_stage_lights(delta: float) -> void:
 		var phase := lighting_clock * (0.8 + float(index % 4) * 0.17) + float(index) * 1.7
 		spot.rotation = Vector3(-PI * 0.5 + sin(phase) * 0.25, sin(phase * 0.6) * 0.45, cos(phase) * 0.25)
 		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
+	# Each light has a different phase; no part of the floor goes fully dark.
 	for index in range(dance_lights.size()):
 		var glow := dance_lights[index]
-		if is_instance_valid(glow):
-			glow.light_energy = 0.7 + 1.8 * (0.5 + 0.5 * sin(lighting_clock * 2.4 + float(index) * 1.1))
+		if not is_instance_valid(glow):
+			continue
+		var phase := lighting_clock * 2.1 + float(index) * 0.85
+		glow.light_energy = 1.15 + 1.65 * (0.5 + 0.5 * sin(phase))
+		glow.light_color = Color.from_hsv(fmod(0.72 + float(index) * 0.075 + lighting_clock * 0.018, 1.0), 0.8, 1.0)
+	# Cycle laser colors every four seconds, with a stagger per fixture.
+	for index in range(laser_spots.size()):
+		var color_index := (int(floor(lighting_clock / 4.0)) + index) % LASER_COLORS.size()
+		var laser_color: Color = LASER_COLORS[color_index]
+		var laser := laser_spots[index]
+		if is_instance_valid(laser):
+			laser.light_color = laser_color
+		var beam := laser_beams[index]
+		if is_instance_valid(beam):
+			var material := beam.material_override as StandardMaterial3D
+			if material != null:
+				var beam_color := laser_color
+				beam_color.a = 0.45
+				material.albedo_color = beam_color
+
 
 func _start_night() -> void:
 	_refresh_readiness()
