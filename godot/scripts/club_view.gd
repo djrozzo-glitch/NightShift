@@ -110,7 +110,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	if kind in TWO_CELL:
 		target_x = 0.94
 		target_z = 1.88
-	elif kind == "stool":
+	elif kind == "stool" or kind == "table":
 		target_x = 0.53
 		target_z = 0.53
 	elif kind == "plant2":
@@ -126,7 +126,9 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	# Use the model's native aspect ratio. Two-cell assets are sized by
 	# their LONG side; never independently stretch their X and Z axes.
 	var fit_scale: float
-	if kind in TWO_CELL:
+	if kind == "entrance":
+		fit_scale = 1.90 / maxf(native_length, 0.001)
+	elif kind in TWO_CELL:
 		fit_scale = minf(target_z / maxf(native_length, 0.001),
 			target_x / maxf(native_width, 0.001))
 		# Measure the original GLB before rotating it: imported node transforms
@@ -135,7 +137,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 		fit_scale = minf(target_x / maxf(bounds.size.x, 0.001),
 			target_z / maxf(bounds.size.z, 0.001))
 	# Do not shrink large furniture merely because its authored height is tall.
-	if kind == "stool":
+	if kind == "stool" or kind == "table":
 		fit_scale = minf(fit_scale, 0.65 / maxf(bounds.size.y, 0.001))
 	elif kind == "floor":
 		fit_scale = minf(fit_scale, 0.22 / maxf(bounds.size.y, 0.001))
@@ -144,7 +146,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	# Bottom of the geometry rests on top of the base floor, not inside it.
 	# The footprint center is half a cell forward for two-cell objects.
 	var offset_z := 0.5 if kind in TWO_CELL and kind != "entrance" else 0.0
-	var base_y := 0.0 if kind == "floor" else 0.015
+	var base_y := 0.0 if kind == "floor" else 0.105
 	visual.position += Vector3(-bounds.get_center().x,
 		base_y - bounds.position.y,
 		offset_z - bounds.get_center().z)
