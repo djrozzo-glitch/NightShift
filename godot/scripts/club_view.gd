@@ -10,7 +10,7 @@ const MAX_ZOOM := 27.0
 
 var camera: Camera3D
 var pivot: Node3D
-var zoom := 13.0
+var zoom := 16.0
 var yaw := deg_to_rad(45.0)
 var tilt := deg_to_rad(-55.0)
 var dragging := false
@@ -26,6 +26,8 @@ var selected_kind := "speaker"
 var build_turn := 0
 var preview_root: Node3D
 var build_panel: PanelContainer
+var build_toggle: Button
+var help_label: Label
 var erase_mode := false
 var placed_objects: Dictionary = {}
 var object_at_cell: Dictionary = {}
@@ -278,7 +280,7 @@ func _start_night() -> void:
 	_refresh_economy()
 	_refresh_readiness()
 	_notify("NIGHT %d  |  %s booked  |  -€%d" % [night_number, dj["name"], fee])
-	start_night_button.text = "End Night"
+	start_night_button.text = "END NIGHT"
 
 func _end_night() -> void:
 	if not night_active:
@@ -395,7 +397,7 @@ func _refresh_preview() -> void:
 		mesh.material_overlay = overlay
 
 func _update_hover(screen_pos: Vector2) -> void:
-	if not build_mode or (build_panel != null and build_panel.get_global_rect().has_point(screen_pos)):
+	if not build_mode or (build_panel != null and build_panel.visible and build_panel.get_global_rect().has_point(screen_pos)) or (build_toggle != null and build_toggle.get_global_rect().has_point(screen_pos)):
 		hover_mesh.visible = false
 		preview_root.visible = false
 		return
@@ -458,6 +460,14 @@ func _enable_erase() -> void:
 	status_label.text = "ERASE MODE  |  Click: remove  X: build  Ctrl/Cmd+Z: undo"
 	_refresh_preview()
 	_update_hover(get_viewport().get_mouse_position())
+
+func _toggle_build_panel() -> void:
+	build_panel.visible = not build_panel.visible
+	build_toggle.text = "CLOSE BUILD" if build_panel.visible else "BUILD  [B]"
+	_update_hover(get_viewport().get_mouse_position())
+
+func _toggle_help() -> void:
+	help_label.visible = not help_label.visible
 
 func _choose_kind(kind: String) -> void:
 	if night_active:
@@ -547,8 +557,8 @@ func _build_overlay() -> void:
 	var ui := CanvasLayer.new()
 	add_child(ui)
 	var title := Label.new()
-	title.text = "NIGHTSHIFT  /  CLUB MANAGER"
-	UIStyle.decorate_label(title, 25)
+	title.text = "ABLETON GYM"
+	UIStyle.decorate_label(title, 23)
 	title.position = Vector2(20, 20)
 	
 	ui.add_child(title)
@@ -559,29 +569,38 @@ func _build_overlay() -> void:
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
 		ui.add_child(warning)
 	economy_label = Label.new()
-	economy_label.position = Vector2(20, 91)
+	economy_label.position = Vector2(20, 57)
 	UIStyle.decorate_label(economy_label, 18)
 	ui.add_child(economy_label)
 	_refresh_economy()
 	notice_label = Label.new()
-	notice_label.position = Vector2(20, 120)
+	notice_label.position = Vector2(20, 86)
 	UIStyle.decorate_label(notice_label, 13, true)
 	ui.add_child(notice_label)
 	status_label = Label.new()
-	status_label.position = Vector2(20, 151)
+	status_label.position = Vector2(20, 113)
 	status_label.text = "MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
 	UIStyle.decorate_label(status_label, 13, true)
 	ui.add_child(status_label)
+	build_toggle = Button.new()
+	build_toggle.text = "BUILD  [B]"
+	build_toggle.position = Vector2(20, 151)
+	build_toggle.custom_minimum_size = Vector2(166, 38)
+	UIStyle.decorate_button(build_toggle, true)
+	build_toggle.pressed.connect(_toggle_build_panel)
+	ui.add_child(build_toggle)
 	build_panel = PanelContainer.new()
-	build_panel.position = Vector2(20, 190)
+	build_panel.position = Vector2(20, 198)
+	build_panel.visible = false
 	UIStyle.decorate_panel(build_panel)
 	ui.add_child(build_panel)
-	var choices := VBoxContainer.new()
+	var choices := GridContainer.new()
+	choices.columns = 2
 	build_panel.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
 		button.text = "%s   €%d" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), int(BUILD_PRICES.get(kind, 0))]
-		button.custom_minimum_size = Vector2(164, 32)
+		button.custom_minimum_size = Vector2(142, 34)
 		UIStyle.decorate_button(button)
 		button.pressed.connect(_choose_kind.bind(kind))
 		choices.add_child(button)
@@ -621,16 +640,24 @@ func _build_overlay() -> void:
 	dj_picker.item_selected.connect(func(_index: int) -> void: _refresh_readiness())
 	night_controls.add_child(dj_picker)
 	start_night_button = Button.new()
-	start_night_button.text = "Start Night"
+	start_night_button.text = "START NIGHT"
 	UIStyle.decorate_button(start_night_button, true)
 	start_night_button.pressed.connect(_night_button_pressed)
+	start_night_button.custom_minimum_size = Vector2(255, 48)
 	night_controls.add_child(start_night_button)
 	_refresh_readiness()
-	var help := Label.new()
-	help.text = "Drag: rotate   Shift+drag: pan   Wheel/pinch or +/-: zoom   R: reset"
-	help.position = Vector2(20, 58)
-	UIStyle.decorate_label(help, 13, true)
-	ui.add_child(help)
+	var help_button := Button.new()
+	help_button.text = "?  HELP"
+	help_button.position = Vector2(20, 205)
+	UIStyle.decorate_button(help_button)
+	help_button.pressed.connect(_toggle_help)
+	ui.add_child(help_button)
+	help_label = Label.new()
+	help_label.text = "Drag: rotate   Shift+drag: pan\nWheel/pinch or +/-: zoom\nR: rotate furniture / reset camera\nB: build   X: erase   Ctrl/Cmd+Z: undo"
+	help_label.position = Vector2(20, 250)
+	help_label.visible = false
+	UIStyle.decorate_label(help_label, 13, true)
+	ui.add_child(help_label)
 
 func _input(event: InputEvent) -> void:
 	# Handle scrolling even when a UI Control consumes unhandled input.
@@ -659,7 +686,7 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT and build_mode:
-			if event.pressed and not build_panel.get_global_rect().has_point(event.position) and not night_active:
+			if event.pressed and not (build_panel.visible and build_panel.get_global_rect().has_point(event.position)) and not build_toggle.get_global_rect().has_point(event.position) and not night_active:
 				_update_hover(event.position)
 				if erase_mode:
 					_erase_hovered()
@@ -716,6 +743,6 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_R:
 		yaw = deg_to_rad(45)
 		tilt = deg_to_rad(-55)
-		zoom = 13
+		zoom = 16
 		pivot.position = Vector3.ZERO
 		_update_camera()
