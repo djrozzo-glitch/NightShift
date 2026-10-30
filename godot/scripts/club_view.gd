@@ -50,6 +50,13 @@ var guests: Array[Dictionary] = []
 var guest_spawn_clock := 0.0
 var guest_count := 0
 const MAX_GUESTS := 28
+const GUEST_MODEL_PATHS := [
+	"res://assets/models/guest_01.glb",
+	"res://assets/models/guest_02.glb",
+	"res://assets/models/guest_03.glb",
+	"res://assets/models/guest_04.glb"
+]
+var guest_models: Array[PackedScene] = []
 const GUEST_ENTRY := Vector2i(7, 14)
 const WALK_DIRS := [Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1)]
 const DJ_ROSTER := [
@@ -61,6 +68,7 @@ const DJ_ROSTER := [
 
 func _ready() -> void:
 	_build_world()
+	_load_guest_models()
 	guest_layer = Node3D.new()
 	guest_layer.name = "Guests"
 	add_child(guest_layer)
@@ -312,6 +320,61 @@ func _dance_destination() -> Vector2i:
 			return candidate
 	return Vector2i(-1, -1)
 
+func _load_guest_models() -> void:
+	guest_models.clear()
+	for path in GUEST_MODEL_PATHS:
+		if ResourceLoader.exists(path):
+			var packed := load(path) as PackedScene
+			if packed != null:
+				guest_models.append(packed)
+
+func _guest_limb(parent: Node3D, location: Vector3, dimensions: Vector3, color: Color) -> Node3D:
+	var pivot_node := Node3D.new()
+	pivot_node.position = location
+	parent.add_child(pivot_node)
+	_make_box(pivot_node, Vector3(0, -dimensions.y * 0.5, 0), dimensions, color)
+	return pivot_node
+
+func _guest_visual(parent: Node3D) -> Dictionary:
+	var visual := Node3D.new()
+	parent.add_child(visual)
+	if not guest_models.is_empty():
+		var packed: PackedScene = guest_models.pick_random()
+		var imported := packed.instantiate() as Node3D
+		if imported != null:
+			visual.add_child(imported)
+			var bounds := _visual_bounds(visual)
+			if bounds.size.length_squared() > 0.000001:
+				var factor := 1.05 / maxf(bounds.size.y, 0.001)
+				imported.scale = Vector3.ONE * factor
+				bounds = _visual_bounds(visual)
+				imported.position.y -= bounds.position.y
+				return {"visual": visual, "arms": [], "legs": [], "imported": true}
+			imported.queue_free()
+	var jacket := Color.from_hsv(randf(), randf_range(0.12, 0.45), randf_range(0.22, 0.52))
+	var trousers := Color("#20212d") if randf() < 0.7 else Color("#4c485a")
+	var skin := [Color("#e0b69b"), Color("#b77e62"), Color("#815444"), Color("#f1c9ad")].pick_random()
+	_make_box(visual, Vector3(0, 0.71, 0), Vector3(0.29, 0.40, 0.19), jacket)
+	_make_box(visual, Vector3(0, 0.98, 0), Vector3(0.17, 0.09, 0.15), skin)
+	var head := SphereMesh.new()
+	head.radius = 0.115
+	head.height = 0.23
+	var head_mesh := MeshInstance3D.new()
+	head_mesh.mesh = head
+	head_mesh.position.y = 1.08
+	var head_material := StandardMaterial3D.new()
+	head_material.albedo_color = skin
+	head_mesh.material_override = head_material
+	visual.add_child(head_mesh)
+	var hair := Color("#17141a") if randf() < 0.55 else Color("#655046")
+	_make_box(visual, Vector3(0, 1.185, -0.005), Vector3(0.23, 0.055, 0.22), hair)
+	var arms: Array[Node3D] = []
+	var legs: Array[Node3D] = []
+	for side in [-1.0, 1.0]:
+		arms.append(_guest_limb(visual, Vector3(side * 0.19, 0.87, 0), Vector3(0.105, 0.37, 0.13), jacket))
+		legs.append(_guest_limb(visual, Vector3(side * 0.085, 0.51, 0), Vector3(0.13, 0.48, 0.16), trousers))
+	return {"visual": visual, "arms": arms, "legs": legs, "imported": false}
+
 func _spawn_guest() -> void:
 	if guests.size() >= MAX_GUESTS or not _walkable(GUEST_ENTRY):
 		return
@@ -324,16 +387,8 @@ func _spawn_guest() -> void:
 	var person := Node3D.new()
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
-	var color := Color.from_hsv(randf(), 0.35, randf_range(0.48, 0.85))
-	_make_box(person, Vector3(0, 0.36, 0), Vector3(0.24, 0.48, 0.18), color)
-	var head := SphereMesh.new()
-	head.radius = 0.13
-	head.height = 0.26
-	var head_mesh := MeshInstance3D.new()
-	head_mesh.mesh = head
-	head_mesh.position.y = 0.73
-	person.add_child(head_mesh)
-	guests.append({"node": person, "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85)})
+	var appearance := _guest_visual(person)
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85)})
 	guest_count += 1
 	_refresh_readiness()
 
@@ -348,11 +403,23 @@ func _process(delta: float) -> void:
 		var person: Node3D = guest["node"]
 		if not is_instance_valid(person):
 			continue
+		guest["phase"] = float(guest["phase"]) + delta * (5.0 if guest["dance"] else 8.0)
+		var phase := float(guest["phase"])
+		var visual: Node3D = guest["visual"]
+		visual.position.y = absf(sin(phase)) * (0.07 if guest["dance"] else 0.025)
+		if not guest["imported"]:
+			var arms: Array = guest["arms"]
+			var legs: Array = guest["legs"]
+			for index in range(2):
+				var sign := 1.0 if index == 0 else -1.0
+				(arms[index] as Node3D).rotation.x = sin(phase + float(index) * PI) * (0.65 if guest["dance"] else 0.35)
+				(arms[index] as Node3D).rotation.z = sign * (0.4 if guest["dance"] else 0.08)
+				(legs[index] as Node3D).rotation.x = sin(phase + float(index) * PI) * (0.23 if guest["dance"] else 0.45)
 		if guest["dance"]:
-			guest["phase"] = float(guest["phase"]) + delta * 5.0
-			person.rotation.y += delta * 1.8
-			person.scale.y = 1.0 + sin(float(guest["phase"])) * 0.08
+			person.rotation.y += delta * 0.5
+			visual.rotation.z = sin(phase * 0.5) * 0.11
 			continue
+		visual.rotation.z = 0.0
 		var path: Array = guest["path"]
 		if path.is_empty():
 			guest["dance"] = true
