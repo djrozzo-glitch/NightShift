@@ -84,3 +84,15 @@ static func decorate_progress(bar: ProgressBar) -> void:
 	bar.add_theme_stylebox_override("fill", fill)
 	bar.show_percentage = false
 	bar.custom_minimum_size.y = 8
+
+static func perk_style(owned: bool) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("#172d31") if owned else Color("#282035")
+	style.border_color = Color("#4c807d") if owned else Color("#4c395e")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(9)
+	style.content_margin_left = 13
+	style.content_margin_right = 13
+	style.content_margin_top = 9
+	style.content_margin_bottom = 9
+	return style
