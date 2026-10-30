@@ -106,6 +106,10 @@ const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light",
 var models: Dictionary = {}
 var club: Node3D
 var missing_models: Array[String] = []
+var club_environment: Environment
+var club_sun: DirectionalLight3D
+var stage_lights: Array[SpotLight3D] = []
+var lighting_clock := 0.0
 
 func _load_models() -> void:
 	for kind in MODEL_TYPES:
@@ -641,6 +645,7 @@ func _guest_arrived(guest: Dictionary) -> void:
 		guest["wait"] = randf_range(9.0, 17.0)
 
 func _process(delta: float) -> void:
+	_animate_stage_lights(delta)
 	if not night_active or night_paused:
 		return
 	var step := delta * night_speed
@@ -770,6 +775,72 @@ func _clear_guests() -> void:
 	guests.clear()
 	guest_spawn_clock = 0.0
 
+func _build_bouncer() -> void:
+	var path := "res://characters/bouncer.glb"
+	if not ResourceLoader.exists(path):
+		return
+	var packed := load(path) as PackedScene
+	if packed == null:
+		return
+	var guard := packed.instantiate() as Node3D
+	if guard == null:
+		return
+	guard.name = "EntranceBouncer"
+	club.add_child(guard)
+	guard.position = Vector3(-1.4, 0.0, 8.2)
+	guard.rotation.y = PI
+	var bounds := _visual_bounds(guard)
+	if bounds.size.y > 0.01:
+		var scale_factor := clampf(0.95 / maxf(bounds.size.y, maxf(bounds.size.x, bounds.size.z)), 0.01, 1.0)
+		guard.scale = Vector3.ONE * scale_factor
+		bounds = _visual_bounds(guard)
+		guard.position.y -= bounds.position.y
+	for animation_node in guard.find_children("*", "AnimationPlayer", true, false):
+		var player := animation_node as AnimationPlayer
+		for animation_name in player.get_animation_list():
+			if animation_name != &"RESET":
+				player.play(animation_name)
+				break
+
+func _build_stage_lights() -> void:
+	for record in placed_objects.values():
+		if str(record["kind"]) not in ["light", "laser"]:
+			continue
+		var fixture: Node3D = record["node"]
+		var spot := SpotLight3D.new()
+		spot.name = "ClubSpot"
+		spot.position = Vector3(0.0, 1.65, 0.0)
+		spot.spot_range = 8.0
+		spot.spot_angle = 34.0 if str(record["kind"]) == "light" else 13.0
+		spot.light_color = Color("#c15dff") if str(record["kind"]) == "light" else Color("#ff3acb")
+		spot.light_energy = 0.0
+		spot.shadow_enabled = false
+		fixture.add_child(spot)
+		spot.look_at_from_position(spot.position, Vector3(0.0, 0.0, -2.5), Vector3.UP)
+		stage_lights.append(spot)
+
+func _set_night_lighting(enabled: bool) -> void:
+	if club_environment != null:
+		club_environment.ambient_light_energy = 0.32 if enabled else 0.85
+		club_environment.background_color = Color("#080b18") if enabled else Color("#131a2b")
+	if club_sun != null:
+		club_sun.light_energy = 0.18 if enabled else 1.0
+	for spot in stage_lights:
+		if is_instance_valid(spot):
+			spot.light_energy = 2.0 if enabled else 0.0
+
+func _animate_stage_lights(delta: float) -> void:
+	if not night_active or night_paused:
+		return
+	lighting_clock += delta * night_speed
+	for index in range(stage_lights.size()):
+		var spot := stage_lights[index]
+		if not is_instance_valid(spot):
+			continue
+		var phase := lighting_clock * (0.8 + float(index % 4) * 0.17) + float(index) * 1.7
+		spot.rotation = Vector3(-0.85 + sin(phase) * 0.25, phase * 0.32, 0.0)
+		spot.light_energy = 1.6 + 1.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
+
 func _start_night() -> void:
 	_refresh_readiness()
 	if night_active or not _readiness_issues().is_empty() or dj_picker.selected < 0:
@@ -789,6 +860,7 @@ func _start_night() -> void:
 	_update_night_stats()
 	night_number += 1
 	night_active = true
+	_set_night_lighting(true)
 	night_report_panel.show()
 	_clear_guests()
 	guest_count = 0
@@ -810,6 +882,7 @@ func _end_night() -> void:
 	if not night_active:
 		return
 	night_active = false
+	_set_night_lighting(false)
 	var costs := night_dj_fee + STAFF_COST
 	cash -= STAFF_COST
 	_clear_guests()
@@ -1073,12 +1146,16 @@ func _build_world() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color("#d4c7ed")
 	env.ambient_light_energy = 0.85
+	club_environment = env
 	ambient.environment = env
 	add_child(ambient)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-55, -35, 0)
 	sun.light_energy = 1.0
+	club_sun = sun
 	add_child(sun)
+	_build_stage_lights()
+	_build_bouncer()
 
 func _build_camera() -> void:
 	pivot = Node3D.new()
