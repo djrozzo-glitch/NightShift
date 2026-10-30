@@ -2067,6 +2067,10 @@ func _build_overlay() -> void:
 	UIStyle.decorate_panel(night_report_panel)
 	theme_root.add_child(night_report_panel)
 	night_report_panel.add_to_group("nightshift_ui_blocker")
+	# The opening panel grows with pricing sliders and DJ card.
+	# Position stats from its measured height, never a fixed pixel offset.
+	night_panel.resized.connect(_position_night_report.bind(night_panel))
+	call_deferred("_position_night_report", night_panel)
 	var report_content := VBoxContainer.new()
 	night_report_panel.add_child(report_content)
 	night_report_heading = Label.new()
@@ -2089,6 +2093,14 @@ func _build_overlay() -> void:
 	help_label.visible = false
 	UIStyle.decorate_label(help_label, 13, true)
 	theme_root.add_child(help_label)
+
+func _position_night_report(opening_panel: Control) -> void:
+	if not is_instance_valid(opening_panel) or not is_instance_valid(night_report_panel):
+		return
+	var top := opening_panel.position.y + opening_panel.size.y + 12.0
+	night_report_panel.offset_top = top
+	night_report_panel.offset_bottom = top
+
 
 func _pointer_over_ui(position: Vector2) -> bool:
 	# Controls in the CanvasLayer own pointer interactions; 3D camera must not react.
