@@ -1745,6 +1745,7 @@ func _build_overlay() -> void:
 	manage_button.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(manage_button)
 	theme_root.add_child(manage_button)
+	manage_button.add_to_group("nightshift_ui_blocker")
 	var popup := manage_button.get_popup()
 	popup.add_theme_font_size_override("font_size", 13)
 	popup.add_theme_stylebox_override("panel", UIStyle.panel_style())
@@ -1771,6 +1772,7 @@ func _build_overlay() -> void:
 	UIStyle.decorate_panel(header_panel)
 	header_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	theme_root.add_child(header_panel)
+	header_panel.add_to_group("nightshift_ui_blocker")
 	var title := Label.new()
 	title.text = "ABLETON GYM"
 	UIStyle.decorate_label(title, 24)
@@ -1805,11 +1807,13 @@ func _build_overlay() -> void:
 	UIStyle.decorate_button(build_toggle, true)
 	build_toggle.pressed.connect(_toggle_build_panel)
 	theme_root.add_child(build_toggle)
+	build_toggle.add_to_group("nightshift_ui_blocker")
 	build_panel = PanelContainer.new()
 	build_panel.position = Vector2(20, 310)
 	build_panel.visible = false
 	UIStyle.decorate_panel(build_panel)
 	theme_root.add_child(build_panel)
+	build_panel.add_to_group("nightshift_ui_blocker")
 	var choices := GridContainer.new()
 	choices.columns = 2
 	build_panel.add_child(choices)
@@ -1843,6 +1847,7 @@ func _build_overlay() -> void:
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
 	theme_root.add_child(progression_panel)
+	progression_panel.add_to_group("nightshift_ui_blocker")
 	var progress_content := VBoxContainer.new()
 	progress_content.add_theme_constant_override("separation", 12)
 	progression_panel.add_child(progress_content)
@@ -1921,6 +1926,7 @@ func _build_overlay() -> void:
 	UIStyle.decorate_panel(night_panel)
 	night_panel.custom_minimum_size = Vector2(275, 0)
 	theme_root.add_child(night_panel)
+	night_panel.add_to_group("nightshift_ui_blocker")
 	var night_controls := VBoxContainer.new()
 	night_controls.add_theme_constant_override("separation", 10)
 	night_panel.add_child(night_controls)
@@ -2060,6 +2066,7 @@ func _build_overlay() -> void:
 	night_report_panel.visible = false
 	UIStyle.decorate_panel(night_report_panel)
 	theme_root.add_child(night_report_panel)
+	night_report_panel.add_to_group("nightshift_ui_blocker")
 	var report_content := VBoxContainer.new()
 	night_report_panel.add_child(report_content)
 	night_report_heading = Label.new()
@@ -2083,7 +2090,27 @@ func _build_overlay() -> void:
 	UIStyle.decorate_label(help_label, 13, true)
 	theme_root.add_child(help_label)
 
+func _pointer_over_ui(position: Vector2) -> bool:
+	# Controls in the CanvasLayer own pointer interactions; 3D camera must not react.
+	var hovered := get_viewport().gui_get_hovered_control()
+	if hovered != null and hovered.mouse_filter != Control.MOUSE_FILTER_IGNORE:
+		return true
+	for node in get_tree().get_nodes_in_group("nightshift_ui_blocker"):
+		if node is Control and node.is_visible_in_tree() and node.get_global_rect().has_point(position):
+			return true
+	return false
+
+
 func _input(event: InputEvent) -> void:
+	# Ignore pointer input on HUD, including sliders and dropdowns.
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		dragging = false
+	if event is InputEventMouseMotion and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		dragging = false
+	if event is InputEventMouse and _pointer_over_ui(event.position):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			dragging = false
+		return
 	# Handle scrolling even when a UI Control consumes unhandled input.
 	if event is InputEventMagnifyGesture:
 		zoom = clamp(zoom / maxf(event.factor, 0.01), MIN_ZOOM, MAX_ZOOM)
@@ -2124,7 +2151,7 @@ func _input(event: InputEvent) -> void:
 					over_ui = true
 				if build_panel != null and build_panel.visible and build_panel.get_global_rect().has_point(event.position):
 					over_ui = true
-				dragging = not over_ui
+				dragging = not over_ui and not _pointer_over_ui(event.position)
 			else:
 				dragging = false
 			last_mouse = event.position
