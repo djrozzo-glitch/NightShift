@@ -849,6 +849,20 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	spot.shadow_enabled = false
 	spot.light_volumetric_fog_energy = 9.0 if kind == "light" else 0.0
 	fixture.add_child(spot)
+	if kind == "light":
+		# Each moving head gets its own small fog field, so beams are
+		# visible even when the fixture is far from the global haze hotspots.
+		var fog := FogVolume.new()
+		fog.name = "FixtureHaze"
+		fog.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+		fog.size = Vector3(4.0, 3.0, 6.0)
+		fog.position = Vector3(0.0, 0.8, -2.5)
+		var fog_material := FogMaterial.new()
+		fog_material.density = 0.045
+		fog_material.albedo = Color("#9d94b2")
+		fog.material = fog_material
+		fixture.add_child(fog)
+		fog.visible = night_active
 	# Aim the beam from the projector toward the room, slightly upward.
 	if kind == "laser":
 		spot.look_at(Vector3(0.0, 2.4, 0.0), Vector3.UP)
@@ -952,6 +966,10 @@ func _set_night_lighting(enabled: bool) -> void:
 	for spot in stage_lights:
 		if is_instance_valid(spot):
 			spot.light_energy = 4.0 if enabled else 0.0
+			var fixture := spot.get_parent() as Node3D
+			var haze := fixture.get_node_or_null("FixtureHaze") as FogVolume
+			if haze != null:
+				haze.visible = enabled
 	for beam in beam_meshes:
 		if is_instance_valid(beam):
 			# Only lasers use geometry; moving-head beams come from volumetric fog.
