@@ -334,23 +334,29 @@ func _guest_animated_model(packed: PackedScene, parent: Node3D) -> Node3D:
 	if imported == null:
 		return null
 	parent.add_child(imported)
+	# Skinned GLB meshes can report unreliable rest-pose AABBs. Never amplify
+	# tiny bounds into giant characters; keep imported geometry within a tile.
 	var bounds := _visual_bounds(imported)
-	if bounds.size.y > 0.001:
-		var factor := 1.05 / bounds.size.y
+	if bounds.size.y > 0.01:
+		var longest_axis := maxf(bounds.size.y, maxf(bounds.size.x, bounds.size.z))
+		var factor := clampf(1.05 / longest_axis, 0.01, 1.0)
 		imported.scale = Vector3.ONE * factor
 		bounds = _visual_bounds(imported)
-		imported.position.y -= bounds.position.y
+		if absf(bounds.position.y) < 3.0:
+			imported.position.y -= bounds.position.y
 	for animation_node in imported.find_children("*", "AnimationPlayer", true, false):
 		var player := animation_node as AnimationPlayer
-		var names := player.get_animation_list()
-		if not names.is_empty():
-			var animation_name := names[0]
-			for name in names:
-				if name != "RESET":
-					animation_name = name
+		var animation_names := player.get_animation_list()
+		if not animation_names.is_empty():
+			var animation_name: StringName = animation_names[0]
+			for candidate in animation_names:
+				if candidate != &"RESET":
+					animation_name = candidate
 					break
 			player.play(animation_name)
-			player.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
+			var animation := player.get_animation(animation_name)
+			if animation != null:
+				animation.loop_mode = Animation.LOOP_LINEAR
 	return imported
 
 func _guest_limb(parent: Node3D, location: Vector3, dimensions: Vector3, color: Color) -> Node3D:
@@ -438,12 +444,12 @@ func _process(delta: float) -> void:
 			var arms: Array = guest["arms"]
 			var legs: Array = guest["legs"]
 			for index in range(2):
-				var sign := 1.0 if index == 0 else -1.0
+				var limb_side := 1.0 if index == 0 else -1.0
 				(arms[index] as Node3D).rotation.x = sin(phase + float(index) * PI) * (0.65 if guest["dance"] else 0.35)
-				(arms[index] as Node3D).rotation.z = sign * (0.4 if guest["dance"] else 0.08)
+				(arms[index] as Node3D).rotation.z = limb_side * (0.4 if guest["dance"] else 0.08)
 				(legs[index] as Node3D).rotation.x = sin(phase + float(index) * PI) * (0.23 if guest["dance"] else 0.45)
 		if guest["imported"]:
-			var desired_motion := "dance" if guest["dance"] else "walk"
+			var desired_motion: String = "dance" if bool(guest["dance"]) else "walk"
 			if guest["motion"] != desired_motion:
 				var motions: Dictionary = guest["motions"]
 				for motion_name in motions:
