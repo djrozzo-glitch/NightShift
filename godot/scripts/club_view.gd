@@ -38,6 +38,10 @@ const BUILD_PRICES := {"speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc"
 var cash := 15000
 var reputation := 100
 var club_level := 1
+var club_xp := 0
+var total_xp := 0
+var last_rep_change := 0
+var last_xp_gain := 0
 var economy_label: Label
 var notice_label: Label
 var readiness_label: Label
@@ -67,6 +71,20 @@ var night_report_panel: PanelContainer
 var night_report_heading: Label
 var night_report_details: Label
 const MAX_GUESTS := 28
+
+func _xp_needed(level: int) -> int:
+	return 80 + (level - 1) * 45 + (level - 1) * (level - 1) * 5
+
+func _award_xp(amount: int) -> int:
+	var gained_levels := 0
+	club_xp += maxi(0, amount)
+	total_xp += maxi(0, amount)
+	while club_xp >= _xp_needed(club_level):
+		club_xp -= _xp_needed(club_level)
+		club_level += 1
+		gained_levels += 1
+	return gained_levels
+
 const GUEST_CHARACTER_NAMES := ["baggy_m", "fashion_f", "jungle_f", "raver_f", "raver_m"]
 var guest_models: Dictionary = {}
 
@@ -268,7 +286,7 @@ func _register_object(node: Node3D, kind: String, x: int, y: int, turn: int) -> 
 func _refresh_economy() -> void:
 	_refresh_readiness()
 	if economy_label != null:
-		economy_label.text = "CASH  €%d     REP  %d/100     LEVEL  %d" % [cash, reputation, club_level]
+		economy_label.text = "CASH  €%d     REP  %d/100     LEVEL  %d  |  XP %d/%d" % [cash, reputation, club_level, club_xp, _xp_needed(club_level)]
 
 func _count_kind(kind: String) -> int:
 	var count := 0
@@ -664,7 +682,7 @@ func _process(delta: float) -> void:
 		var remaining := ceili(NIGHT_DURATION - night_elapsed)
 		night_time_label.text = "TIME LEFT  %d:%02d  |  €%d TICKETS  €%d BAR" % [int(remaining / 60.0), remaining % 60, night_ticket_income, night_drink_income]
 	guest_spawn_clock += step
-	if guest_spawn_clock >= 5.0 and guests.size() < MAX_GUESTS:
+	if guest_spawn_clock >= clampf(6.5 - float(club_level - 1) * 0.12 - float(reputation) * 0.018, 2.4, 7.0) and guests.size() < MAX_GUESTS:
 		guest_spawn_clock = 0.0
 		_spawn_guest()
 	for guest in guests:
@@ -1124,17 +1142,25 @@ func _end_night() -> void:
 	_set_night_lighting(false)
 	var costs := night_dj_fee + STAFF_COST
 	cash -= STAFF_COST
+	# Reputation reflects turnout, bar service and the night's finances.
+	var revenue := night_ticket_income + night_drink_income
+	var profit := revenue - costs
+	var turnout_score := float(guest_count) / float(MAX_GUESTS)
+	var service_score := float(night_drinks_sold) / float(maxi(1, guest_count))
+	var reputation_delta := roundi((turnout_score - 0.45) * 8.0 + (service_score - 0.3) * 5.0 + (2.0 if profit > 0 else -3.0))
+	last_rep_change = clampi(reputation_delta, -7, 7)
+	reputation = clampi(reputation + last_rep_change, 0, 100)
+	last_xp_gain = maxi(5, guest_count * 3 + night_drinks_sold * 2 + (10 if profit > 0 else 0))
+	var levels_gained := _award_xp(last_xp_gain)
 	_clear_guests()
 	_refresh_economy()
 	night_pause_button.disabled = true
 	night_speed_button.disabled = true
 	night_time_label.text = "NIGHT COMPLETE"
-	var revenue := night_ticket_income + night_drink_income
-	var profit := revenue - costs
 	_update_night_stats()
 	start_night_button.text = "START NIGHT"
 	_refresh_readiness()
-	_notify("Night %d ended  |  %d guests visited  |  Profit %s€%d" % [night_number, guest_count, "+" if profit >= 0 else "-", absi(profit)])
+	_notify("Night %d ended  |  %d guests visited  |  Profit %s€%d  |  XP +%d  |  REP %+d%s" % [night_number, guest_count, "+" if profit >= 0 else "-", absi(profit), last_xp_gain, last_rep_change, "  |  LEVEL UP!" if levels_gained > 0 else ""])
 
 func _update_night_stats() -> void:
 	if night_report_details == null:
@@ -1143,7 +1169,7 @@ func _update_night_stats() -> void:
 	var expenses := night_dj_fee + STAFF_COST
 	var profit := revenue - expenses
 	night_report_heading.text = "NIGHT %d  |  %s" % [night_number, "LIVE STATS" if night_active else "REPORT"]
-	night_report_details.text = "GUESTS                 %d\nTICKET REVENUE    €%d\nDRINKS SOLD          %d\nBAR REVENUE        €%d\n\nTOTAL REVENUE     €%d\nDJ BOOKING           -€%d\nSTAFF                      -€%d\n\nNET PROFIT             %s€%d" % [guest_count, night_ticket_income, night_drinks_sold, night_drink_income, revenue, night_dj_fee, STAFF_COST, "+" if profit >= 0 else "-", absi(profit)]
+	night_report_details.text = "GUESTS                 %d\nTICKET REVENUE    €%d\nDRINKS SOLD          %d\nBAR REVENUE        €%d\n\nTOTAL REVENUE     €%d\nDJ BOOKING           -€%d\nSTAFF                      -€%d\n\nNET PROFIT             %s€%d\n\nLEVEL %d   XP %d/%d\nREPUTATION %d/100%s" % [guest_count, night_ticket_income, night_drinks_sold, night_drink_income, revenue, night_dj_fee, STAFF_COST, "+" if profit >= 0 else "-", absi(profit), club_level, club_xp, _xp_needed(club_level), reputation, "" if night_active else "\nNIGHT XP +%d   REP %+d" % [last_xp_gain, last_rep_change]]
 
 func _night_button_pressed() -> void:
 	if night_active:
