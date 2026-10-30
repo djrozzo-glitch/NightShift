@@ -25,6 +25,11 @@ var selected_kind := "speaker"
 var build_turn := 0
 var preview_root: Node3D
 var build_panel: PanelContainer
+var erase_mode := false
+var placed_objects: Dictionary = {}
+var object_at_cell: Dictionary = {}
+var next_object_id := 1
+var action_history: Array[Dictionary] = []
 
 func _ready() -> void:
 	_build_world()
@@ -187,6 +192,53 @@ func _visual_bounds(root: Node3D) -> AABB:
 			bounds = bounds.merge(aabb)
 	return bounds
 
+func _register_object(node: Node3D, kind: String, x: int, y: int, turn: int) -> int:
+	var id := next_object_id
+	next_object_id += 1
+	var cells := _footprint(x, y, kind, turn)
+	placed_objects[id] = {"node": node, "kind": kind, "x": x, "y": y, "turn": turn, "cells": cells}
+	for cell in cells:
+		occupied[cell] = true
+		object_at_cell[cell] = id
+	return id
+
+func _remove_object(id: int) -> Dictionary:
+	if not placed_objects.has(id):
+		return {}
+	var record: Dictionary = placed_objects[id]
+	for cell in record["cells"]:
+		occupied.erase(cell)
+		object_at_cell.erase(cell)
+	var node := record["node"] as Node3D
+	if is_instance_valid(node):
+		node.get_parent().remove_child(node)
+		node.queue_free()
+	placed_objects.erase(id)
+	return {"kind": record["kind"], "x": record["x"], "y": record["y"], "turn": record["turn"]}
+
+func _erase_hovered() -> void:
+	var id: int = int(object_at_cell.get(hover_cell, -1))
+	if id < 0:
+		return
+	var record := _remove_object(id)
+	if not record.is_empty():
+		action_history.append({"action": "erase", "record": record})
+	_refresh_preview()
+	_update_hover(get_viewport().get_mouse_position())
+
+func _undo_action() -> void:
+	if action_history.is_empty():
+		return
+	var action: Dictionary = action_history.pop_back()
+	if action["action"] == "place":
+		_remove_object(int(action["id"]))
+	elif action["action"] == "erase":
+		var record: Dictionary = action["record"]
+		var node := _model(club, record["kind"], record["x"], record["y"], record["turn"])
+		_register_object(node, record["kind"], record["x"], record["y"], record["turn"])
+	_refresh_preview()
+	_update_hover(get_viewport().get_mouse_position())
+
 func _reserve(x: int, y: int) -> void:
 	occupied[Vector2i(x, y)] = true
 
@@ -219,7 +271,7 @@ func _refresh_preview() -> void:
 	for child in preview_root.get_children():
 		preview_root.remove_child(child)
 		child.queue_free()
-	if not build_mode or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
+	if not build_mode or erase_mode or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
 		return
 	var node := _model(preview_root, selected_kind, hover_cell.x, hover_cell.y, build_turn)
 	for mesh_node in node.find_children("*", "MeshInstance3D", true, false):
@@ -261,21 +313,30 @@ func _update_hover(screen_pos: Vector2) -> void:
 	preview_root.visible = true
 	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(next_cell, 0.0)) + 0.035, y - 7.5)
 	var mat := hover_mesh.material_override as StandardMaterial3D
-	mat.albedo_color = Color(0.2, 1.0, 0.55, 0.4) if _can_place(x, y, selected_kind, build_turn) else Color(1.0, 0.25, 0.3, 0.4)
+	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if _can_place(x, y, selected_kind, build_turn) else Color(1.0, 0.25, 0.3, 0.4))
 	if changed:
 		_refresh_preview()
 
 func _place_selected() -> void:
 	if not _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn):
 		return
-	_model(club, selected_kind, hover_cell.x, hover_cell.y, build_turn)
-	for cell in _footprint(hover_cell.x, hover_cell.y, selected_kind, build_turn):
-		_reserve(cell.x, cell.y)
+	var node := _model(club, selected_kind, hover_cell.x, hover_cell.y, build_turn)
+	var id := _register_object(node, selected_kind, hover_cell.x, hover_cell.y, build_turn)
+	action_history.append({"action": "place", "id": id})
+	_refresh_preview()
+	_update_hover(get_viewport().get_mouse_position())
+
+func _enable_erase() -> void:
+	build_mode = true
+	erase_mode = true
+	dragging = false
+	status_label.text = "ERASE MODE  |  Click: remove  X: build  Ctrl/Cmd+Z: undo"
 	_refresh_preview()
 	_update_hover(get_viewport().get_mouse_position())
 
 func _choose_kind(kind: String) -> void:
 	selected_kind = kind
+	erase_mode = false
 	build_mode = true
 	dragging = false
 	status_label.text = "BUILD: %s  |  Click: place  R: rotate  ESC: exit" % selected_kind.to_upper()
@@ -322,11 +383,8 @@ func _build_world() -> void:
 				if not is_poster:
 					_model(club, "wall", x, y, 1 if x == 0 or x == SIZE - 1 else 0)
 	for item in items:
-		_model(club, item[2], item[0], item[1], item[3])
-		_reserve(item[0], item[1])
-		if item[2] in TWO_CELL:
-			for cell in _footprint(item[0], item[1], item[2], item[3]):
-				_reserve(cell.x, cell.y)
+		var node := _model(club, item[2], item[0], item[1], item[3])
+		_register_object(node, item[2], item[0], item[1], item[3])
 	_model(club, "entrance", 7, 15, 1)
 	var ambient := WorldEnvironment.new()
 	var env := Environment.new()
@@ -383,10 +441,14 @@ func _build_overlay() -> void:
 	build_panel.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
-		button.text = kind.capitalize()
+		button.text = {"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize())
 		button.custom_minimum_size = Vector2(130, 27)
 		button.pressed.connect(_choose_kind.bind(kind))
 		choices.add_child(button)
+	var erase_button := Button.new()
+	erase_button.text = "Erase (X)"
+	erase_button.pressed.connect(_enable_erase)
+	choices.add_child(erase_button)
 	var help := Label.new()
 	help.text = "Drag: rotate   Shift+drag: pan   Wheel/pinch or +/-: zoom   R: reset"
 	help.position = Vector2(20, 58)
@@ -421,7 +483,10 @@ func _input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT and build_mode:
 			if event.pressed and not build_panel.get_global_rect().has_point(event.position):
 				_update_hover(event.position)
-				_place_selected()
+				if erase_mode:
+					_erase_hovered()
+				else:
+					_place_selected()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			dragging = event.pressed
@@ -435,14 +500,27 @@ func _input(event: InputEvent) -> void:
 			yaw -= delta.x * 0.007
 			tilt = clamp(tilt + delta.y * 0.005, deg_to_rad(-85), deg_to_rad(-20))
 			_update_camera()
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Z and (event.ctrl_pressed or event.meta_pressed):
+		_undo_action()
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
+		if erase_mode:
+			erase_mode = false
+			status_label.text = "BUILD: %s  |  Click: place  R: rotate  ESC: exit" % selected_kind.to_upper()
+			_refresh_preview()
+			_update_hover(get_viewport().get_mouse_position())
+		else:
+			_enable_erase()
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B:
 		build_mode = not build_mode
+		if not build_mode:
+			erase_mode = false
 		dragging = false
 		status_label.text = ("BUILD: %s  |  Click: place  R: rotate  ESC: exit" % selected_kind.to_upper()) if build_mode else "MODE: CAMERA   |   B: build   ESC: camera"
 		_refresh_preview()
 		_update_hover(get_viewport().get_mouse_position())
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		build_mode = false
+		erase_mode = false
 		dragging = false
 		status_label.text = "MODE: CAMERA   |   B: build   ESC: camera"
 		_refresh_preview()
@@ -453,7 +531,7 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_MINUS or event.keycode == KEY_KP_SUBTRACT):
 		zoom = min(MAX_ZOOM, zoom * 1.15)
 		_update_camera()
-	elif event is InputEventKey and event.pressed and event.keycode == KEY_R and build_mode:
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_R and build_mode and not erase_mode:
 		build_turn = (build_turn + 1) % 4
 		_refresh_preview()
 		_update_hover(get_viewport().get_mouse_position())
