@@ -479,6 +479,29 @@ func _guest_route(guest: Dictionary, kind: String) -> bool:
 	guest["dance"] = false
 	return true
 
+func _sofa_seat(approach_cell: Vector2i) -> Dictionary:
+	var approach := _cell_position(approach_cell)
+	var best_distance := INF
+	var best: Dictionary = {}
+	for record in placed_objects.values():
+		if str(record["kind"]) != "sofa":
+			continue
+		var cells: Array = record["cells"]
+		var center := Vector3.ZERO
+		for cell in cells:
+			center += _cell_position(cell)
+		center /= float(cells.size())
+		var distance := center.distance_squared_to(approach)
+		if distance >= best_distance:
+			continue
+		best_distance = distance
+		# The seat is inside the sofa, slightly towards the accessible aisle.
+		var seat := center.lerp(approach, 0.17)
+		seat.y = approach.y
+		var facing := approach - center
+		best = {"position": seat, "rotation": atan2(facing.x, facing.z)}
+	return best
+
 func _guest_arrived(guest: Dictionary) -> void:
 	var state: String = guest["state"]
 	if state == "walk_bar":
@@ -487,6 +510,15 @@ func _guest_arrived(guest: Dictionary) -> void:
 	elif state == "walk_sofa":
 		guest["state"] = "resting"
 		guest["wait"] = randf_range(5.0, 9.0)
+		var motions: Dictionary = guest["motions"]
+		if motions.has("sit"):
+			var seat := _sofa_seat(guest["destination"])
+			if not seat.is_empty():
+				var person: Node3D = guest["node"]
+				guest["sofa_approach"] = person.position
+				person.position = seat["position"]
+				person.rotation.y = float(seat["rotation"])
+				guest["seated"] = true
 	else:
 		guest["state"] = "dancing"
 		guest["dance"] = true
@@ -522,6 +554,10 @@ func _process(delta: float) -> void:
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
 				elif state == "resting":
+					if bool(guest.get("seated", false)):
+						var person: Node3D = guest["node"]
+						person.position = guest["sofa_approach"]
+						guest["seated"] = false
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
 				else:
@@ -535,7 +571,7 @@ func _process(delta: float) -> void:
 		guest["phase"] = float(guest["phase"]) + step * (5.0 if guest["dance"] else 8.0)
 		var phase := float(guest["phase"])
 		var visual: Node3D = guest["visual"]
-		visual.position.y = absf(sin(phase)) * (0.07 if guest["dance"] else 0.025)
+		visual.position.y = 0.0 if bool(guest.get("seated", false)) else absf(sin(phase)) * (0.07 if guest["dance"] else 0.025)
 		if not guest["imported"]:
 			var arms: Array = guest["arms"]
 			var legs: Array = guest["legs"]
