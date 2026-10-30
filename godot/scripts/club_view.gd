@@ -76,6 +76,8 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 		pivot_node.position.x += 0.5
 		pivot_node.position.z -= 0.48
 	pivot_node.rotation.y = float(turn) * PI * 0.5
+	if kind == "entrance":
+		pivot_node.rotation.y += PI
 	if kind == "poster":
 		# Face the artwork into the room on each perimeter side.
 		if x == 0:
@@ -113,6 +115,9 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	elif kind == "stool" or kind == "table":
 		target_x = 0.53
 		target_z = 0.53
+	elif kind == "light" or kind == "laser":
+		target_x = 0.60
+		target_z = 0.60
 	elif kind == "plant2":
 		target_x = 0.78
 		target_z = 0.78
