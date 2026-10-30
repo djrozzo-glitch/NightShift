@@ -16,6 +16,7 @@ var dragging := false
 var last_mouse := Vector2.ZERO
 var build_mode := false
 var occupied: Dictionary = {}
+var floor_heights: Dictionary = {}
 var hover_cell := Vector2i(-1, -1)
 var hover_mesh: MeshInstance3D
 var status_label: Label
@@ -111,7 +112,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	if kind in TWO_CELL and bounds.size.x > bounds.size.z:
 		# Orient the authored long side along local Z before grid rotation.
 		visual.rotation.y = PI * 0.5
-		bounds = _visual_bounds(visual)
+		bounds = _visual_bounds(pivot_node)
 
 	var target_x := 0.9
 	var target_z := 0.9
@@ -153,14 +154,16 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	elif kind == "floor":
 		fit_scale = minf(fit_scale, 0.22 / maxf(bounds.size.y, 0.001))
 	visual.scale = Vector3.ONE * fit_scale
-	bounds = _visual_bounds(visual)
+	bounds = _visual_bounds(pivot_node)
 	# Bottom of the geometry rests on top of the base floor, not inside it.
 	# The footprint center is half a cell forward for two-cell objects.
 	var offset_z := 0.5 if kind in TWO_CELL and kind != "entrance" else 0.0
-	var base_y := 0.0 if kind == "floor" else 0.105
+	var base_y := 0.0 if kind == "floor" else float(floor_heights.get(Vector2i(x, y), -0.005)) + 0.012
 	visual.position += Vector3(-bounds.get_center().x,
 		base_y - bounds.position.y,
 		offset_z - bounds.get_center().z)
+	if kind == "floor":
+		floor_heights[Vector2i(x, y)] = _visual_bounds(pivot_node).end.y
 
 func _visual_bounds(root: Node3D) -> AABB:
 	var bounds := AABB()
@@ -216,7 +219,7 @@ func _update_hover(screen_pos: Vector2) -> void:
 		hover_mesh.visible = false
 		return
 	hover_mesh.visible = true
-	hover_mesh.position = Vector3(x - 7.5, 0.14, y - 7.5)
+	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(Vector2i(x, y), 0.0)) + 0.035, y - 7.5)
 	var mat := hover_mesh.material_override as StandardMaterial3D
 	mat.albedo_color = Color(0.2, 1.0, 0.55, 0.4) if _can_place(x, y) else Color(1.0, 0.25, 0.3, 0.4)
 
@@ -244,6 +247,7 @@ func _build_world() -> void:
 			_make_box(club, Vector3(x - 7.5, 0.025 if dance else -0.055, y - 7.5),
 				Vector3(0.99, 0.15 if dance else 0.10, 0.99),
 				dance_color if dance else (dark if (x + y) % 2 == 0 else light))
+			floor_heights[Vector2i(x, y)] = 0.10 if dance else -0.005
 	# Original saved ABLETON GYM layout, including rotations.
 	var items := [
 		[6,0,"poster",0],[0,4,"poster",0],[0,12,"poster",0],[15,12,"poster",0],
