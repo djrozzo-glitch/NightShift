@@ -847,7 +847,7 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
 	spot.light_energy = 4.0 if night_active else 0.0
 	spot.shadow_enabled = false
-	spot.light_volumetric_fog_energy = 6.0 if kind == "light" else 0.0
+	spot.light_volumetric_fog_energy = 7.0 if kind == "light" else 0.0
 	fixture.add_child(spot)
 	if kind == "light":
 		# Each moving head gets its own small fog field, so beams are
@@ -926,8 +926,7 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		inner.material_override = _disco_beam_material(0.19)
 		beam.add_child(inner)
 	spot.add_child(beam)
-	# TEMP DIAGNOSTIC: show the actual spotlight axis for DJ-side heads.
-	beam.visible = night_active and (kind == "laser" or (kind == "light" and fixture.position.z > 0.0 and absf(fixture.position.x) < 5.5))
+	beam.visible = night_active and kind == "laser"
 	beam_meshes.append(beam)
 	stage_lights.append(spot)
 	if kind == "light":
@@ -986,10 +985,8 @@ func _set_night_lighting(enabled: bool) -> void:
 				haze.visible = enabled
 	for beam in beam_meshes:
 		if is_instance_valid(beam):
-			# Only lasers use geometry; moving-head beams come from volumetric fog.
-			var fixture := beam.get_parent().get_parent() as Node3D
-			var is_dj_light := fixture.name.begins_with("light_") and fixture.position.z > 0.0 and absf(fixture.position.x) < 5.5
-			beam.visible = enabled and (beam.get_node_or_null("LaserHalo") != null or is_dj_light)
+			# Moving heads use volumetric fog; only lasers have visible geometry.
+			beam.visible = enabled and beam.get_node_or_null("LaserHalo") != null
 	for glow in dance_lights:
 		if is_instance_valid(glow):
 			glow.light_energy = 1.2 if enabled else 0.0
@@ -1024,7 +1021,7 @@ func _animate_stage_lights(delta: float) -> void:
 		var color: Color = DISCO_COLORS[palette_index]
 		disco.light_color = color
 		var beat := pow(maxf(0.0, sin(lighting_clock * 4.0 + float(index) * 1.7)), 8.0)
-		disco.light_energy = 3.2 + 2.2 * beat
+		disco.light_energy = 3.6 + 2.3 * beat
 		var cone := disco.get_node_or_null("VisibleBeam") as MeshInstance3D
 		if cone == null:
 			# Older beams are unnamed; locate the first mesh child.
