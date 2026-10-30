@@ -842,6 +842,10 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	spot.name = "ClubSpot"
 	# Laser emission begins at the projector lens, not above its housing.
 	spot.position = Vector3(0.0, 0.12, 0.0) if kind == "laser" else Vector3(0.0, 0.77, -0.19)
+	# Diagnostic: lift the DJ-side lights clear of the fixture housing.
+	# If these beams appear, the previous lens offset was inside the GLB.
+	if kind == "light" and fixture.position.z > 0.0 and absf(fixture.position.x) < 5.5:
+		spot.position = Vector3(0.0, 1.35, -0.45)
 	spot.spot_range = 14.0 if kind == "light" else 11.0
 	spot.spot_angle = 25.0 if kind == "light" else 13.0
 	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
