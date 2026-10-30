@@ -1527,7 +1527,8 @@ func _refresh_progression() -> void:
 	for i in range(perk_buttons.size()):
 		var option: Dictionary = PERK_OPTIONS[i]
 		var owned := unlocked_perks.has(str(option["id"]))
-		perk_buttons[i].text = "%s %s  ·  %s" % ["✓" if owned else "✦", option["name"], option["effect"]]
+		perk_buttons[i].text = "%s  %s\n     %s" % ["✓" if owned else "✦", option["name"], option["effect"]]
+		perk_buttons[i].add_theme_stylebox_override("disabled", UIStyle.perk_style(owned))
 		perk_buttons[i].disabled = owned or perk_points <= 0
 	if expansion_details != null:
 		expansion_details.text = "NEXT BIG GOAL  ·  EXPAND 16×16 → 22×22\n€%d / €15,000   ·   REP %d/70   ·   LVL %d/5\n%s" % [cash, reputation, club_level, "Requirements met — expansion coming next" if cash >= 15000 and reputation >= 70 and club_level >= 5 else "Build your club to unlock expansion"]
@@ -1749,19 +1750,20 @@ func _build_overlay() -> void:
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
 	progression_panel.position = Vector2(20, 310)
-	progression_panel.custom_minimum_size = Vector2(290, 0)
+	progression_panel.custom_minimum_size = Vector2(344, 0)
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
 	theme_root.add_child(progression_panel)
 	var progress_content := VBoxContainer.new()
-	progress_content.add_theme_constant_override("separation", 9)
+	progress_content.add_theme_constant_override("separation", 12)
 	progression_panel.add_child(progress_content)
 	var progress_heading := Label.new()
 	progress_heading.text = "CLUB PROGRESSION"
-	UIStyle.decorate_label(progress_heading, 16)
+	UIStyle.decorate_label(progress_heading, 17)
+	progress_heading.add_theme_color_override("font_color", Color("#f0c4ed"))
 	progress_content.add_child(progress_heading)
 	progression_details = Label.new()
-	UIStyle.decorate_label(progression_details, 13)
+	UIStyle.decorate_label(progression_details, 14)
 	progress_content.add_child(progression_details)
 	xp_bar = ProgressBar.new()
 	UIStyle.decorate_progress(xp_bar)
@@ -1774,28 +1776,52 @@ func _build_overlay() -> void:
 	rep_bar.max_value = 100
 	UIStyle.decorate_progress(rep_bar)
 	progress_content.add_child(rep_bar)
+	var perks_heading := Label.new()
+	perks_heading.text = "MANAGER PERKS"
+	UIStyle.decorate_label(perks_heading, 15)
+	perks_heading.add_theme_color_override("font_color", Color("#b6c5e2"))
+	progress_content.add_child(perks_heading)
+	var tabs := TabContainer.new()
+	tabs.custom_minimum_size = Vector2(306, 235)
+	tabs.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	tabs.add_theme_font_size_override("font_size", 13)
+	progress_content.add_child(tabs)
 	for branch in ["MUSIC", "BAR", "COMMUNITY"]:
-		var branch_label := Label.new()
-		branch_label.text = "✦ " + branch + " PERKS"
-		UIStyle.decorate_section(branch_label)
-		progress_content.add_child(branch_label)
+		var branch_scroll := ScrollContainer.new()
+		branch_scroll.name = branch.capitalize()
+		branch_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		tabs.add_child(branch_scroll)
+		var branch_list := VBoxContainer.new()
+		branch_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		branch_list.add_theme_constant_override("separation", 8)
+		branch_scroll.add_child(branch_list)
 		for option in PERK_OPTIONS:
 			if option["branch"] != branch:
 				continue
 			var perk_button := Button.new()
-			perk_button.custom_minimum_size = Vector2(270, 30)
+			perk_button.custom_minimum_size = Vector2(292, 62)
+			perk_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			perk_button.add_theme_font_size_override("font_size", 14)
 			UIStyle.decorate_button(perk_button)
+			perk_button.add_theme_font_size_override("font_size", 14)
 			perk_button.pressed.connect(_buy_perk.bind(str(option["id"])))
-			progress_content.add_child(perk_button)
+			branch_list.add_child(perk_button)
 			perk_buttons.append(perk_button)
 	var expansion_heading := Label.new()
-	expansion_heading.text = "✦ NEXT BIG GOAL"
+	expansion_heading.text = "✦  NEXT BIG GOAL"
 	UIStyle.decorate_section(expansion_heading)
 	progress_content.add_child(expansion_heading)
+	var goal_panel := PanelContainer.new()
+	var goal_style := UIStyle.panel_style()
+	goal_style.bg_color = Color("#251a32")
+	goal_style.border_color = Color("#684077")
+	goal_style.shadow_size = 0
+	goal_panel.add_theme_stylebox_override("panel", goal_style)
+	progress_content.add_child(goal_panel)
 	expansion_details = Label.new()
 	UIStyle.decorate_label(expansion_details, 12, true)
 	expansion_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	progress_content.add_child(expansion_details)
+	goal_panel.add_child(expansion_details)
 	_refresh_progression()
 	var night_panel := PanelContainer.new()
 	night_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
