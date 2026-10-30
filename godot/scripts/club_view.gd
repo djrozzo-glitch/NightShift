@@ -14,11 +14,17 @@ var yaw := deg_to_rad(45.0)
 var tilt := deg_to_rad(-55.0)
 var dragging := false
 var last_mouse := Vector2.ZERO
+var build_mode := false
+var occupied: Dictionary = {}
+var hover_cell := Vector2i(-1, -1)
+var hover_mesh: MeshInstance3D
+var status_label: Label
 
 func _ready() -> void:
 	_build_world()
 	_build_camera()
 	_build_overlay()
+	_build_hover()
 
 func _make_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
 	var mesh := BoxMesh.new()
@@ -172,6 +178,55 @@ func _visual_bounds(root: Node3D) -> AABB:
 			bounds = bounds.merge(aabb)
 	return bounds
 
+func _reserve(x: int, y: int) -> void:
+	occupied[Vector2i(x, y)] = true
+
+func _can_place(x: int, y: int) -> bool:
+	return x > 0 and y > 0 and x < SIZE - 1 and y < SIZE - 1 and not occupied.has(Vector2i(x, y))
+
+func _build_hover() -> void:
+	hover_mesh = _make_box(self, Vector3.ZERO, Vector3(0.96, 0.025, 0.96), Color(0.2, 1.0, 0.55, 0.4))
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.no_depth_test = true
+	hover_mesh.material_override = mat
+	hover_mesh.visible = false
+
+func _update_hover(screen_pos: Vector2) -> void:
+	if not build_mode:
+		hover_mesh.visible = false
+		return
+	var origin := camera.project_ray_origin(screen_pos)
+	var direction := camera.project_ray_normal(screen_pos)
+	if absf(direction.y) < 0.0001:
+		hover_mesh.visible = false
+		hover_cell = Vector2i(-1, -1)
+		return
+	var distance := -origin.y / direction.y
+	if distance < 0.0:
+		hover_mesh.visible = false
+		hover_cell = Vector2i(-1, -1)
+		return
+	var hit := origin + direction * distance
+	var x := roundi(hit.x + 7.5)
+	var y := roundi(hit.z + 7.5)
+	hover_cell = Vector2i(x, y)
+	if x < 0 or y < 0 or x >= SIZE or y >= SIZE:
+		hover_mesh.visible = false
+		return
+	hover_mesh.visible = true
+	hover_mesh.position = Vector3(x - 7.5, 0.14, y - 7.5)
+	var mat := hover_mesh.material_override as StandardMaterial3D
+	mat.albedo_color = Color(0.2, 1.0, 0.55, 0.4) if _can_place(x, y) else Color(1.0, 0.25, 0.3, 0.4)
+
+func _place_speaker() -> void:
+	if not _can_place(hover_cell.x, hover_cell.y):
+		return
+	_model(club, "speaker", hover_cell.x, hover_cell.y)
+	_reserve(hover_cell.x, hover_cell.y)
+	_update_hover(get_viewport().get_mouse_position())
+
 func _build_world() -> void:
 	_load_models()
 	club = Node3D.new()
@@ -212,6 +267,10 @@ func _build_world() -> void:
 					_model(club, "wall", x, y, 1 if x == 0 or x == SIZE - 1 else 0)
 	for item in items:
 		_model(club, item[2], item[0], item[1], item[3])
+		_reserve(item[0], item[1])
+		if item[2] in TWO_CELL:
+			var offset := Vector2(0, 1).rotated(float(item[3]) * PI * 0.5)
+			_reserve(item[0] + roundi(offset.x), item[1] + roundi(offset.y))
 	_model(club, "entrance", 7, 15, 1)
 	var ambient := WorldEnvironment.new()
 	var env := Environment.new()
@@ -257,6 +316,10 @@ func _build_overlay() -> void:
 		warning.position = Vector2(20, 95)
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
 		ui.add_child(warning)
+	status_label = Label.new()
+	status_label.position = Vector2(20, 92)
+	status_label.text = "MODE: CAMERA   |   B: build speaker   ESC: camera"
+	ui.add_child(status_label)
 	var help := Label.new()
 	help.text = "Drag: rotate   Shift+drag: pan   Wheel/pinch or +/-: zoom   R: reset"
 	help.position = Vector2(20, 58)
@@ -276,6 +339,8 @@ func _input(event: InputEvent) -> void:
 			_update_camera()
 			get_viewport().set_input_as_handled()
 		return
+	if event is InputEventMouseMotion and build_mode:
+		_update_hover(event.position)
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			if event.pressed:
@@ -285,6 +350,11 @@ func _input(event: InputEvent) -> void:
 				zoom = clampf(zoom * pow(1.12, direction * steps), MIN_ZOOM, MAX_ZOOM)
 				_update_camera()
 				get_viewport().set_input_as_handled()
+			return
+		if event.button_index == MOUSE_BUTTON_LEFT and build_mode:
+			if event.pressed:
+				_update_hover(event.position)
+				_place_speaker()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			dragging = event.pressed
@@ -298,6 +368,16 @@ func _input(event: InputEvent) -> void:
 			yaw -= delta.x * 0.007
 			tilt = clamp(tilt + delta.y * 0.005, deg_to_rad(-85), deg_to_rad(-20))
 			_update_camera()
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B:
+		build_mode = not build_mode
+		dragging = false
+		status_label.text = "MODE: BUILD SPEAKER   |   Click: place   ESC: camera" if build_mode else "MODE: CAMERA   |   B: build speaker   ESC: camera"
+		_update_hover(get_viewport().get_mouse_position())
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		build_mode = false
+		dragging = false
+		status_label.text = "MODE: CAMERA   |   B: build speaker   ESC: camera"
+		_update_hover(get_viewport().get_mouse_position())
 	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_EQUAL or event.keycode == KEY_KP_ADD):
 		zoom = max(MIN_ZOOM, zoom * 0.85)
 		_update_camera()
