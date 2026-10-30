@@ -102,20 +102,26 @@ func _build_overlay() -> void:
 	title.add_theme_font_size_override("font_size", 24)
 	ui.add_child(title)
 	var help := Label.new()
-	help.text = "Drag: rotate   Shift+drag: pan   Wheel: zoom   R: reset"
+	help.text = "Drag: rotate   Shift+drag: pan   Wheel/pinch or +/-: zoom   R: reset"
 	help.position = Vector2(20, 58)
 	ui.add_child(help)
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
+	# Handle scrolling even when a UI Control consumes unhandled input.
+	if event is InputEventMagnifyGesture:
+		zoom = clamp(zoom / maxf(event.factor, 0.01), MIN_ZOOM, MAX_ZOOM)
+		_update_camera()
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			dragging = event.pressed
 			last_mouse = event.position
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			zoom = max(MIN_ZOOM, zoom * 0.9)
+			zoom = max(MIN_ZOOM, zoom * pow(0.9, maxf(event.factor, 0.1)))
 			_update_camera()
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			zoom = min(MAX_ZOOM, zoom * 1.1)
+			zoom = min(MAX_ZOOM, zoom * pow(1.1, maxf(event.factor, 0.1)))
 			_update_camera()
 	elif event is InputEventMouseMotion and dragging:
 		var delta: Vector2 = event.position - last_mouse
@@ -126,6 +132,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			yaw -= delta.x * 0.007
 			tilt = clamp(tilt + delta.y * 0.005, deg_to_rad(-85), deg_to_rad(-20))
 			_update_camera()
+	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_EQUAL or event.keycode == KEY_KP_ADD):
+		zoom = max(MIN_ZOOM, zoom * 0.85)
+		_update_camera()
+	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_MINUS or event.keycode == KEY_KP_SUBTRACT):
+		zoom = min(MAX_ZOOM, zoom * 1.15)
+		_update_camera()
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_R:
 		yaw = deg_to_rad(45)
 		tilt = deg_to_rad(-55)
