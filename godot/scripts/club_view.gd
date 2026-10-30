@@ -112,6 +112,8 @@ var stage_lights: Array[SpotLight3D] = []
 var lighting_clock := 0.0
 var dance_lights: Array[OmniLight3D] = []
 var beam_meshes: Array[MeshInstance3D] = []
+var disco_spots: Array[SpotLight3D] = []
+const DISCO_COLORS := [Color("#a75bff"), Color("#40c9ff"), Color("#ff4bba"), Color("#ffbc55"), Color("#f3f7ff")]
 var laser_spots: Array[SpotLight3D] = []
 var laser_beams: Array[MeshInstance3D] = []
 const LASER_COLORS := [Color("#31ff64"), Color("#287cff"), Color("#ffffff"), Color("#ff334d")]
@@ -831,7 +833,7 @@ func _build_stage_lights() -> void:
 		var beam := MeshInstance3D.new()
 		var cone := CylinderMesh.new()
 		cone.top_radius = 0.012 if str(record["kind"]) == "laser" else 0.035
-		cone.bottom_radius = 0.7 if str(record["kind"]) == "light" else 0.012
+		cone.bottom_radius = 0.95 if str(record["kind"]) == "light" else 0.012
 		cone.height = 7.0 if str(record["kind"]) == "laser" else 3.5
 		beam.mesh = cone
 		beam.rotation_degrees.x = 90.0
@@ -839,7 +841,7 @@ func _build_stage_lights() -> void:
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.albedo_color = Color(0.6, 0.25, 1.0, 0.08) if str(record["kind"]) == "light" else Color(0.19, 1.0, 0.39, 0.95)
+		mat.albedo_color = Color(0.6, 0.25, 1.0, 0.09) if str(record["kind"]) == "light" else Color(0.19, 1.0, 0.39, 0.95)
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		beam.material_override = mat
 		if str(record["kind"]) == "laser":
@@ -858,10 +860,28 @@ func _build_stage_lights() -> void:
 			halo_mat.albedo_color = Color(0.19, 1.0, 0.39, 0.12)
 			halo.material_override = halo_mat
 			beam.add_child(halo)
+		if str(record["kind"]) == "light":
+			# A narrower luminous cone inside the broad atmospheric wash.
+			var inner := MeshInstance3D.new()
+			inner.name = "DiscoCore"
+			var inner_mesh := CylinderMesh.new()
+			inner_mesh.top_radius = 0.02
+			inner_mesh.bottom_radius = 0.34
+			inner_mesh.height = 3.5
+			inner.mesh = inner_mesh
+			var inner_mat := StandardMaterial3D.new()
+			inner_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			inner_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			inner_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			inner_mat.albedo_color = Color(0.65, 0.35, 1.0, 0.18)
+			inner.material_override = inner_mat
+			beam.add_child(inner)
 		spot.add_child(beam)
 		beam.visible = false
 		beam_meshes.append(beam)
 		stage_lights.append(spot)
+		if str(record["kind"]) == "light":
+			disco_spots.append(spot)
 		if str(record["kind"]) == "laser":
 			laser_spots.append(spot)
 			laser_beams.append(beam)
@@ -913,6 +933,36 @@ func _animate_stage_lights(delta: float) -> void:
 			var direction := Vector3(sin(phase) * 0.65, 0.8 + sin(phase * 0.7) * 0.25, 3.0)
 			spot.look_at(spot.global_position + fixture.global_basis * direction, Vector3.UP)
 		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
+	# Independent color changes and a restrained rhythmic flash for moving heads.
+	for index in range(disco_spots.size()):
+		var disco := disco_spots[index]
+		if not is_instance_valid(disco):
+			continue
+		var palette_index := (int(floor(lighting_clock / 5.0)) + index * 2) % DISCO_COLORS.size()
+		var color: Color = DISCO_COLORS[palette_index]
+		disco.light_color = color
+		var beat := pow(maxf(0.0, sin(lighting_clock * 4.0 + float(index) * 1.7)), 8.0)
+		disco.light_energy = 3.2 + 2.2 * beat
+		var cone := disco.get_node_or_null("VisibleBeam") as MeshInstance3D
+		if cone == null:
+			# Older beams are unnamed; locate the first mesh child.
+			for child in disco.get_children():
+				if child is MeshInstance3D:
+					cone = child as MeshInstance3D
+					break
+		if cone != null:
+			var outer_mat := cone.material_override as StandardMaterial3D
+			if outer_mat != null:
+				var outer_color := color
+				outer_color.a = 0.075 + 0.045 * beat
+				outer_mat.albedo_color = outer_color
+			var inner := cone.get_node_or_null("DiscoCore") as MeshInstance3D
+			if inner != null:
+				var inner_material := inner.material_override as StandardMaterial3D
+				if inner_material != null:
+					var core_color := color
+					core_color.a = 0.15 + 0.11 * beat
+					inner_material.albedo_color = core_color
 	# Each light has a different phase; no part of the floor goes fully dark.
 	for index in range(dance_lights.size()):
 		var glow := dance_lights[index]
