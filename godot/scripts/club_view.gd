@@ -37,6 +37,17 @@ var reputation := 100
 var club_level := 1
 var economy_label: Label
 var notice_label: Label
+var readiness_label: Label
+var dj_picker: OptionButton
+var start_night_button: Button
+var night_active := false
+var night_number := 0
+const DJ_ROSTER := [
+	{"name": "Vanya Velin", "fee": 400},
+	{"name": "Velvet 37", "fee": 300},
+	{"name": "rozzo", "fee": 350},
+	{"name": "lowQ", "fee": 250}
+]
 
 func _ready() -> void:
 	_build_world()
@@ -210,8 +221,77 @@ func _register_object(node: Node3D, kind: String, x: int, y: int, turn: int) -> 
 	return id
 
 func _refresh_economy() -> void:
+	_refresh_readiness()
 	if economy_label != null:
 		economy_label.text = "CASH  €%d     REP  %d/100     LEVEL  %d" % [cash, reputation, club_level]
+
+func _count_kind(kind: String) -> int:
+	var count := 0
+	for record in placed_objects.values():
+		if record["kind"] == kind:
+			count += 1
+	return count
+
+func _readiness_issues() -> Array[String]:
+	var issues: Array[String] = []
+	if _count_kind("dj") < 1:
+		issues.append("DJ booth")
+	if _count_kind("speaker") < 2:
+		issues.append("2 speakers")
+	if _count_kind("bar") < 1:
+		issues.append("bar")
+	if _count_kind("wc") < 1:
+		issues.append("restroom")
+	if dj_picker != null and dj_picker.selected >= 0:
+		var fee := int(DJ_ROSTER[dj_picker.selected]["fee"])
+		if cash < fee:
+			issues.append("€%d DJ fee" % fee)
+	return issues
+
+func _refresh_readiness() -> void:
+	if readiness_label == null:
+		return
+	var issues := _readiness_issues()
+	if night_active:
+		readiness_label.text = "NIGHT %d IN PROGRESS" % night_number
+	elif issues.is_empty():
+		readiness_label.text = "READY TO OPEN  ✓"
+	else:
+		readiness_label.text = "NEEDS: " + ", ".join(issues)
+	if start_night_button != null:
+		start_night_button.disabled = night_active or not issues.is_empty()
+
+func _start_night() -> void:
+	_refresh_readiness()
+	if night_active or not _readiness_issues().is_empty() or dj_picker.selected < 0:
+		return
+	var dj: Dictionary = DJ_ROSTER[dj_picker.selected]
+	var fee := int(dj["fee"])
+	cash -= fee
+	night_number += 1
+	night_active = true
+	build_mode = false
+	erase_mode = false
+	_refresh_preview()
+	_update_hover(get_viewport().get_mouse_position())
+	_refresh_economy()
+	_refresh_readiness()
+	_notify("NIGHT %d  |  %s booked  |  -€%d" % [night_number, dj["name"], fee])
+	start_night_button.text = "End Night"
+
+func _end_night() -> void:
+	if not night_active:
+		return
+	night_active = false
+	start_night_button.text = "Start Night"
+	_refresh_readiness()
+	_notify("Night %d ended  |  Revenue simulation coming next" % night_number)
+
+func _night_button_pressed() -> void:
+	if night_active:
+		_end_night()
+	else:
+		_start_night()
 
 func _notify(message: String) -> void:
 	if notice_label != null:
@@ -232,6 +312,9 @@ func _remove_object(id: int) -> Dictionary:
 	return {"kind": record["kind"], "x": record["x"], "y": record["y"], "turn": record["turn"], "paid": record.get("paid", false)}
 
 func _erase_hovered() -> void:
+	if night_active:
+		_notify("Finish the night before editing")
+		return
 	var id: int = int(object_at_cell.get(hover_cell, -1))
 	if id < 0:
 		return
@@ -246,6 +329,8 @@ func _erase_hovered() -> void:
 	_update_hover(get_viewport().get_mouse_position())
 
 func _undo_action() -> void:
+	if night_active:
+		return
 	if action_history.is_empty():
 		return
 	var action: Dictionary = action_history.pop_back()
@@ -346,6 +431,9 @@ func _update_hover(screen_pos: Vector2) -> void:
 func _place_selected() -> void:
 	if not _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn):
 		return
+	if night_active:
+		_notify("Finish the night before building")
+		return
 	var cost := int(BUILD_PRICES.get(selected_kind, 0))
 	if cash < cost:
 		_notify("Not enough cash  |  Need €%d" % cost)
@@ -361,6 +449,8 @@ func _place_selected() -> void:
 	_update_hover(get_viewport().get_mouse_position())
 
 func _enable_erase() -> void:
+	if night_active:
+		return
 	build_mode = true
 	erase_mode = true
 	dragging = false
@@ -369,6 +459,8 @@ func _enable_erase() -> void:
 	_update_hover(get_viewport().get_mouse_position())
 
 func _choose_kind(kind: String) -> void:
+	if night_active:
+		return
 	selected_kind = kind
 	erase_mode = false
 	build_mode = true
@@ -491,6 +583,35 @@ func _build_overlay() -> void:
 	erase_button.text = "Erase (X)"
 	erase_button.pressed.connect(_enable_erase)
 	choices.add_child(erase_button)
+	var night_panel := PanelContainer.new()
+	night_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	night_panel.position = Vector2(-295, 20)
+	night_panel.custom_minimum_size = Vector2(275, 0)
+	ui.add_child(night_panel)
+	var night_controls := VBoxContainer.new()
+	night_panel.add_child(night_controls)
+	var heading := Label.new()
+	heading.text = "CLUB OPENING"
+	heading.add_theme_font_size_override("font_size", 18)
+	night_controls.add_child(heading)
+	readiness_label = Label.new()
+	readiness_label.custom_minimum_size = Vector2(255, 40)
+	readiness_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	night_controls.add_child(readiness_label)
+	var dj_label := Label.new()
+	dj_label.text = "BOOK A DJ"
+	night_controls.add_child(dj_label)
+	dj_picker = OptionButton.new()
+	for dj in DJ_ROSTER:
+		dj_picker.add_item("%s  •  €%d" % [dj["name"], dj["fee"]])
+	dj_picker.selected = 0
+	dj_picker.item_selected.connect(func(_index: int) -> void: _refresh_readiness())
+	night_controls.add_child(dj_picker)
+	start_night_button = Button.new()
+	start_night_button.text = "Start Night"
+	start_night_button.pressed.connect(_night_button_pressed)
+	night_controls.add_child(start_night_button)
+	_refresh_readiness()
 	var help := Label.new()
 	help.text = "Drag: rotate   Shift+drag: pan   Wheel/pinch or +/-: zoom   R: reset"
 	help.position = Vector2(20, 58)
@@ -523,7 +644,7 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT and build_mode:
-			if event.pressed and not build_panel.get_global_rect().has_point(event.position):
+			if event.pressed and not build_panel.get_global_rect().has_point(event.position) and not night_active:
 				_update_hover(event.position)
 				if erase_mode:
 					_erase_hovered()
@@ -544,7 +665,7 @@ func _input(event: InputEvent) -> void:
 			_update_camera()
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Z and (event.ctrl_pressed or event.meta_pressed):
 		_undo_action()
-	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X and not night_active:
 		if erase_mode:
 			erase_mode = false
 			status_label.text = "BUILD: %s  |  Click: place  R: rotate  ESC: exit" % selected_kind.to_upper()
@@ -552,7 +673,7 @@ func _input(event: InputEvent) -> void:
 			_update_hover(get_viewport().get_mouse_position())
 		else:
 			_enable_erase()
-	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B:
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B and not night_active:
 		build_mode = not build_mode
 		if not build_mode:
 			erase_mode = false
