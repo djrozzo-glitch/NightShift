@@ -36,6 +36,7 @@ func _make_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> Mes
 const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light", "laser", "plant2", "table", "stool", "wc", "entrance", "floor"]
 var models: Dictionary = {}
 var club: Node3D
+var missing_models: Array[String] = []
 
 func _load_models() -> void:
 	for kind in MODEL_TYPES:
@@ -44,6 +45,12 @@ func _load_models() -> void:
 			var packed := load(path) as PackedScene
 			if packed != null:
 				models[kind] = packed
+			else:
+				missing_models.append(kind)
+				push_warning("NightShift: cannot import %s" % path)
+		else:
+			missing_models.append(kind)
+			push_warning("NightShift: missing %s" % path)
 
 func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void:
 	var obj: Node3D
@@ -95,6 +102,9 @@ func _build_world() -> void:
 	for y in range(SIZE):
 		for x in range(SIZE):
 			var dance := x >= 3 and x <= 12 and y >= 3 and y <= 9
+			if dance and models.has("floor"):
+				_model(club, "floor", x, y)
+				continue
 			_make_box(club, Vector3(x - 7.5, 0.025 if dance else -0.055, y - 7.5),
 				Vector3(0.99, 0.15 if dance else 0.10, 0.99),
 				dance_color if dance else (dark if (x + y) % 2 == 0 else light))
@@ -160,6 +170,12 @@ func _build_overlay() -> void:
 	title.position = Vector2(20, 20)
 	title.add_theme_font_size_override("font_size", 24)
 	ui.add_child(title)
+	if not missing_models.is_empty():
+		var warning := Label.new()
+		warning.text = "Missing GLB: " + ", ".join(missing_models)
+		warning.position = Vector2(20, 95)
+		warning.add_theme_color_override("font_color", Color("#ffb27c"))
+		ui.add_child(warning)
 	var help := Label.new()
 	help.text = "Drag: rotate   Shift+drag: pan   Wheel/pinch or +/-: zoom   R: reset"
 	help.position = Vector2(20, 58)
