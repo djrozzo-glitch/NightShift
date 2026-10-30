@@ -63,7 +63,9 @@ var night_drinks_sold := 0
 var night_time_label: Label
 var night_speed_button: Button
 var night_pause_button: Button
-var night_report: AcceptDialog
+var night_report_panel: PanelContainer
+var night_report_heading: Label
+var night_report_details: Label
 const MAX_GUESTS := 28
 const GUEST_CHARACTER_NAMES := ["baggy_m", "fashion_f", "jungle_f", "raver_f", "raver_m"]
 var guest_models: Dictionary = {}
@@ -440,6 +442,7 @@ func _spawn_guest() -> void:
 	guest_count += 1
 	night_ticket_income += TICKET_PRICE
 	cash += TICKET_PRICE
+	_update_night_stats()
 	_refresh_economy()
 	_refresh_readiness()
 
@@ -463,6 +466,7 @@ func _process(delta: float) -> void:
 			night_drinks_sold += 1
 			night_drink_income += DRINK_PRICE
 			cash += DRINK_PRICE
+			_update_night_stats()
 			_refresh_economy()
 		var person: Node3D = guest["node"]
 		if not is_instance_valid(person):
@@ -527,10 +531,12 @@ func _start_night() -> void:
 	night_ticket_income = 0
 	night_drink_income = 0
 	night_drinks_sold = 0
-	if night_report != null:
-		night_report.hide()
+	if night_report_panel != null:
+		night_report_panel.show()
+	_update_night_stats()
 	night_number += 1
 	night_active = true
+	night_report_panel.show()
 	_clear_guests()
 	guest_count = 0
 	build_mode = false
@@ -560,12 +566,19 @@ func _end_night() -> void:
 	night_time_label.text = "NIGHT COMPLETE"
 	var revenue := night_ticket_income + night_drink_income
 	var profit := revenue - costs
-	night_report.title = "NIGHT %d REPORT" % night_number
-	night_report.dialog_text = "GUESTS: %d\nTICKETS: €%d\nDRINKS SOLD: %d\nBAR REVENUE: €%d\n\nTOTAL REVENUE: €%d\nDJ FEE: -€%d\nSTAFF: -€%d\n\nNET PROFIT: %s€%d" % [guest_count, night_ticket_income, night_drinks_sold, night_drink_income, revenue, night_dj_fee, STAFF_COST, "+" if profit >= 0 else "-", absi(profit)]
-	night_report.popup_centered(Vector2i(410, 350))
+	_update_night_stats()
 	start_night_button.text = "START NIGHT"
 	_refresh_readiness()
-	_notify("Night %d ended  |  %d guests visited  |  Profit %s€%d" % [night_number, "+" if profit >= 0 else "-", absi(profit)])
+	_notify("Night %d ended  |  %d guests visited  |  Profit %s€%d" % [night_number, guest_count, "+" if profit >= 0 else "-", absi(profit)])
+
+func _update_night_stats() -> void:
+	if night_report_details == null:
+		return
+	var revenue := night_ticket_income + night_drink_income
+	var expenses := night_dj_fee + STAFF_COST
+	var profit := revenue - expenses
+	night_report_heading.text = "NIGHT %d  |  %s" % [night_number, "LIVE STATS" if night_active else "REPORT"]
+	night_report_details.text = "GUESTS                 %d\nTICKET REVENUE    €%d\nDRINKS SOLD          %d\nBAR REVENUE        €%d\n\nTOTAL REVENUE     €%d\nDJ BOOKING           -€%d\nSTAFF                      -€%d\n\nNET PROFIT             %s€%d" % [guest_count, night_ticket_income, night_drinks_sold, night_drink_income, revenue, night_dj_fee, STAFF_COST, "+" if profit >= 0 else "-", absi(profit)]
 
 func _night_button_pressed() -> void:
 	if night_active:
@@ -946,9 +959,24 @@ func _build_overlay() -> void:
 		night_speed_button.text = "2× SPEED" if night_speed == 2.0 else "1× SPEED"
 	)
 	speed_controls.add_child(night_speed_button)
-	night_report = AcceptDialog.new()
-	night_report.title = "NIGHT REPORT"
-	ui.add_child(night_report)
+	night_report_panel = PanelContainer.new()
+	night_report_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	night_report_panel.offset_left = -315
+	night_report_panel.offset_right = -20
+	night_report_panel.offset_top = 300
+	night_report_panel.offset_bottom = 300
+	night_report_panel.custom_minimum_size = Vector2(275, 0)
+	night_report_panel.visible = false
+	UIStyle.decorate_panel(night_report_panel)
+	ui.add_child(night_report_panel)
+	var report_content := VBoxContainer.new()
+	night_report_panel.add_child(report_content)
+	night_report_heading = Label.new()
+	UIStyle.decorate_label(night_report_heading, 18)
+	report_content.add_child(night_report_heading)
+	night_report_details = Label.new()
+	UIStyle.decorate_label(night_report_details, 13)
+	report_content.add_child(night_report_details)
 	_refresh_readiness()
 	var help_button := Button.new()
 	help_button.text = "?  HELP"
