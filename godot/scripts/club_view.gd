@@ -46,6 +46,8 @@ var progression_panel: PanelContainer
 var progression_details: Label
 var perk_buttons: Array[Button] = []
 var expansion_details: Label
+var management_panel: PanelContainer
+const SAVE_PATH := "user://nightshift_club.json"
 const LEVEL_NAMES := ["Illegal Basement", "Word of Mouth", "Local Favorite", "Afterhours", "Underground Institution", "Citywide Buzz", "Cult Following", "Scene Leader", "International Attention", "Legendary Venue"]
 const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "laser": 2, "sofa": 3, "table": 4}
 const PERK_OPTIONS := [
@@ -1524,47 +1526,184 @@ func _refresh_progression() -> void:
 		expansion_details.text = "NEXT BIG GOAL  ·  EXPAND 16×16 → 22×22\n€%d / €15,000   ·   REP %d/70   ·   LVL %d/5\n%s" % [cash, reputation, club_level, "Requirements met — expansion coming next" if cash >= 15000 and reputation >= 70 and club_level >= 5 else "Build your club to unlock expansion"]
 
 
+func _save_club() -> void:
+	if night_active:
+		_notify("Finish the night before saving")
+		return
+	var furniture: Array[Dictionary] = []
+	for record in placed_objects.values():
+		furniture.append({
+			"kind": record["kind"], "x": record["x"], "y": record["y"],
+			"turn": record["turn"], "paid": record.get("paid", false)
+		})
+	var data := {
+		"version": 1, "cash": cash, "reputation": reputation,
+		"level": club_level, "xp": club_xp, "total_xp": total_xp,
+		"perk_points": perk_points, "perks": unlocked_perks,
+		"night_number": night_number, "objects": furniture
+	}
+	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if file == null:
+		_notify("Save failed: unable to write file")
+		return
+	file.store_string(JSON.stringify(data))
+	file.close()
+	_notify("Club saved successfully")
+
+
+func _load_club() -> void:
+	if night_active:
+		_notify("Finish the night before loading")
+		return
+	if not FileAccess.file_exists(SAVE_PATH):
+		_notify("No saved club found")
+		return
+	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if file == null:
+		_notify("Unable to open saved club")
+		return
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not parsed is Dictionary:
+		_notify("Invalid save file")
+		return
+	var data: Dictionary = parsed
+	if not data.has("objects") or not data["objects"] is Array:
+		_notify("Invalid club layout")
+		return
+	# Validate before removing the current club.
+	for entry in data["objects"]:
+		if not entry is Dictionary:
+			_notify("Invalid object in save")
+			return
+		if not models.has(str(entry.get("kind", ""))):
+			_notify("Save references an unavailable model")
+			return
+		var x := int(entry.get("x", -1))
+		var y := int(entry.get("y", -1))
+		if x < 0 or x >= SIZE or y < 0 or y >= SIZE:
+			_notify("Save contains an invalid object position")
+			return
+	_clear_guests()
+	for id in placed_objects.keys().duplicate():
+		_remove_object(int(id))
+	occupied.clear()
+	object_at_cell.clear()
+	action_history.clear()
+	for entry in data["objects"]:
+		var kind := str(entry["kind"])
+		var x := int(entry["x"])
+		var y := int(entry["y"])
+		var turn := int(entry.get("turn", 0))
+		var node := _model(club, kind, x, y, turn)
+		var id := _register_object(node, kind, x, y, turn)
+		placed_objects[id]["paid"] = bool(entry.get("paid", false))
+		_attach_fixture_lighting(node, kind)
+	cash = int(data.get("cash", 15000))
+	reputation = clampi(int(data.get("reputation", 100)), 0, 100)
+	club_level = maxi(1, int(data.get("level", 1)))
+	club_xp = maxi(0, int(data.get("xp", 0)))
+	total_xp = maxi(0, int(data.get("total_xp", 0)))
+	perk_points = maxi(0, int(data.get("perk_points", 0)))
+	unlocked_perks.clear()
+	for perk in data.get("perks", []):
+		unlocked_perks.append(str(perk))
+	night_number = maxi(0, int(data.get("night_number", 0)))
+	build_mode = false
+	erase_mode = false
+	_refresh_preview()
+	_refresh_economy()
+	_refresh_readiness()
+	_notify("Club loaded successfully")
+
+
+func _show_new_club_confirmation() -> void:
+	var dialog := get_node_or_null("CanvasLayer/NewClubConfirmation")
+	# The dialog lives under the UI theme root; find it by group-free traversal.
+	for child in get_tree().get_nodes_in_group("nightshift_new_club_dialog"):
+		if child is ConfirmationDialog:
+			child.popup_centered()
+			return
+
+
+func _new_club() -> void:
+	if night_active:
+		_notify("Finish the night before starting a new club")
+		return
+	# A new game starts from the original scene; existing save stays intact.
+	get_tree().reload_current_scene()
+
+
 func _build_overlay() -> void:
 	var ui := CanvasLayer.new()
 	add_child(ui)
+	var theme_root := Control.new()
+	theme_root.theme = UIStyle.make_theme()
+	theme_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(theme_root)
+	# Compact management dropdown; all actions stay in the game.
+	var manage_button := MenuButton.new()
+	manage_button.text = "☰  CLUB"
+	manage_button.position = Vector2(330, 18)
+	manage_button.custom_minimum_size = Vector2(120, 38)
+	UIStyle.decorate_button(manage_button)
+	theme_root.add_child(manage_button)
+	var popup := manage_button.get_popup()
+	popup.add_item("Save Club", 0)
+	popup.add_item("Load Club", 1)
+	popup.add_separator()
+	popup.add_item("New Club", 2)
+	popup.id_pressed.connect(func(id: int) -> void:
+		match id:
+			0: _save_club()
+			1: _load_club()
+			2: _show_new_club_confirmation()
+	)
+	var new_confirmation := ConfirmationDialog.new()
+	new_confirmation.name = "NewClubConfirmation"
+	new_confirmation.title = "Start a new club?"
+	new_confirmation.add_to_group("nightshift_new_club_dialog")
+	new_confirmation.dialog_text = "Your current unsaved progress will be lost. Your saved club will remain available."
+	theme_root.add_child(new_confirmation)
+	new_confirmation.confirmed.connect(_new_club)
 	var title := Label.new()
 	title.text = "ABLETON GYM"
 	UIStyle.decorate_label(title, 23)
 	title.position = Vector2(20, 20)
 	
-	ui.add_child(title)
+	theme_root.add_child(title)
 	if not missing_models.is_empty():
 		var warning := Label.new()
 		warning.text = "Missing GLB: " + ", ".join(missing_models)
 		warning.position = Vector2(300, 120)
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
-		ui.add_child(warning)
+		theme_root.add_child(warning)
 	economy_label = Label.new()
 	economy_label.position = Vector2(20, 57)
 	UIStyle.decorate_label(economy_label, 18)
-	ui.add_child(economy_label)
+	theme_root.add_child(economy_label)
 	_refresh_economy()
 	notice_label = Label.new()
 	notice_label.position = Vector2(20, 86)
 	UIStyle.decorate_label(notice_label, 13, true)
-	ui.add_child(notice_label)
+	theme_root.add_child(notice_label)
 	status_label = Label.new()
 	status_label.position = Vector2(20, 113)
 	status_label.text = "MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
 	UIStyle.decorate_label(status_label, 13, true)
-	ui.add_child(status_label)
+	theme_root.add_child(status_label)
 	build_toggle = Button.new()
 	build_toggle.text = "BUILD  [B]"
 	build_toggle.position = Vector2(20, 151)
 	build_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(build_toggle, true)
 	build_toggle.pressed.connect(_toggle_build_panel)
-	ui.add_child(build_toggle)
+	theme_root.add_child(build_toggle)
 	build_panel = PanelContainer.new()
 	build_panel.position = Vector2(20, 198)
 	build_panel.visible = false
 	UIStyle.decorate_panel(build_panel)
-	ui.add_child(build_panel)
+	theme_root.add_child(build_panel)
 	var choices := GridContainer.new()
 	choices.columns = 2
 	build_panel.add_child(choices)
@@ -1590,14 +1729,14 @@ func _build_overlay() -> void:
 		build_panel.visible = false
 		build_toggle.text = "BUILD  [B]"
 	)
-	ui.add_child(progression_toggle)
+	theme_root.add_child(progression_toggle)
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
 	progression_panel.position = Vector2(20, 255)
 	progression_panel.custom_minimum_size = Vector2(290, 0)
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
-	ui.add_child(progression_panel)
+	theme_root.add_child(progression_panel)
 	var progress_content := VBoxContainer.new()
 	progress_content.add_theme_constant_override("separation", 6)
 	progression_panel.add_child(progress_content)
@@ -1639,7 +1778,7 @@ func _build_overlay() -> void:
 	night_panel.offset_bottom = 20
 	UIStyle.decorate_panel(night_panel)
 	night_panel.custom_minimum_size = Vector2(275, 0)
-	ui.add_child(night_panel)
+	theme_root.add_child(night_panel)
 	var night_controls := VBoxContainer.new()
 	night_panel.add_child(night_controls)
 	var heading := Label.new()
@@ -1700,7 +1839,7 @@ func _build_overlay() -> void:
 	night_report_panel.custom_minimum_size = Vector2(275, 0)
 	night_report_panel.visible = false
 	UIStyle.decorate_panel(night_report_panel)
-	ui.add_child(night_report_panel)
+	theme_root.add_child(night_report_panel)
 	var report_content := VBoxContainer.new()
 	night_report_panel.add_child(report_content)
 	night_report_heading = Label.new()
@@ -1715,13 +1854,13 @@ func _build_overlay() -> void:
 	help_button.position = Vector2(200, 205)
 	UIStyle.decorate_button(help_button)
 	help_button.pressed.connect(_toggle_help)
-	ui.add_child(help_button)
+	theme_root.add_child(help_button)
 	help_label = Label.new()
 	help_label.text = "Drag: rotate   Shift+drag: pan\nWheel/pinch or +/-: zoom\nR: rotate furniture / reset camera\nB: build   X: erase   Ctrl/Cmd+Z: undo"
 	help_label.position = Vector2(330, 205)
 	help_label.visible = false
 	UIStyle.decorate_label(help_label, 13, true)
-	ui.add_child(help_label)
+	theme_root.add_child(help_label)
 
 func _input(event: InputEvent) -> void:
 	# Handle scrolling even when a UI Control consumes unhandled input.
