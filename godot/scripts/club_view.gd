@@ -815,7 +815,7 @@ func _build_stage_lights() -> void:
 		var spot := SpotLight3D.new()
 		spot.name = "ClubSpot"
 		# Laser emission begins at the projector lens, not above its housing.
-		spot.position = Vector3(0.0, 0.34, 0.0) if str(record["kind"]) == "laser" else Vector3(0.0, 1.4, 0.0)
+		spot.position = Vector3(0.0, 0.12, 0.0) if str(record["kind"]) == "laser" else Vector3(0.0, 1.4, 0.0)
 		spot.spot_range = 11.0
 		spot.spot_angle = 34.0 if str(record["kind"]) == "light" else 13.0
 		spot.light_color = Color("#c15dff") if str(record["kind"]) == "light" else LASER_COLORS[0]
@@ -1397,11 +1397,11 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventPanGesture:
-		# Trackpad two-finger gesture: rotate/tilt. Pinch and wheel handle zoom.
-		yaw -= event.delta.x * 0.022
-		tilt = clampf(tilt + event.delta.y * 0.018, deg_to_rad(-85.0), deg_to_rad(-20.0))
-		_update_camera()
-		get_viewport().set_input_as_handled()
+		# macOS trackpad scrolling must zoom; camera rotation stays on mouse drag.
+		if absf(event.delta.y) > 0.001:
+			zoom = clampf(zoom * exp(event.delta.y * 0.055), MIN_ZOOM, MAX_ZOOM)
+			_update_camera()
+			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouseMotion and build_mode:
 		_update_hover(event.position)
