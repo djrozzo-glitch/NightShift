@@ -499,10 +499,13 @@ func _sofa_seat(approach_cell: Vector2i) -> Dictionary:
 		if toward_aisle.length_squared() < 0.001:
 			continue
 		toward_aisle = toward_aisle.normalized()
-		var seat := center + toward_aisle * 0.42
-		seat.y = approach.y + 0.16
+		var seat := center + toward_aisle * 0.62
+		seat.y = approach.y + 0.06
 		best = {"position": seat, "rotation": atan2(toward_aisle.x, toward_aisle.z)}
 	return best
+
+func toward_seat_offset(angle: float, distance: float) -> Vector3:
+	return Vector3(sin(angle), 0.0, cos(angle)) * distance
 
 func _sit_animation_player(guest: Dictionary) -> AnimationPlayer:
 	var motions: Dictionary = guest["motions"]
@@ -552,7 +555,8 @@ func _guest_arrived(guest: Dictionary) -> void:
 				person.position = seat["position"]
 				person.rotation.y = float(seat["rotation"])
 				if str(guest.get("character", "")) == "raver_m":
-					person.rotation.y += PI * 0.5
+					person.rotation.y += PI * 1.5
+					person.position += toward_seat_offset(person.rotation.y, 0.22)
 				guest["seated"] = true
 				guest["state"] = "sitting"
 				guest["wait"] = _play_sit(guest, false)
