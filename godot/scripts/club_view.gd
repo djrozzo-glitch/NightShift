@@ -20,6 +20,11 @@ var floor_heights: Dictionary = {}
 var hover_cell := Vector2i(-1, -1)
 var hover_mesh: MeshInstance3D
 var status_label: Label
+const BUILD_TYPES := ["speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser"]
+var selected_kind := "speaker"
+var build_turn := 0
+var preview_root: Node3D
+var build_panel: PanelContainer
 
 func _ready() -> void:
 	_build_world()
@@ -61,7 +66,7 @@ func _load_models() -> void:
 
 const TWO_CELL := ["dj", "bar", "sofa", "wc", "entrance"]
 
-func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void:
+func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node3D:
 	# Separate the grid pivot from the visible GLB so 90-degree turns rotate
 	# around the occupied footprint rather than the GLB author's origin.
 	var pivot_node := Node3D.new()
@@ -97,7 +102,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 		var color := Color("#5d456a") if kind in TWO_CELL else Color("#53505b")
 		_make_box(pivot_node, Vector3(0, 0.4, 0.5 if kind in TWO_CELL else 0),
 			Vector3(0.8, 0.8, 1.8 if kind in TWO_CELL else 0.8), color)
-		return
+		return pivot_node
 
 	var visual := (models[kind] as PackedScene).instantiate() as Node3D
 	pivot_node.add_child(visual)
@@ -106,7 +111,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	var native_length := maxf(bounds.size.x, bounds.size.z)
 	if bounds.size.length_squared() < 0.000001:
 		push_warning("NightShift: empty model %s" % kind)
-		return
+		return pivot_node
 
 	# All two-cell objects occupy the local +Z direction before grid rotation.
 	if kind in TWO_CELL and bounds.size.x > bounds.size.z:
@@ -164,6 +169,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 		offset_z - bounds.get_center().z)
 	if kind == "floor":
 		floor_heights[Vector2i(x, y)] = _visual_bounds(pivot_node).end.y
+	return pivot_node
 
 func _visual_bounds(root: Node3D) -> AABB:
 	var bounds := AABB()
@@ -184,8 +190,18 @@ func _visual_bounds(root: Node3D) -> AABB:
 func _reserve(x: int, y: int) -> void:
 	occupied[Vector2i(x, y)] = true
 
-func _can_place(x: int, y: int) -> bool:
-	return x > 0 and y > 0 and x < SIZE - 1 and y < SIZE - 1 and not occupied.has(Vector2i(x, y))
+func _footprint(x: int, y: int, kind: String, turn: int) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = [Vector2i(x, y)]
+	if kind in TWO_CELL:
+		var offsets := [Vector2i(0, 1), Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0)]
+		cells.append(Vector2i(x, y) + offsets[posmod(turn, 4)])
+	return cells
+
+func _can_place(x: int, y: int, kind: String = "speaker", turn: int = 0) -> bool:
+	for cell in _footprint(x, y, kind, turn):
+		if cell.x <= 0 or cell.y <= 0 or cell.x >= SIZE - 1 or cell.y >= SIZE - 1 or occupied.has(cell):
+			return false
+	return true
 
 func _build_hover() -> void:
 	hover_mesh = _make_box(self, Vector3.ZERO, Vector3(0.96, 0.025, 0.96), Color(0.2, 1.0, 0.55, 0.4))
@@ -195,39 +211,75 @@ func _build_hover() -> void:
 	mat.no_depth_test = true
 	hover_mesh.material_override = mat
 	hover_mesh.visible = false
+	preview_root = Node3D.new()
+	preview_root.name = "BuildPreview"
+	add_child(preview_root)
+
+func _refresh_preview() -> void:
+	for child in preview_root.get_children():
+		preview_root.remove_child(child)
+		child.queue_free()
+	if not build_mode or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
+		return
+	var node := _model(preview_root, selected_kind, hover_cell.x, hover_cell.y, build_turn)
+	for mesh_node in node.find_children("*", "MeshInstance3D", true, false):
+		var mesh := mesh_node as MeshInstance3D
+		var overlay := StandardMaterial3D.new()
+		overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		overlay.albedo_color = Color(0.25, 1.0, 0.6, 0.32) if _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn) else Color(1.0, 0.2, 0.3, 0.35)
+		mesh.material_overlay = overlay
 
 func _update_hover(screen_pos: Vector2) -> void:
-	if not build_mode:
+	if not build_mode or (build_panel != null and build_panel.get_global_rect().has_point(screen_pos)):
 		hover_mesh.visible = false
+		preview_root.visible = false
 		return
 	var origin := camera.project_ray_origin(screen_pos)
 	var direction := camera.project_ray_normal(screen_pos)
 	if absf(direction.y) < 0.0001:
 		hover_mesh.visible = false
-		hover_cell = Vector2i(-1, -1)
+		preview_root.visible = false
 		return
 	var distance := -origin.y / direction.y
 	if distance < 0.0:
 		hover_mesh.visible = false
-		hover_cell = Vector2i(-1, -1)
+		preview_root.visible = false
 		return
 	var hit := origin + direction * distance
 	var x := roundi(hit.x + 7.5)
 	var y := roundi(hit.z + 7.5)
-	hover_cell = Vector2i(x, y)
 	if x < 0 or y < 0 or x >= SIZE or y >= SIZE:
 		hover_mesh.visible = false
+		preview_root.visible = false
+		hover_cell = Vector2i(-1, -1)
 		return
+	var next_cell := Vector2i(x, y)
+	var changed := next_cell != hover_cell
+	hover_cell = next_cell
 	hover_mesh.visible = true
-	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(Vector2i(x, y), 0.0)) + 0.035, y - 7.5)
+	preview_root.visible = true
+	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(next_cell, 0.0)) + 0.035, y - 7.5)
 	var mat := hover_mesh.material_override as StandardMaterial3D
-	mat.albedo_color = Color(0.2, 1.0, 0.55, 0.4) if _can_place(x, y) else Color(1.0, 0.25, 0.3, 0.4)
+	mat.albedo_color = Color(0.2, 1.0, 0.55, 0.4) if _can_place(x, y, selected_kind, build_turn) else Color(1.0, 0.25, 0.3, 0.4)
+	if changed:
+		_refresh_preview()
 
-func _place_speaker() -> void:
-	if not _can_place(hover_cell.x, hover_cell.y):
+func _place_selected() -> void:
+	if not _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn):
 		return
-	_model(club, "speaker", hover_cell.x, hover_cell.y)
-	_reserve(hover_cell.x, hover_cell.y)
+	_model(club, selected_kind, hover_cell.x, hover_cell.y, build_turn)
+	for cell in _footprint(hover_cell.x, hover_cell.y, selected_kind, build_turn):
+		_reserve(cell.x, cell.y)
+	_refresh_preview()
+	_update_hover(get_viewport().get_mouse_position())
+
+func _choose_kind(kind: String) -> void:
+	selected_kind = kind
+	build_mode = true
+	dragging = false
+	status_label.text = "BUILD: %s  |  Click: place  R: rotate  ESC: exit" % selected_kind.to_upper()
+	_refresh_preview()
 	_update_hover(get_viewport().get_mouse_position())
 
 func _build_world() -> void:
@@ -273,8 +325,8 @@ func _build_world() -> void:
 		_model(club, item[2], item[0], item[1], item[3])
 		_reserve(item[0], item[1])
 		if item[2] in TWO_CELL:
-			var offset := Vector2(0, 1).rotated(float(item[3]) * PI * 0.5)
-			_reserve(item[0] + roundi(offset.x), item[1] + roundi(offset.y))
+			for cell in _footprint(item[0], item[1], item[2], item[3]):
+				_reserve(cell.x, cell.y)
 	_model(club, "entrance", 7, 15, 1)
 	var ambient := WorldEnvironment.new()
 	var env := Environment.new()
@@ -324,6 +376,17 @@ func _build_overlay() -> void:
 	status_label.position = Vector2(20, 92)
 	status_label.text = "MODE: CAMERA   |   B: build speaker   ESC: camera"
 	ui.add_child(status_label)
+	build_panel = PanelContainer.new()
+	build_panel.position = Vector2(20, 140)
+	ui.add_child(build_panel)
+	var choices := VBoxContainer.new()
+	build_panel.add_child(choices)
+	for kind in BUILD_TYPES:
+		var button := Button.new()
+		button.text = kind.capitalize()
+		button.custom_minimum_size = Vector2(130, 27)
+		button.pressed.connect(_choose_kind.bind(kind))
+		choices.add_child(button)
 	var help := Label.new()
 	help.text = "Drag: rotate   Shift+drag: pan   Wheel/pinch or +/-: zoom   R: reset"
 	help.position = Vector2(20, 58)
@@ -356,9 +419,9 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT and build_mode:
-			if event.pressed:
+			if event.pressed and not build_panel.get_global_rect().has_point(event.position):
 				_update_hover(event.position)
-				_place_speaker()
+				_place_selected()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			dragging = event.pressed
@@ -375,12 +438,14 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B:
 		build_mode = not build_mode
 		dragging = false
-		status_label.text = "MODE: BUILD SPEAKER   |   Click: place   ESC: camera" if build_mode else "MODE: CAMERA   |   B: build speaker   ESC: camera"
+		status_label.text = ("BUILD: %s  |  Click: place  R: rotate  ESC: exit" % selected_kind.to_upper()) if build_mode else "MODE: CAMERA   |   B: build   ESC: camera"
+		_refresh_preview()
 		_update_hover(get_viewport().get_mouse_position())
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		build_mode = false
 		dragging = false
-		status_label.text = "MODE: CAMERA   |   B: build speaker   ESC: camera"
+		status_label.text = "MODE: CAMERA   |   B: build   ESC: camera"
+		_refresh_preview()
 		_update_hover(get_viewport().get_mouse_position())
 	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_EQUAL or event.keycode == KEY_KP_ADD):
 		zoom = max(MIN_ZOOM, zoom * 0.85)
@@ -388,6 +453,10 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_MINUS or event.keycode == KEY_KP_SUBTRACT):
 		zoom = min(MAX_ZOOM, zoom * 1.15)
 		_update_camera()
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_R and build_mode:
+		build_turn = (build_turn + 1) % 4
+		_refresh_preview()
+		_update_hover(get_viewport().get_mouse_position())
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_R:
 		yaw = deg_to_rad(45)
 		tilt = deg_to_rad(-55)
