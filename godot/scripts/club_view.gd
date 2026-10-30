@@ -830,18 +830,34 @@ func _build_stage_lights() -> void:
 			spot.look_at(spot.global_position + fixture.global_basis * Vector3(0.0, 0.8, 3.0), Vector3.UP)
 		var beam := MeshInstance3D.new()
 		var cone := CylinderMesh.new()
-		cone.top_radius = 0.035
-		cone.bottom_radius = 0.7 if str(record["kind"]) == "light" else 0.055
-		cone.height = 3.5
+		cone.top_radius = 0.012 if str(record["kind"]) == "laser" else 0.035
+		cone.bottom_radius = 0.7 if str(record["kind"]) == "light" else 0.012
+		cone.height = 7.0 if str(record["kind"]) == "laser" else 3.5
 		beam.mesh = cone
 		beam.rotation_degrees.x = 90.0
-		beam.position = Vector3(0.0, 0.0, -1.75)
+		beam.position = Vector3(0.0, 0.0, -3.5 if str(record["kind"]) == "laser" else -1.75)
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.albedo_color = Color(0.6, 0.25, 1.0, 0.08) if str(record["kind"]) == "light" else Color(0.19, 1.0, 0.39, 0.45)
+		mat.albedo_color = Color(0.6, 0.25, 1.0, 0.08) if str(record["kind"]) == "light" else Color(0.19, 1.0, 0.39, 0.95)
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		beam.material_override = mat
+		if str(record["kind"]) == "laser":
+			# Soft translucent halo around the bright, narrow laser core.
+			var halo := MeshInstance3D.new()
+			halo.name = "LaserHalo"
+			var halo_mesh := CylinderMesh.new()
+			halo_mesh.top_radius = 0.055
+			halo_mesh.bottom_radius = 0.055
+			halo_mesh.height = 7.0
+			halo.mesh = halo_mesh
+			var halo_mat := StandardMaterial3D.new()
+			halo_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			halo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			halo_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			halo_mat.albedo_color = Color(0.19, 1.0, 0.39, 0.12)
+			halo.material_override = halo_mat
+			beam.add_child(halo)
 		spot.add_child(beam)
 		beam.visible = false
 		beam_meshes.append(beam)
@@ -917,8 +933,15 @@ func _animate_stage_lights(delta: float) -> void:
 			var material := beam.material_override as StandardMaterial3D
 			if material != null:
 				var beam_color := laser_color
-				beam_color.a = 0.45
+				beam_color.a = 0.95
 				material.albedo_color = beam_color
+			var halo := beam.get_node_or_null("LaserHalo") as MeshInstance3D
+			if halo != null:
+				var halo_material := halo.material_override as StandardMaterial3D
+				if halo_material != null:
+					var halo_color := laser_color
+					halo_color.a = 0.12
+					halo_material.albedo_color = halo_color
 
 
 func _start_night() -> void:
