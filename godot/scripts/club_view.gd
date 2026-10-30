@@ -630,9 +630,8 @@ func _guest_arrived(guest: Dictionary) -> void:
 				guest["sofa_approach"] = person.position
 				person.position = seat["position"]
 				person.rotation.y = float(seat["rotation"])
-				if str(guest.get("character", "")) in ["raver_m", "raver_f"]:
-					# Both sit animations share the same sofa anchor.
-					person.position += toward_seat_offset(float(seat["rotation"]), 0.5)
+				# All five character sit animations use the calibrated cushion anchor.
+				person.position += toward_seat_offset(float(seat["rotation"]), 0.5)
 				guest["seated"] = true
 				guest["state"] = "sitting"
 				guest["wait"] = _play_sit(guest, false)
