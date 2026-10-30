@@ -787,11 +787,11 @@ func _build_bouncer() -> void:
 		return
 	guard.name = "EntranceBouncer"
 	club.add_child(guard)
-	guard.position = Vector3(-1.4, 0.0, 8.2)
-	guard.rotation.y = PI
+	guard.position = Vector3(1.35, 0.0, 8.2)
+	guard.rotation.y = 0.0
 	var bounds := _visual_bounds(guard)
 	if bounds.size.y > 0.01:
-		var scale_factor := clampf(0.95 / maxf(bounds.size.y, maxf(bounds.size.x, bounds.size.z)), 0.01, 1.0)
+		var scale_factor := clampf(0.64 / maxf(bounds.size.y, maxf(bounds.size.x, bounds.size.z)), 0.01, 1.0)
 		guard.scale = Vector3.ONE * scale_factor
 		bounds = _visual_bounds(guard)
 		guard.position.y -= bounds.position.y
