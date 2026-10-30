@@ -957,6 +957,22 @@ func _build_stage_lights() -> void:
 			club.add_child(glow)
 			dance_lights.append(glow)
 
+func _debug_fixture_lights() -> void:
+	var live := 0
+	for spot in disco_spots:
+		if not is_instance_valid(spot):
+			continue
+		live += 1
+		var direction := -spot.global_basis.z
+		var haze := spot.get_node_or_null("FixtureHaze") as FogVolume
+		print("LIGHT DEBUG | %s | pos=%s | dir=%s | energy=%.2f | volumetric=%.2f | haze=%s | visible=%s" % [
+			spot.get_parent().name, str(spot.global_position), str(direction),
+			spot.light_energy, spot.light_volumetric_fog_energy,
+			str(haze != null), str(spot.visible)
+		])
+	print("LIGHT DEBUG | registered=%d active=%d lasers=%d" % [disco_spots.size(), live, laser_spots.size()])
+
+
 func _set_night_lighting(enabled: bool) -> void:
 	if club_environment != null:
 		club_environment.ambient_light_energy = 0.48 if enabled else 0.85
@@ -978,6 +994,8 @@ func _set_night_lighting(enabled: bool) -> void:
 	for glow in dance_lights:
 		if is_instance_valid(glow):
 			glow.light_energy = 1.2 if enabled else 0.0
+	if enabled:
+		_debug_fixture_lights()
 
 func _animate_stage_lights(delta: float) -> void:
 	if not night_active or night_paused:
