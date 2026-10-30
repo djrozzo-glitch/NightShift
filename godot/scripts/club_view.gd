@@ -326,10 +326,27 @@ func _path_to(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 func _cell_position(cell: Vector2i) -> Vector3:
 	return Vector3(cell.x - 7.5, float(floor_heights.get(cell, 0.0)) + 0.05, cell.y - 7.5)
 
+func _destination_taken(cell: Vector2i, except_guest: Dictionary = {}) -> bool:
+	for other in guests:
+		if other == except_guest:
+			continue
+		if other.get("destination", Vector2i(-1, -1)) == cell:
+			return true
+	return false
+
+func _guest_too_close(position: Vector3, except_guest: Dictionary, minimum_distance: float = 0.46) -> bool:
+	for other in guests:
+		if other == except_guest or bool(other.get("seated", false)):
+			continue
+		var other_node: Node3D = other["node"]
+		if is_instance_valid(other_node) and other_node.position.distance_squared_to(position) < minimum_distance * minimum_distance:
+			return true
+	return false
+
 func _dance_destination() -> Vector2i:
 	for attempt in range(35):
 		var candidate := Vector2i(randi_range(3, 12), randi_range(3, 9))
-		if _walkable(candidate) and not _path_to(GUEST_ENTRY, candidate).is_empty():
+		if _walkable(candidate) and not _destination_taken(candidate) and not _path_to(GUEST_ENTRY, candidate).is_empty():
 			return candidate
 	return Vector2i(-1, -1)
 
@@ -428,7 +445,7 @@ func _guest_visual(parent: Node3D) -> Dictionary:
 	return {"visual": visual, "arms": arms, "legs": legs, "imported": false, "motions": {}, "motion": "walk"}
 
 func _spawn_guest() -> void:
-	if guests.size() >= MAX_GUESTS or not _walkable(GUEST_ENTRY):
+	if guests.size() >= MAX_GUESTS or not _walkable(GUEST_ENTRY) or _guest_too_close(_cell_position(GUEST_ENTRY), {}):
 		return
 	var destination := _dance_destination()
 	if destination.x < 0:
@@ -440,7 +457,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "destination": destination})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "destination": destination, "service_object": -1})
 	guest_count += 1
 	night_ticket_income += TICKET_PRICE
 	cash += TICKET_PRICE
@@ -448,28 +465,46 @@ func _spawn_guest() -> void:
 	_refresh_economy()
 	_refresh_readiness()
 
-func _service_destination(kind: String, start: Vector2i) -> Vector2i:
+func _service_destination(kind: String, start: Vector2i, guest: Dictionary) -> Dictionary:
 	var best := Vector2i(-1, -1)
+	var best_object := -1
 	var best_length := 999999
-	for record in placed_objects.values():
+	for object_id in placed_objects:
+		var record: Dictionary = placed_objects[object_id]
+		if kind == "sofa":
+			var reserved := false
+			for other in guests:
+				if other != guest and int(other.get("service_object", -1)) == int(object_id):
+					reserved = true
+					break
+			if reserved:
+				continue
 		if str(record["kind"]) != kind:
 			continue
 		for furniture_cell in record["cells"]:
 			for direction in WALK_DIRS:
 				var candidate: Vector2i = furniture_cell + direction
-				if not _walkable(candidate):
+				if not _walkable(candidate) or _destination_taken(candidate, guest):
 					continue
 				var path := _path_to(start, candidate)
 				if candidate != start and path.is_empty():
 					continue
 				if path.size() < best_length:
 					best = candidate
+					best_object = int(object_id)
 					best_length = path.size()
-	return best
+	return {"cell": best, "object": best_object}
 
 func _guest_route(guest: Dictionary, kind: String) -> bool:
 	var start: Vector2i = guest["cell"]
-	var target := _dance_destination() if kind == "dance" else _service_destination(kind, start)
+	var target := Vector2i(-1, -1)
+	var service_object := -1
+	if kind == "dance":
+		target = _dance_destination()
+	else:
+		var service := _service_destination(kind, start, guest)
+		target = service["cell"]
+		service_object = int(service["object"])
 	if target.x < 0:
 		return false
 	var path := _path_to(start, target)
@@ -477,15 +512,19 @@ func _guest_route(guest: Dictionary, kind: String) -> bool:
 		return false
 	guest["path"] = path
 	guest["destination"] = target
+	guest["service_object"] = service_object
 	guest["state"] = "walk_" + kind
 	guest["dance"] = false
 	return true
 
-func _sofa_seat(approach_cell: Vector2i) -> Dictionary:
+func _sofa_seat(approach_cell: Vector2i, object_id: int) -> Dictionary:
 	var approach := _cell_position(approach_cell)
 	var best_distance := INF
 	var best: Dictionary = {}
-	for record in placed_objects.values():
+	for record_id in placed_objects:
+		if int(record_id) != object_id:
+			continue
+		var record: Dictionary = placed_objects[record_id]
 		if str(record["kind"]) != "sofa":
 			continue
 		var sofa_node: Node3D = record["node"]
@@ -550,7 +589,7 @@ func _guest_arrived(guest: Dictionary) -> void:
 		guest["wait"] = 2.0
 		var motions: Dictionary = guest["motions"]
 		if motions.has("sit"):
-			var seat := _sofa_seat(guest["destination"])
+			var seat := _sofa_seat(guest["destination"], int(guest.get("service_object", -1)))
 			if not seat.is_empty():
 				var person: Node3D = guest["node"]
 				guest["sofa_approach"] = person.position
@@ -675,7 +714,10 @@ func _process(delta: float) -> void:
 			if path.is_empty():
 				_guest_arrived(guest)
 		else:
-			person.position = person.position.move_toward(target, float(guest["speed"]) * step)
+			var next_position := person.position.move_toward(target, float(guest["speed"]) * step)
+			if _guest_too_close(next_position, guest):
+				continue
+			person.position = next_position
 			person.rotation.y = atan2(direction.x, direction.z)
 
 func _clear_guests() -> void:
