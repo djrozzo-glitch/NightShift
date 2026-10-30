@@ -76,8 +76,14 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 		pivot_node.position.x += 0.5
 		pivot_node.position.z -= 0.48
 	pivot_node.rotation.y = float(turn) * PI * 0.5
-	if kind == "poster" and (x == 0 or x == SIZE - 1):
-		pivot_node.rotation.y = PI * 0.5
+	if kind == "poster":
+		# Face the artwork into the room on each perimeter side.
+		if x == 0:
+			pivot_node.rotation.y = PI * 0.5
+		elif x == SIZE - 1:
+			pivot_node.rotation.y = -PI * 0.5
+		elif y == 0:
+			pivot_node.rotation.y = PI
 	if not models.has(kind):
 		var color := Color("#5d456a") if kind in TWO_CELL else Color("#53505b")
 		_make_box(pivot_node, Vector3(0, 0.4, 0.5 if kind in TWO_CELL else 0),
@@ -120,8 +126,8 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	var fit_scale: float
 	if kind in TWO_CELL:
 		fit_scale = target_z / maxf(bounds.size.z, 0.001)
-		# Limit width only when a model is unusually wide.
-		fit_scale = minf(fit_scale, target_x / maxf(bounds.size.x, 0.001))
+		# The long footprint is authoritative: a narrow-side cap previously
+		# shrank every two-cell asset to roughly one tile.
 	else:
 		fit_scale = minf(target_x / maxf(bounds.size.x, 0.001),
 			target_z / maxf(bounds.size.z, 0.001))
