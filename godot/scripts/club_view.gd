@@ -61,7 +61,23 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	pivot_node.name = "%s_%d_%d" % [kind, x, y]
 	parent.add_child(pivot_node)
 	pivot_node.position = Vector3(x - 7.5, 0, y - 7.5)
+	# Perimeter meshes sit at the INNER edge of the perimeter tiles.
+	if kind in ["wall", "poster"]:
+		if x == 0:
+			pivot_node.position.x += 0.48
+		elif x == SIZE - 1:
+			pivot_node.position.x -= 0.48
+		if y == 0:
+			pivot_node.position.z += 0.48
+		elif y == SIZE - 1:
+			pivot_node.position.z -= 0.48
+	elif kind == "entrance":
+		# Entrance is two cells wide, centered on the gap at x=7..8.
+		pivot_node.position.x += 0.5
+		pivot_node.position.z -= 0.48
 	pivot_node.rotation.y = float(turn) * PI * 0.5
+	if kind == "poster" and (x == 0 or x == SIZE - 1):
+		pivot_node.rotation.y = PI * 0.5
 	if not models.has(kind):
 		var color := Color("#5d456a") if kind in TWO_CELL else Color("#53505b")
 		_make_box(pivot_node, Vector3(0, 0.4, 0.5 if kind in TWO_CELL else 0),
@@ -77,12 +93,16 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 
 	# All two-cell objects occupy the local +Z direction before grid rotation.
 	if kind in TWO_CELL and bounds.size.x > bounds.size.z:
+		# Orient the authored long side along local Z before grid rotation.
 		visual.rotation.y = PI * 0.5
 		bounds = _visual_bounds(visual)
 
 	var target_x := 0.9
-	var target_z := 1.82 if kind in TWO_CELL else 0.9
-	if kind == "stool":
+	var target_z := 0.9
+	if kind in TWO_CELL:
+		target_x = 0.94
+		target_z = 1.88
+	elif kind == "stool":
 		target_x = 0.53
 		target_z = 0.53
 	elif kind == "plant2":
@@ -95,17 +115,26 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 		target_x = 0.88
 		target_z = 0.88
 
-	# Preserve the GLB proportions. Never stretch one axis to force a footprint:
-	# rotate the original long axis into local Z, then scale uniformly.
-	var fit_scale := minf(target_x / maxf(bounds.size.x, 0.001),
-		target_z / maxf(bounds.size.z, 0.001))
-	var height_cap := 0.8 if kind == "stool" else (0.22 if kind == "floor" else 2.2)
-	fit_scale = minf(fit_scale, height_cap / maxf(bounds.size.y, 0.001))
+	# Use the model's native aspect ratio. Two-cell assets are sized by
+	# their LONG side; never independently stretch their X and Z axes.
+	var fit_scale: float
+	if kind in TWO_CELL:
+		fit_scale = target_z / maxf(bounds.size.z, 0.001)
+		# Limit width only when a model is unusually wide.
+		fit_scale = minf(fit_scale, target_x / maxf(bounds.size.x, 0.001))
+	else:
+		fit_scale = minf(target_x / maxf(bounds.size.x, 0.001),
+			target_z / maxf(bounds.size.z, 0.001))
+	# Do not shrink large furniture merely because its authored height is tall.
+	if kind == "stool":
+		fit_scale = minf(fit_scale, 0.65 / maxf(bounds.size.y, 0.001))
+	elif kind == "floor":
+		fit_scale = minf(fit_scale, 0.22 / maxf(bounds.size.y, 0.001))
 	visual.scale = Vector3.ONE * fit_scale
 	bounds = _visual_bounds(visual)
 	# Bottom of the geometry rests on top of the base floor, not inside it.
 	# The footprint center is half a cell forward for two-cell objects.
-	var offset_z := 0.5 if kind in TWO_CELL else 0.0
+	var offset_z := 0.5 if kind in TWO_CELL and kind != "entrance" else 0.0
 	var base_y := 0.0 if kind == "floor" else 0.015
 	visual.position += Vector3(-bounds.get_center().x,
 		base_y - bounds.position.y,
@@ -167,7 +196,7 @@ func _build_world() -> void:
 					_model(club, "wall", x, y, 1 if x == 0 or x == SIZE - 1 else 0)
 	for item in items:
 		_model(club, item[2], item[0], item[1], item[3])
-	_model(club, "entrance", 7, 15, 0)
+	_model(club, "entrance", 7, 15, 1)
 	var ambient := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
