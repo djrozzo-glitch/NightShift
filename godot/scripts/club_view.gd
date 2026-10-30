@@ -398,7 +398,7 @@ func _guest_visual(parent: Node3D) -> Dictionary:
 				imported.visible = motion == "walk"
 				imported_nodes[motion] = imported
 		if imported_nodes.has("walk") and imported_nodes.has("dance"):
-			return {"visual": visual, "arms": [], "legs": [], "imported": true, "motions": imported_nodes, "motion": "walk"}
+			return {"visual": visual, "arms": [], "legs": [], "imported": true, "motions": imported_nodes, "motion": "walk", "character": character_name}
 		for node in imported_nodes.values():
 			(node as Node3D).queue_free()
 	var jacket := Color.from_hsv(randf(), randf_range(0.12, 0.45), randf_range(0.22, 0.52))
@@ -438,7 +438,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "destination": destination})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "destination": destination})
 	guest_count += 1
 	night_ticket_income += TICKET_PRICE
 	cash += TICKET_PRICE
@@ -499,8 +499,8 @@ func _sofa_seat(approach_cell: Vector2i) -> Dictionary:
 		if toward_aisle.length_squared() < 0.001:
 			continue
 		toward_aisle = toward_aisle.normalized()
-		var seat := center + toward_aisle * 0.24
-		seat.y = approach.y + 0.28
+		var seat := center + toward_aisle * 0.42
+		seat.y = approach.y + 0.16
 		best = {"position": seat, "rotation": atan2(toward_aisle.x, toward_aisle.z)}
 	return best
 
@@ -551,6 +551,8 @@ func _guest_arrived(guest: Dictionary) -> void:
 				guest["sofa_approach"] = person.position
 				person.position = seat["position"]
 				person.rotation.y = float(seat["rotation"])
+				if str(guest.get("character", "")) == "raver_m":
+					person.rotation.y += PI * 0.5
 				guest["seated"] = true
 				guest["state"] = "sitting"
 				guest["wait"] = _play_sit(guest, false)
