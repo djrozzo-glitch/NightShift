@@ -339,7 +339,7 @@ func _guest_animated_model(packed: PackedScene, parent: Node3D) -> Node3D:
 	var bounds := _visual_bounds(imported)
 	if bounds.size.y > 0.01:
 		var longest_axis := maxf(bounds.size.y, maxf(bounds.size.x, bounds.size.z))
-		var factor := clampf(1.05 / longest_axis, 0.01, 1.0)
+		var factor := clampf(0.70 / longest_axis, 0.01, 1.0)
 		imported.scale = Vector3.ONE * factor
 		bounds = _visual_bounds(imported)
 		if absf(bounds.position.y) < 3.0:
