@@ -52,28 +52,67 @@ func _load_models() -> void:
 			missing_models.append(kind)
 			push_warning("NightShift: missing %s" % path)
 
+const TWO_CELL := ["dj", "bar", "sofa", "wc", "entrance"]
+
 func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void:
-	var obj: Node3D
-	if models.has(kind):
-		obj = (models[kind] as PackedScene).instantiate() as Node3D
-		# Fit model uniformly to the grid; later calibrate orientation per asset.
-		parent.add_child(obj)
-		var bounds := _visual_bounds(obj)
-		var extent: Vector3 = bounds.size
-		var longest := maxf(extent.x, extent.z)
-		var target := 1.8 if kind in ["dj", "bar", "sofa", "wc"] else 0.94
-		if longest > 0.001:
-			obj.scale = Vector3.ONE * (target / longest)
-		var center := bounds.get_center()
-		obj.position = Vector3(x - 7.5, 0, y - 7.5) - center * obj.scale
-	else:
-		obj = Node3D.new()
-		parent.add_child(obj)
-		obj.position = Vector3(x - 7.5, 0, y - 7.5)
-		var color := Color("#5d456a") if kind in ["dj", "bar", "sofa"] else Color("#53505b")
-		_make_box(obj, Vector3(0, 0.45, 0), Vector3(0.8, 0.9, 0.8), color)
-	obj.name = "%s_%d_%d" % [kind, x, y]
-	obj.rotation.y = float(turn) * PI * 0.5
+	# Separate the grid pivot from the visible GLB so 90-degree turns rotate
+	# around the occupied footprint rather than the GLB author's origin.
+	var pivot_node := Node3D.new()
+	pivot_node.name = "%s_%d_%d" % [kind, x, y]
+	parent.add_child(pivot_node)
+	pivot_node.position = Vector3(x - 7.5, 0, y - 7.5)
+	pivot_node.rotation.y = float(turn) * PI * 0.5
+	if not models.has(kind):
+		var color := Color("#5d456a") if kind in TWO_CELL else Color("#53505b")
+		_make_box(pivot_node, Vector3(0, 0.4, 0.5 if kind in TWO_CELL else 0),
+			Vector3(0.8, 0.8, 1.8 if kind in TWO_CELL else 0.8), color)
+		return
+
+	var visual := (models[kind] as PackedScene).instantiate() as Node3D
+	pivot_node.add_child(visual)
+	var bounds := _visual_bounds(visual)
+	if bounds.size.length_squared() < 0.000001:
+		push_warning("NightShift: empty model %s" % kind)
+		return
+
+	# All two-cell objects occupy the local +Z direction before grid rotation.
+	if kind in TWO_CELL and bounds.size.x > bounds.size.z:
+		visual.rotation.y = PI * 0.5
+		bounds = _visual_bounds(visual)
+
+	var target_x := 0.9
+	var target_z := 1.82 if kind in TWO_CELL else 0.9
+	if kind == "stool":
+		target_x = 0.53
+		target_z = 0.53
+	elif kind == "plant2":
+		target_x = 0.78
+		target_z = 0.78
+	elif kind == "floor":
+		target_x = 0.99
+		target_z = 0.99
+	elif kind == "poster":
+		target_x = 0.88
+		target_z = 0.88
+
+	# Fit horizontal dimensions independently; preserve a sensible height.
+	var horizontal_scale := minf(target_x / maxf(bounds.size.x, 0.001),
+		target_z / maxf(bounds.size.z, 0.001))
+	var height_cap := 0.8 if kind == "stool" else (0.22 if kind == "floor" else 2.2)
+	var vertical_scale := minf(horizontal_scale, height_cap / maxf(bounds.size.y, 0.001))
+	visual.scale = Vector3(
+		target_x / maxf(bounds.size.x, 0.001),
+		vertical_scale,
+		target_z / maxf(bounds.size.z, 0.001)
+	)
+	bounds = _visual_bounds(visual)
+	# Bottom of the geometry rests on top of the base floor, not inside it.
+	# The footprint center is half a cell forward for two-cell objects.
+	var offset_z := 0.5 if kind in TWO_CELL else 0.0
+	var base_y := 0.0 if kind == "floor" else 0.015
+	visual.position += Vector3(-bounds.get_center().x,
+		base_y - bounds.position.y,
+		offset_z - bounds.get_center().z)
 
 func _visual_bounds(root: Node3D) -> AABB:
 	var bounds := AABB()
