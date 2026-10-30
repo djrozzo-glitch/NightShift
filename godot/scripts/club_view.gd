@@ -846,18 +846,20 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	spot.spot_angle = 25.0 if kind == "light" else 13.0
 	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
 	spot.light_energy = 4.0 if night_active else 0.0
-	spot.shadow_enabled = kind == "light"
+	spot.shadow_enabled = false
 	spot.light_volumetric_fog_energy = 9.0 if kind == "light" else 0.0
 	fixture.add_child(spot)
 	# Aim the beam from the projector toward the room, slightly upward.
 	if kind == "laser":
 		spot.look_at(Vector3(0.0, 2.4, 0.0), Vector3.UP)
 	else:
-		# Aim from the fixture lens forward and slightly upward.
-		var lens_forward := fixture.global_basis * Vector3(0.0, 0.0, 1.0)
-		lens_forward.y = 0.0
-		lens_forward = lens_forward.normalized()
-		spot.look_at(spot.global_position + lens_forward * 3.0 + Vector3.UP * 1.4, Vector3.UP)
+		# Aim inward from the lens, slightly upward, regardless of build rotation.
+		var inward := Vector3(-spot.global_position.x, 0.0, -spot.global_position.z)
+		if inward.length_squared() < 0.01:
+			inward = fixture.global_basis * Vector3(0.0, 0.0, 1.0)
+			inward.y = 0.0
+		inward = inward.normalized()
+		spot.look_at(spot.global_position + inward * 4.0 + Vector3.UP * 1.5, Vector3.UP)
 	var beam := MeshInstance3D.new()
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.012 if kind == "laser" else 0.035
@@ -971,15 +973,17 @@ func _animate_stage_lights(delta: float) -> void:
 			var aim := Vector3(sin(phase) * 1.8, 2.4 + sin(phase * 0.7) * 0.45, cos(phase * 0.8) * 1.8)
 			spot.look_at(aim, Vector3.UP)
 		else:
-			# Keep the beam pointing away from the lens, above the horizon.
-			# Sweep outward from the physical lens, with a constant upward tilt.
-			var fixture := spot.get_parent() as Node3D
-			var forward := fixture.global_basis * Vector3(0.0, 0.0, 1.0)
-			var sideways := fixture.global_basis * Vector3(1.0, 0.0, 0.0)
-			forward.y = 0.0
-			sideways.y = 0.0
-			var direction := forward.normalized() * 3.0 + sideways.normalized() * sin(phase) * 0.85
-			direction.y = 1.4 + 0.25 * sin(phase * 0.7)
+			# Every fixture sweeps toward the club interior from its own lens.
+			# This also handles fixtures rotated 90/180 degrees in BUILD mode.
+			var inward := Vector3(-spot.global_position.x, 0.0, -spot.global_position.z)
+			if inward.length_squared() < 0.01:
+				var fixture := spot.get_parent() as Node3D
+				inward = fixture.global_basis * Vector3(0.0, 0.0, 1.0)
+				inward.y = 0.0
+			inward = inward.normalized()
+			var sideways := Vector3(-inward.z, 0.0, inward.x)
+			var direction := inward * 4.0 + sideways * sin(phase) * 1.2
+			direction.y = 1.5 + 0.35 * sin(phase * 0.7)
 			spot.look_at(spot.global_position + direction, Vector3.UP)
 		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
 	# Independent color changes and a restrained rhythmic flash for moving heads.
