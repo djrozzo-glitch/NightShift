@@ -1618,8 +1618,7 @@ func _load_club() -> void:
 
 
 func _show_new_club_confirmation() -> void:
-	var dialog := get_node_or_null("CanvasLayer/NewClubConfirmation")
-	# The dialog lives under the UI theme root; find it by group-free traversal.
+	# The confirmation dialog is attached to the UI theme root.
 	for child in get_tree().get_nodes_in_group("nightshift_new_club_dialog"):
 		if child is ConfirmationDialog:
 			child.popup_centered()
