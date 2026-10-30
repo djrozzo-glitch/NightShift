@@ -832,87 +832,93 @@ void fragment() {
 	return material
 
 
+func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
+	if kind not in ["light", "laser"] or not is_instance_valid(node):
+		return
+	if node.has_node("ClubSpot"):
+		return
+	var fixture: Node3D = node
+	var spot := SpotLight3D.new()
+	spot.name = "ClubSpot"
+	# Laser emission begins at the projector lens, not above its housing.
+	spot.position = Vector3(0.0, 0.12, 0.0) if kind == "laser" else Vector3(0.0, 0.77, -0.19)
+	spot.spot_range = 11.0
+	spot.spot_angle = 34.0 if kind == "light" else 13.0
+	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
+	spot.light_energy = 4.0 if night_active else 0.0
+	spot.shadow_enabled = false
+	fixture.add_child(spot)
+	# Aim the beam from the projector toward the room, slightly upward.
+	if kind == "laser":
+		spot.look_at(Vector3(0.0, 2.4, 0.0), Vector3.UP)
+	else:
+		# Aim from the fixture lens forward and slightly upward.
+		spot.look_at(spot.global_position + fixture.global_basis * Vector3(0.0, 0.8, 3.0), Vector3.UP)
+	var beam := MeshInstance3D.new()
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.012 if kind == "laser" else 0.035
+	cone.bottom_radius = 0.62 if kind == "light" else 0.012
+	cone.height = 7.0 if kind == "laser" else 3.8
+	if kind == "light":
+		cone.cap_top = false
+		cone.cap_bottom = false
+	beam.mesh = cone
+	beam.rotation_degrees.x = 90.0
+	beam.position = Vector3(0.0, 0.0, -3.5 if kind == "laser" else -1.9)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(0.6, 0.25, 1.0, 0.09) if kind == "light" else Color(0.19, 1.0, 0.39, 0.95)
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	beam.material_override = _disco_beam_material(0.085) if kind == "light" else mat
+	if kind == "laser":
+		# Soft translucent halo around the bright, narrow laser core.
+		var halo := MeshInstance3D.new()
+		halo.name = "LaserHalo"
+		var halo_mesh := CylinderMesh.new()
+		halo_mesh.top_radius = 0.055
+		halo_mesh.bottom_radius = 0.055
+		halo_mesh.height = 7.0
+		halo.mesh = halo_mesh
+		var halo_mat := StandardMaterial3D.new()
+		halo_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		halo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		halo_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		halo_mat.albedo_color = Color(0.19, 1.0, 0.39, 0.12)
+		halo.material_override = halo_mat
+		beam.add_child(halo)
+	if kind == "light":
+		# A narrower luminous cone inside the broad atmospheric wash.
+		var inner := MeshInstance3D.new()
+		inner.name = "DiscoCore"
+		var inner_mesh := CylinderMesh.new()
+		inner_mesh.top_radius = 0.02
+		inner_mesh.bottom_radius = 0.23
+		inner_mesh.height = 3.8
+		inner_mesh.cap_top = false
+		inner_mesh.cap_bottom = false
+		inner.mesh = inner_mesh
+		var inner_mat := StandardMaterial3D.new()
+		inner_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		inner_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		inner_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		inner_mat.albedo_color = Color(0.65, 0.35, 1.0, 0.18)
+		inner.material_override = _disco_beam_material(0.13)
+		beam.add_child(inner)
+	spot.add_child(beam)
+	beam.visible = night_active
+	beam_meshes.append(beam)
+	stage_lights.append(spot)
+	if kind == "light":
+		disco_spots.append(spot)
+	if kind == "laser":
+		laser_spots.append(spot)
+		laser_beams.append(beam)
+
+
 func _build_stage_lights() -> void:
 	for record in placed_objects.values():
-		if str(record["kind"]) not in ["light", "laser"]:
-			continue
-		var fixture: Node3D = record["node"]
-		var spot := SpotLight3D.new()
-		spot.name = "ClubSpot"
-		# Laser emission begins at the projector lens, not above its housing.
-		spot.position = Vector3(0.0, 0.12, 0.0) if str(record["kind"]) == "laser" else Vector3(0.0, 0.77, -0.19)
-		spot.spot_range = 11.0
-		spot.spot_angle = 34.0 if str(record["kind"]) == "light" else 13.0
-		spot.light_color = Color("#c15dff") if str(record["kind"]) == "light" else LASER_COLORS[0]
-		spot.light_energy = 0.0
-		spot.shadow_enabled = false
-		fixture.add_child(spot)
-		# Aim the beam from the projector toward the room, slightly upward.
-		if str(record["kind"]) == "laser":
-			spot.look_at(Vector3(0.0, 2.4, 0.0), Vector3.UP)
-		else:
-			# Aim from the fixture lens forward and slightly upward.
-			spot.look_at(spot.global_position + fixture.global_basis * Vector3(0.0, 0.8, 3.0), Vector3.UP)
-		var beam := MeshInstance3D.new()
-		var cone := CylinderMesh.new()
-		cone.top_radius = 0.012 if str(record["kind"]) == "laser" else 0.035
-		cone.bottom_radius = 0.62 if str(record["kind"]) == "light" else 0.012
-		cone.height = 7.0 if str(record["kind"]) == "laser" else 3.8
-		if str(record["kind"]) == "light":
-			cone.cap_top = false
-			cone.cap_bottom = false
-		beam.mesh = cone
-		beam.rotation_degrees.x = 90.0
-		beam.position = Vector3(0.0, 0.0, -3.5 if str(record["kind"]) == "laser" else -1.9)
-		var mat := StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.albedo_color = Color(0.6, 0.25, 1.0, 0.09) if str(record["kind"]) == "light" else Color(0.19, 1.0, 0.39, 0.95)
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		beam.material_override = _disco_beam_material(0.085) if str(record["kind"]) == "light" else mat
-		if str(record["kind"]) == "laser":
-			# Soft translucent halo around the bright, narrow laser core.
-			var halo := MeshInstance3D.new()
-			halo.name = "LaserHalo"
-			var halo_mesh := CylinderMesh.new()
-			halo_mesh.top_radius = 0.055
-			halo_mesh.bottom_radius = 0.055
-			halo_mesh.height = 7.0
-			halo.mesh = halo_mesh
-			var halo_mat := StandardMaterial3D.new()
-			halo_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			halo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			halo_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-			halo_mat.albedo_color = Color(0.19, 1.0, 0.39, 0.12)
-			halo.material_override = halo_mat
-			beam.add_child(halo)
-		if str(record["kind"]) == "light":
-			# A narrower luminous cone inside the broad atmospheric wash.
-			var inner := MeshInstance3D.new()
-			inner.name = "DiscoCore"
-			var inner_mesh := CylinderMesh.new()
-			inner_mesh.top_radius = 0.02
-			inner_mesh.bottom_radius = 0.23
-			inner_mesh.height = 3.8
-			inner_mesh.cap_top = false
-			inner_mesh.cap_bottom = false
-			inner.mesh = inner_mesh
-			var inner_mat := StandardMaterial3D.new()
-			inner_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			inner_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			inner_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-			inner_mat.albedo_color = Color(0.65, 0.35, 1.0, 0.18)
-			inner.material_override = _disco_beam_material(0.13)
-			beam.add_child(inner)
-		spot.add_child(beam)
-		beam.visible = false
-		beam_meshes.append(beam)
-		stage_lights.append(spot)
-		if str(record["kind"]) == "light":
-			disco_spots.append(spot)
-		if str(record["kind"]) == "laser":
-			laser_spots.append(spot)
-			laser_beams.append(beam)
+		_attach_fixture_lighting(record["node"] as Node3D, str(record["kind"]))
 	# Evenly cover the entire 10 x 7 tile dance floor with overlapping
 	# moving pools of colored light rather than leaving dark corners.
 	for row_index in range(3):
@@ -1104,6 +1110,15 @@ func _remove_object(id: int) -> Dictionary:
 		object_at_cell.erase(cell)
 	var node := record["node"] as Node3D
 	if is_instance_valid(node):
+		var attached_spot := node.get_node_or_null("ClubSpot") as SpotLight3D
+		if attached_spot != null:
+			stage_lights.erase(attached_spot)
+			disco_spots.erase(attached_spot)
+			laser_spots.erase(attached_spot)
+			for child in attached_spot.get_children():
+				if child is MeshInstance3D:
+					beam_meshes.erase(child)
+					laser_beams.erase(child)
 		node.get_parent().remove_child(node)
 		node.queue_free()
 	placed_objects.erase(id)
@@ -1141,6 +1156,7 @@ func _undo_action() -> void:
 		var record: Dictionary = action["record"]
 		var node := _model(club, record["kind"], record["x"], record["y"], record["turn"])
 		var restored_id := _register_object(node, record["kind"], record["x"], record["y"], record["turn"])
+		_attach_fixture_lighting(node, str(record["kind"]))
 		placed_objects[restored_id]["paid"] = record["paid"]
 		cash -= int(action["refund"])
 		_notify("Removal undone")
@@ -1238,6 +1254,7 @@ func _place_selected() -> void:
 		return
 	var node := _model(club, selected_kind, hover_cell.x, hover_cell.y, build_turn)
 	var id := _register_object(node, selected_kind, hover_cell.x, hover_cell.y, build_turn)
+	_attach_fixture_lighting(node, selected_kind)
 	placed_objects[id]["paid"] = true
 	cash -= cost
 	action_history.append({"action": "place", "id": id, "cost": cost})
