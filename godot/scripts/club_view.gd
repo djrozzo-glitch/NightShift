@@ -353,7 +353,7 @@ func _guest_visual(parent: Node3D) -> Dictionary:
 			imported.queue_free()
 	var jacket := Color.from_hsv(randf(), randf_range(0.12, 0.45), randf_range(0.22, 0.52))
 	var trousers := Color("#20212d") if randf() < 0.7 else Color("#4c485a")
-	var skin := [Color("#e0b69b"), Color("#b77e62"), Color("#815444"), Color("#f1c9ad")].pick_random()
+	var skin: Color = [Color("#e0b69b"), Color("#b77e62"), Color("#815444"), Color("#f1c9ad")].pick_random()
 	_make_box(visual, Vector3(0, 0.71, 0), Vector3(0.29, 0.40, 0.19), jacket)
 	_make_box(visual, Vector3(0, 0.98, 0), Vector3(0.17, 0.09, 0.15), skin)
 	var head := SphereMesh.new()
