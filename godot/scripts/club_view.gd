@@ -486,21 +486,54 @@ func _sofa_seat(approach_cell: Vector2i) -> Dictionary:
 	for record in placed_objects.values():
 		if str(record["kind"]) != "sofa":
 			continue
-		var cells: Array = record["cells"]
-		var center := Vector3.ZERO
-		for cell in cells:
-			center += _cell_position(cell)
-		center /= float(cells.size())
+		var sofa_node: Node3D = record["node"]
+		var center := sofa_node.global_position + sofa_node.global_basis * Vector3(0.0, 0.0, 0.5)
 		var distance := center.distance_squared_to(approach)
 		if distance >= best_distance:
 			continue
 		best_distance = distance
-		# The seat is inside the sofa, slightly towards the accessible aisle.
-		var seat := center.lerp(approach, 0.17)
-		seat.y = approach.y
-		var facing := approach - center
-		best = {"position": seat, "rotation": atan2(facing.x, facing.z)}
+		# Sit on the cushion rather than at the centre of the occupied grid.
+		# Choose the side facing the aisle, independent of the sofa rotation.
+		var toward_aisle := approach - center
+		toward_aisle.y = 0.0
+		if toward_aisle.length_squared() < 0.001:
+			continue
+		toward_aisle = toward_aisle.normalized()
+		var seat := center + toward_aisle * 0.24
+		seat.y = approach.y + 0.28
+		best = {"position": seat, "rotation": atan2(toward_aisle.x, toward_aisle.z)}
 	return best
+
+func _sit_animation_player(guest: Dictionary) -> AnimationPlayer:
+	var motions: Dictionary = guest["motions"]
+	if not motions.has("sit"):
+		return null
+	var model: Node3D = motions["sit"]
+	var players := model.find_children("*", "AnimationPlayer", true, false)
+	if players.is_empty():
+		return null
+	return players[0] as AnimationPlayer
+
+func _play_sit(guest: Dictionary, backwards: bool) -> float:
+	var player := _sit_animation_player(guest)
+	if player == null:
+		return 0.0
+	var animation_name := player.current_animation
+	if animation_name.is_empty():
+		var names := player.get_animation_list()
+		if names.is_empty():
+			return 0.0
+		animation_name = names[0]
+	var animation := player.get_animation(animation_name)
+	if animation == null:
+		return 0.0
+	animation.loop_mode = Animation.LOOP_NONE
+	if backwards:
+		player.play_backwards(animation_name)
+	else:
+		player.play(animation_name)
+		player.seek(0.0, true)
+	return animation.length
 
 func _guest_arrived(guest: Dictionary) -> void:
 	var state: String = guest["state"]
@@ -509,7 +542,7 @@ func _guest_arrived(guest: Dictionary) -> void:
 		guest["wait"] = randf_range(2.0, 4.0)
 	elif state == "walk_sofa":
 		guest["state"] = "resting"
-		guest["wait"] = randf_range(5.0, 9.0)
+		guest["wait"] = 2.0
 		var motions: Dictionary = guest["motions"]
 		if motions.has("sit"):
 			var seat := _sofa_seat(guest["destination"])
@@ -519,6 +552,8 @@ func _guest_arrived(guest: Dictionary) -> void:
 				person.position = seat["position"]
 				person.rotation.y = float(seat["rotation"])
 				guest["seated"] = true
+				guest["state"] = "sitting"
+				guest["wait"] = _play_sit(guest, false)
 	else:
 		guest["state"] = "dancing"
 		guest["dance"] = true
@@ -541,10 +576,24 @@ func _process(delta: float) -> void:
 		_spawn_guest()
 	for guest in guests:
 		var state: String = guest["state"]
-		if state in ["dancing", "ordering", "resting"]:
+		if state in ["dancing", "ordering", "resting", "sitting", "standing"]:
 			guest["wait"] = float(guest["wait"]) - step
 			if float(guest["wait"]) <= 0.0:
-				if state == "ordering":
+				if state == "sitting":
+					guest["state"] = "resting"
+					guest["wait"] = 2.0
+				elif state == "resting" and bool(guest.get("seated", false)):
+					guest["state"] = "standing"
+					guest["wait"] = _play_sit(guest, true)
+				elif state == "standing":
+					var standing_person: Node3D = guest["node"]
+					standing_person.position = guest["sofa_approach"]
+					guest["seated"] = false
+					if not _guest_route(guest, "dance"):
+						guest["state"] = "dancing"
+						guest["dance"] = true
+						guest["wait"] = 5.0
+				elif state == "ordering":
 					night_drinks_sold += 1
 					night_drink_income += DRINK_PRICE
 					cash += DRINK_PRICE
@@ -554,10 +603,6 @@ func _process(delta: float) -> void:
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
 				elif state == "resting":
-					if bool(guest.get("seated", false)):
-						var person: Node3D = guest["node"]
-						person.position = guest["sofa_approach"]
-						guest["seated"] = false
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
 				else:
@@ -585,7 +630,7 @@ func _process(delta: float) -> void:
 			var motions: Dictionary = guest["motions"]
 			if bool(guest["dance"]):
 				desired_motion = "dance"
-			elif str(guest["state"]) == "resting":
+			elif str(guest["state"]) in ["sitting", "resting", "standing"]:
 				desired_motion = "sit" if motions.has("sit") else "idle"
 			elif str(guest["state"]) == "ordering":
 				if motions.has("drink"):
@@ -597,6 +642,8 @@ func _process(delta: float) -> void:
 			if not motions.has(desired_motion):
 				desired_motion = "idle" if motions.has("idle") else "walk"
 			if guest["motion"] != desired_motion:
+				if desired_motion == "sit" and str(guest["state"]) == "sitting":
+					_play_sit(guest, false)
 				for motion_name in motions:
 					(motions[motion_name] as Node3D).visible = motion_name == desired_motion
 				guest["motion"] = desired_motion
@@ -605,7 +652,7 @@ func _process(delta: float) -> void:
 			visual.rotation.z = sin(phase * 0.5) * 0.11
 			continue
 		visual.rotation.z = 0.0
-		if str(guest["state"]) in ["ordering", "resting"]:
+		if str(guest["state"]) in ["ordering", "resting", "sitting", "standing"]:
 			continue
 		var path: Array = guest["path"]
 		if path.is_empty():
