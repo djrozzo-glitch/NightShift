@@ -75,8 +75,17 @@ var guests: Array[Dictionary] = []
 var guest_spawn_clock := 0.0
 var guest_count := 0
 const NIGHT_DURATION := 180.0
-const TICKET_PRICE := 20
-const DRINK_PRICE := 8
+var ticket_price := 20
+var drink_price := 8
+var ticket_value_label: Label
+var drink_value_label: Label
+var ticket_slider: HSlider
+var drink_slider: HSlider
+var dj_card_title: Label
+var dj_card_status: Label
+var dj_player: AudioStreamPlayer
+var dj_track_paths: Array[String] = []
+var dj_track_index := -1
 const STAFF_COST := 120
 var night_elapsed := 0.0
 var night_speed := 1.0
@@ -544,8 +553,8 @@ func _spawn_guest() -> void:
 	var appearance := _guest_visual(person)
 	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(12, 48), "thirst": randf_range(0.25, 0.65), "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
 	guest_count += 1
-	night_ticket_income += TICKET_PRICE
-	cash += TICKET_PRICE
+	night_ticket_income += ticket_price
+	cash += ticket_price
 	_update_night_stats()
 	_refresh_economy()
 	_refresh_readiness()
@@ -732,12 +741,12 @@ func _process(delta: float) -> void:
 						guest["wait"] = 5.0
 				elif state == "ordering":
 					# A guest only buys when thirsty enough and able to pay.
-					if float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= DRINK_PRICE:
+					if float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price:
 						night_drinks_sold += 1
-						var sale := roundi(float(DRINK_PRICE) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0)))
+						var sale := roundi(float(drink_price) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0)))
 						night_drink_income += sale
 						cash += sale
-						guest["wallet"] = int(guest["wallet"]) - DRINK_PRICE
+						guest["wallet"] = int(guest["wallet"]) - drink_price
 						guest["thirst"] = maxf(0.0, float(guest["thirst"]) - 0.65)
 						_update_night_stats()
 						_refresh_economy()
@@ -748,9 +757,9 @@ func _process(delta: float) -> void:
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
 				else:
-					var wants_drink := float(guest["thirst"]) > 0.55 and int(guest["wallet"]) >= DRINK_PRICE
+					var wants_drink := float(guest["thirst"]) > 0.55 and int(guest["wallet"]) >= drink_price
 					var wants_rest := float(guest["energy"]) < 0.45
-					var activity := "bar" if wants_drink else "sofa" if wants_rest else ("bar" if randf() < 0.3 and int(guest["wallet"]) >= DRINK_PRICE else "sofa")
+					var activity := "bar" if wants_drink else "sofa" if wants_rest else ("bar" if randf() < 0.3 and int(guest["wallet"]) >= drink_price else "sofa")
 					if not _guest_route(guest, activity):
 						if not _guest_route(guest, "sofa" if activity == "bar" else "dance"):
 							guest["wait"] = 8.0
@@ -1142,6 +1151,7 @@ func _start_night() -> void:
 	night_number += 1
 	night_active = true
 	_set_night_lighting(true)
+	_play_dj_music()
 	night_report_panel.show()
 	_clear_guests()
 	guest_count = 0
@@ -1153,6 +1163,8 @@ func _start_night() -> void:
 	_refresh_readiness()
 	_notify("NIGHT %d  |  %s booked  |  -€%d" % [night_number, dj["name"], fee])
 	start_night_button.text = "END NIGHT"
+	ticket_slider.editable = false
+	drink_slider.editable = false
 	night_pause_button.disabled = false
 	night_speed_button.disabled = false
 	night_pause_button.text = "PAUSE"
@@ -1164,6 +1176,7 @@ func _end_night() -> void:
 		return
 	night_active = false
 	_set_night_lighting(false)
+	_stop_dj_music()
 	var costs := night_dj_fee + STAFF_COST
 	cash -= STAFF_COST
 	# Reputation reflects turnout, bar service and the night's finances.
@@ -1183,6 +1196,8 @@ func _end_night() -> void:
 	night_time_label.text = "NIGHT COMPLETE"
 	_update_night_stats()
 	start_night_button.text = "START NIGHT"
+	ticket_slider.editable = true
+	drink_slider.editable = true
 	_refresh_readiness()
 	_notify("Night %d ended  |  %d guests visited  |  Profit %s€%d  |  XP +%d  |  REP %+d%s" % [night_number, guest_count, "+" if profit >= 0 else "-", absi(profit), last_xp_gain, last_rep_change, "  |  LEVEL UP!" if levels_gained > 0 else ""])
 
@@ -1194,6 +1209,74 @@ func _update_night_stats() -> void:
 	var profit := revenue - expenses
 	night_report_heading.text = "NIGHT %d  |  %s" % [night_number, "LIVE STATS" if night_active else "REPORT"]
 	night_report_details.text = "GUESTS                 %d\nTICKET REVENUE    €%d\nDRINKS SOLD          %d\nBAR REVENUE        €%d\n\nTOTAL REVENUE     €%d\nDJ BOOKING           -€%d\nSTAFF                      -€%d\n\nNET PROFIT             %s€%d\n\nLEVEL %d   XP %d/%d\nREPUTATION %d/100%s" % [guest_count, night_ticket_income, night_drinks_sold, night_drink_income, revenue, night_dj_fee, STAFF_COST, "+" if profit >= 0 else "-", absi(profit), club_level, club_xp, _xp_needed(club_level), reputation, "" if night_active else "\nNIGHT XP +%d   REP %+d" % [last_xp_gain, last_rep_change]]
+
+func _refresh_prices() -> void:
+	if ticket_value_label != null:
+		ticket_value_label.text = "€%d" % ticket_price
+	if drink_value_label != null:
+		drink_value_label.text = "€%d" % drink_price
+	if night_time_label != null and not night_active:
+		night_time_label.text = "3-MINUTE NIGHT  |  TICKETS €%d  |  DRINKS €%d" % [ticket_price, drink_price]
+
+
+func _refresh_dj_card() -> void:
+	if dj_card_title == null or dj_picker == null or dj_picker.selected < 0:
+		return
+	var dj_name := str(DJ_ROSTER[dj_picker.selected]["name"])
+	dj_card_title.text = "%s  ·  %s" % [dj_name, "DEEP TECH" if dj_name == "rozzo" else "GUEST DJ"]
+	if dj_card_status != null:
+		dj_card_status.text = "Random local MP3 plays when the night starts." if dj_name == "rozzo" else "Book this DJ to start the night."
+
+
+func _play_dj_music() -> void:
+	if dj_player == null:
+		return
+	dj_player.stop()
+	dj_track_paths.clear()
+	dj_track_index = -1
+	if dj_picker == null or dj_picker.selected < 0:
+		return
+	var dj_name := str(DJ_ROSTER[dj_picker.selected]["name"])
+	# Place MP3 files in godot/audio/rozzo/; additional DJs can get folders later.
+	var folder := "res://audio/rozzo" if dj_name == "rozzo" else ""
+	if folder.is_empty():
+		_refresh_dj_card()
+		return
+	var directory := DirAccess.open(folder)
+	if directory == null:
+		dj_card_status.text = "Add MP3 tracks to godot/audio/rozzo/"
+		return
+	directory.list_dir_begin()
+	var filename := directory.get_next()
+	while not filename.is_empty():
+		if not directory.current_is_dir() and filename.get_extension().to_lower() == "mp3":
+			dj_track_paths.append(folder.path_join(filename))
+		filename = directory.get_next()
+	directory.list_dir_end()
+	dj_track_paths.shuffle()
+	_play_next_dj_track()
+
+
+func _play_next_dj_track() -> void:
+	if not night_active or dj_track_paths.is_empty() or dj_player == null:
+		return
+	dj_track_index = (dj_track_index + 1) % dj_track_paths.size()
+	var path := dj_track_paths[dj_track_index]
+	var stream := load(path) as AudioStream
+	if stream == null:
+		dj_card_status.text = "Cannot play: " + path.get_file()
+		return
+	dj_player.stream = stream
+	dj_player.play()
+	if dj_card_status != null:
+		dj_card_status.text = "▶  " + path.get_file().get_basename()
+
+
+func _stop_dj_music() -> void:
+	if dj_player != null:
+		dj_player.stop()
+	_refresh_dj_card()
+
 
 func _night_button_pressed() -> void:
 	if night_active:
@@ -1548,7 +1631,7 @@ func _save_club() -> void:
 		"version": 1, "cash": cash, "reputation": reputation,
 		"level": club_level, "xp": club_xp, "total_xp": total_xp,
 		"perk_points": perk_points, "perks": unlocked_perks,
-		"night_number": night_number, "objects": furniture
+		"night_number": night_number, "ticket_price": ticket_price, "drink_price": drink_price, "objects": furniture
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
@@ -1617,6 +1700,12 @@ func _load_club() -> void:
 	for perk in data.get("perks", []):
 		unlocked_perks.append(str(perk))
 	night_number = maxi(0, int(data.get("night_number", 0)))
+	ticket_price = clampi(int(data.get("ticket_price", 20)), 5, 80)
+	drink_price = clampi(int(data.get("drink_price", 8)), 2, 35)
+	if ticket_slider != null:
+		ticket_slider.value = ticket_price
+	if drink_slider != null:
+		drink_slider.value = drink_price
 	build_mode = false
 	erase_mode = false
 	_refresh_preview()
@@ -1853,9 +1942,84 @@ func _build_overlay() -> void:
 	for dj in DJ_ROSTER:
 		dj_picker.add_item("%s  •  €%d" % [dj["name"], dj["fee"]])
 	dj_picker.selected = 0
-	dj_picker.item_selected.connect(func(_index: int) -> void: _refresh_readiness())
+	dj_picker.item_selected.connect(func(_index: int) -> void:
+		_refresh_readiness()
+		_refresh_dj_card()
+	)
 	UIStyle.decorate_option(dj_picker)
 	night_controls.add_child(dj_picker)
+	# Price controls: locked during the party, retained in club saves.
+	var pricing_heading := Label.new()
+	pricing_heading.text = "PRICING"
+	UIStyle.decorate_section(pricing_heading)
+	night_controls.add_child(pricing_heading)
+	var ticket_row := HBoxContainer.new()
+	night_controls.add_child(ticket_row)
+	var ticket_caption := Label.new()
+	ticket_caption.text = "TICKET PRICE"
+	UIStyle.decorate_label(ticket_caption, 13)
+	ticket_caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ticket_row.add_child(ticket_caption)
+	ticket_value_label = Label.new()
+	UIStyle.decorate_label(ticket_value_label, 14)
+	ticket_row.add_child(ticket_value_label)
+	ticket_slider = HSlider.new()
+	ticket_slider.min_value = 5
+	ticket_slider.max_value = 80
+	ticket_slider.step = 1
+	ticket_slider.value = ticket_price
+	ticket_slider.value_changed.connect(func(value: float) -> void:
+		ticket_price = int(value)
+		_refresh_prices()
+	)
+	night_controls.add_child(ticket_slider)
+	var drink_row := HBoxContainer.new()
+	night_controls.add_child(drink_row)
+	var drink_caption := Label.new()
+	drink_caption.text = "DRINK PRICE"
+	UIStyle.decorate_label(drink_caption, 13)
+	drink_caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	drink_row.add_child(drink_caption)
+	drink_value_label = Label.new()
+	UIStyle.decorate_label(drink_value_label, 14)
+	drink_row.add_child(drink_value_label)
+	drink_slider = HSlider.new()
+	drink_slider.min_value = 2
+	drink_slider.max_value = 35
+	drink_slider.step = 1
+	drink_slider.value = drink_price
+	drink_slider.value_changed.connect(func(value: float) -> void:
+		drink_price = int(value)
+		_refresh_prices()
+	)
+	night_controls.add_child(drink_slider)
+	var dj_card := PanelContainer.new()
+	var dj_card_style := UIStyle.panel_style()
+	dj_card_style.bg_color = Color("#251a32")
+	dj_card_style.border_color = Color("#684077")
+	dj_card_style.shadow_size = 0
+	dj_card.add_theme_stylebox_override("panel", dj_card_style)
+	night_controls.add_child(dj_card)
+	var dj_card_content := VBoxContainer.new()
+	dj_card_content.add_theme_constant_override("separation", 7)
+	dj_card.add_child(dj_card_content)
+	var dj_kicker := Label.new()
+	dj_kicker.text = "♫  NOW BOOKING"
+	UIStyle.decorate_section(dj_kicker)
+	dj_card_content.add_child(dj_kicker)
+	dj_card_title = Label.new()
+	UIStyle.decorate_label(dj_card_title, 17)
+	dj_card_content.add_child(dj_card_title)
+	dj_card_status = Label.new()
+	UIStyle.decorate_label(dj_card_status, 12, true)
+	dj_card_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	dj_card_content.add_child(dj_card_status)
+	dj_player = AudioStreamPlayer.new()
+	dj_player.name = "ClubDJPlayer"
+	add_child(dj_player)
+	dj_player.finished.connect(_play_next_dj_track)
+	_refresh_dj_card()
+	_refresh_prices()
 	start_night_button = Button.new()
 	start_night_button.text = "START NIGHT"
 	UIStyle.decorate_button(start_night_button, true)
