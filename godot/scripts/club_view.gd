@@ -113,16 +113,26 @@ func _input(event: InputEvent) -> void:
 		_update_camera()
 		get_viewport().set_input_as_handled()
 		return
+	if event is InputEventPanGesture:
+		# macOS may send smooth scrolling as a pan gesture rather than wheel buttons.
+		if absf(event.delta.y) > 0.001:
+			zoom = clampf(zoom * exp(event.delta.y * 0.055), MIN_ZOOM, MAX_ZOOM)
+			_update_camera()
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			if event.pressed:
+				# Standard mouse wheel: some devices report factor=0.
+				var steps := maxf(event.factor, 1.0)
+				var direction := -1.0 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
+				zoom = clampf(zoom * pow(1.12, direction * steps), MIN_ZOOM, MAX_ZOOM)
+				_update_camera()
+				get_viewport().set_input_as_handled()
+			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			dragging = event.pressed
 			last_mouse = event.position
-		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			zoom = max(MIN_ZOOM, zoom * pow(0.9, maxf(event.factor, 0.1)))
-			_update_camera()
-		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			zoom = min(MAX_ZOOM, zoom * pow(1.1, maxf(event.factor, 0.1)))
-			_update_camera()
 	elif event is InputEventMouseMotion and dragging:
 		var delta: Vector2 = event.position - last_mouse
 		last_mouse = event.position
