@@ -558,6 +558,7 @@ func _guest_arrived(guest: Dictionary) -> void:
 					person.rotation.y += PI * 1.5
 					# One grid cell to the character's right after seating rotation.
 					person.position += Vector3(cos(person.rotation.y), 0.0, -sin(person.rotation.y)) * TILE
+					person.position += toward_seat_offset(float(seat["rotation"]), -TILE)
 				elif str(guest.get("character", "")) == "raver_f":
 					# Move half a tile toward the open aisle, away from the backrest.
 					person.position += toward_seat_offset(float(seat["rotation"]), 0.5)
@@ -591,7 +592,7 @@ func _process(delta: float) -> void:
 			if float(guest["wait"]) <= 0.0:
 				if state == "sitting":
 					guest["state"] = "resting"
-					guest["wait"] = randf_range(2.0, 3.0)
+					guest["wait"] = randf_range(5.0, 7.0)
 				elif state == "resting" and bool(guest.get("seated", false)):
 					guest["state"] = "standing"
 					guest["wait"] = _play_sit(guest, true)
