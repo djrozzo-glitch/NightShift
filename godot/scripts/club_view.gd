@@ -339,6 +339,8 @@ func _load_guest_models() -> void:
 		var variants: Dictionary = {}
 		for motion in ["idle", "walk", "dance", "sit", "drink", "chat"]:
 			var path := "res://characters/%s_%s.glb" % [character_name, motion]
+			if character_name == "raver_m" and motion == "sit":
+				path = "res://characters/raver_m_sit 2.glb"
 			if ResourceLoader.exists(path):
 				var packed := load(path) as PackedScene
 				if packed != null:
@@ -554,14 +556,8 @@ func _guest_arrived(guest: Dictionary) -> void:
 				guest["sofa_approach"] = person.position
 				person.position = seat["position"]
 				person.rotation.y = float(seat["rotation"])
-				if str(guest.get("character", "")) == "raver_m":
-					person.rotation.y += PI * 1.5
-					# Male sit animation has an offset root: align its final seated pose
-					# two cells farther right and half a cell deeper into the sofa.
-					person.position += Vector3(cos(person.rotation.y), 0.0, -sin(person.rotation.y)) * (3.0 * TILE)
-					person.position += toward_seat_offset(float(seat["rotation"]), -1.5 * TILE)
-				elif str(guest.get("character", "")) == "raver_f":
-					# Move half a tile toward the open aisle, away from the backrest.
+				if str(guest.get("character", "")) in ["raver_m", "raver_f"]:
+					# Both sit animations share the same sofa anchor.
 					person.position += toward_seat_offset(float(seat["rotation"]), 0.5)
 				guest["seated"] = true
 				guest["state"] = "sitting"
