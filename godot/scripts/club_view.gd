@@ -110,6 +110,8 @@ var club_environment: Environment
 var club_sun: DirectionalLight3D
 var stage_lights: Array[SpotLight3D] = []
 var lighting_clock := 0.0
+var dance_lights: Array[OmniLight3D] = []
+var beam_meshes: Array[MeshInstance3D] = []
 
 func _load_models() -> void:
 	for kind in MODEL_TYPES:
@@ -809,25 +811,56 @@ func _build_stage_lights() -> void:
 		var fixture: Node3D = record["node"]
 		var spot := SpotLight3D.new()
 		spot.name = "ClubSpot"
-		spot.position = Vector3(0.0, 1.65, 0.0)
-		spot.spot_range = 8.0
+		spot.position = Vector3(0.0, 1.4, 0.0)
+		spot.spot_range = 11.0
 		spot.spot_angle = 34.0 if str(record["kind"]) == "light" else 13.0
 		spot.light_color = Color("#c15dff") if str(record["kind"]) == "light" else Color("#ff3acb")
 		spot.light_energy = 0.0
 		spot.shadow_enabled = false
 		fixture.add_child(spot)
-		spot.look_at_from_position(spot.position, Vector3(0.0, 0.0, -2.5), Vector3.UP)
+		spot.rotation_degrees.x = -90.0
+		var beam := MeshInstance3D.new()
+		var cone := CylinderMesh.new()
+		cone.top_radius = 0.035
+		cone.bottom_radius = 0.7 if str(record["kind"]) == "light" else 0.055
+		cone.height = 3.5
+		beam.mesh = cone
+		beam.position = Vector3(0.0, -1.75, 0.0)
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(0.6, 0.25, 1.0, 0.08) if str(record["kind"]) == "light" else Color(1.0, 0.15, 0.7, 0.35)
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		beam.material_override = mat
+		spot.add_child(beam)
+		beam.visible = false
+		beam_meshes.append(beam)
 		stage_lights.append(spot)
+	for index in range(6):
+		var glow := OmniLight3D.new()
+		glow.position = Vector3(-3.0 + float(index % 3) * 3.0, 0.6, -2.0 + float(index / 3.0) * 3.0)
+		glow.omni_range = 3.8
+		glow.light_color = Color("#b456ff") if index % 2 == 0 else Color("#ff429c")
+		glow.light_energy = 0.0
+		glow.shadow_enabled = false
+		club.add_child(glow)
+		dance_lights.append(glow)
 
 func _set_night_lighting(enabled: bool) -> void:
 	if club_environment != null:
-		club_environment.ambient_light_energy = 0.32 if enabled else 0.85
+		club_environment.ambient_light_energy = 0.48 if enabled else 0.85
 		club_environment.background_color = Color("#080b18") if enabled else Color("#131a2b")
 	if club_sun != null:
-		club_sun.light_energy = 0.18 if enabled else 1.0
+		club_sun.light_energy = 0.33 if enabled else 1.0
 	for spot in stage_lights:
 		if is_instance_valid(spot):
-			spot.light_energy = 2.0 if enabled else 0.0
+			spot.light_energy = 4.0 if enabled else 0.0
+	for beam in beam_meshes:
+		if is_instance_valid(beam):
+			beam.visible = enabled
+	for glow in dance_lights:
+		if is_instance_valid(glow):
+			glow.light_energy = 1.2 if enabled else 0.0
 
 func _animate_stage_lights(delta: float) -> void:
 	if not night_active or night_paused:
@@ -838,8 +871,12 @@ func _animate_stage_lights(delta: float) -> void:
 		if not is_instance_valid(spot):
 			continue
 		var phase := lighting_clock * (0.8 + float(index % 4) * 0.17) + float(index) * 1.7
-		spot.rotation = Vector3(-0.85 + sin(phase) * 0.25, phase * 0.32, 0.0)
-		spot.light_energy = 1.6 + 1.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
+		spot.rotation = Vector3(-PI * 0.5 + sin(phase) * 0.25, sin(phase * 0.6) * 0.45, cos(phase) * 0.25)
+		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
+	for index in range(dance_lights.size()):
+		var glow := dance_lights[index]
+		if is_instance_valid(glow):
+			glow.light_energy = 0.7 + 1.8 * (0.5 + 0.5 * sin(lighting_clock * 2.4 + float(index) * 1.1))
 
 func _start_night() -> void:
 	_refresh_readiness()
