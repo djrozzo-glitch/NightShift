@@ -1029,7 +1029,9 @@ func _animate_stage_lights(delta: float) -> void:
 			inward = inward.normalized()
 			var sideways := Vector3(-inward.z, 0.0, inward.x)
 			var direction := inward * 4.0 + sideways * sin(phase) * 1.2
-			direction.y = 1.5 + 0.35 * sin(phase * 0.7)
+			# Diagnostic: sweep almost horizontally across the fog, not upward
+			# toward the overhead camera. Keep the lens as the light origin.
+			direction.y = -0.35 + 0.12 * sin(phase * 0.7)
 			spot.look_at(spot.global_position + direction, Vector3.UP)
 		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
 	# Independent color changes and a restrained rhythmic flash for moving heads.
