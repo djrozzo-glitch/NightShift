@@ -33,36 +33,95 @@ func _make_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> Mes
 	parent.add_child(item)
 	return item
 
+const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light", "laser", "plant2", "table", "stool", "wc", "entrance", "floor"]
+var models: Dictionary = {}
+var club: Node3D
+
+func _load_models() -> void:
+	for kind in MODEL_TYPES:
+		var path := "res://assets/models/%s.glb" % kind
+		if ResourceLoader.exists(path):
+			var packed := load(path) as PackedScene
+			if packed != null:
+				models[kind] = packed
+
+func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void:
+	var obj: Node3D
+	if models.has(kind):
+		obj = (models[kind] as PackedScene).instantiate() as Node3D
+		# Fit model uniformly to the grid; later calibrate orientation per asset.
+		parent.add_child(obj)
+		var bounds := _visual_bounds(obj)
+		var extent: Vector3 = bounds.size
+		var longest := maxf(extent.x, extent.z)
+		var target := 1.8 if kind in ["dj", "bar", "sofa", "wc"] else 0.94
+		if longest > 0.001:
+			obj.scale = Vector3.ONE * (target / longest)
+		var center := bounds.get_center()
+		obj.position = Vector3(x - 7.5, 0, y - 7.5) - center * obj.scale
+	else:
+		obj = Node3D.new()
+		parent.add_child(obj)
+		obj.position = Vector3(x - 7.5, 0, y - 7.5)
+		var color := Color("#5d456a") if kind in ["dj", "bar", "sofa"] else Color("#53505b")
+		_make_box(obj, Vector3(0, 0.45, 0), Vector3(0.8, 0.9, 0.8), color)
+	obj.name = "%s_%d_%d" % [kind, x, y]
+	obj.rotation.y = float(turn) * PI * 0.5
+
+func _visual_bounds(root: Node3D) -> AABB:
+	var bounds := AABB()
+	var found := false
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		if mesh.mesh == null:
+			continue
+		var local := root.global_transform.affine_inverse() * mesh.global_transform
+		var aabb := local * mesh.get_aabb()
+		if not found:
+			bounds = aabb
+			found = true
+		else:
+			bounds = bounds.merge(aabb)
+	return bounds
+
 func _build_world() -> void:
-	var world := Node3D.new()
-	world.name = "Club"
-	add_child(world)
+	_load_models()
+	club = Node3D.new()
+	club.name = "ABLETON_GYM"
+	add_child(club)
 	var dark := Color("#272735")
 	var light := Color("#343342")
-	var purple := Color("#6a3b7d")
-	var concrete := Color("#4c4b53")
+	var dance_color := Color("#6a3b7d")
 	for y in range(SIZE):
 		for x in range(SIZE):
-			var pos := Vector3(x - (SIZE - 1) * 0.5, -0.055, y - (SIZE - 1) * 0.5)
 			var dance := x >= 3 and x <= 12 and y >= 3 and y <= 9
-			var tile_color := purple if dance else (dark if (x + y) % 2 == 0 else light)
-			_make_box(world, pos + Vector3(0, 0.085 if dance else 0, 0),
-				Vector3(0.98, 0.17 if dance else 0.10, 0.98), tile_color)
-	for i in range(SIZE):
-		var p := i - (SIZE - 1) * 0.5
-		_make_box(world, Vector3(p, 0.65, -(SIZE - 1) * 0.5),
-			Vector3(0.99, 1.3, 0.16), concrete)
-		_make_box(world, Vector3(-(SIZE - 1) * 0.5, 0.65, p),
-			Vector3(0.16, 1.3, 0.99), concrete)
-		_make_box(world, Vector3((SIZE - 1) * 0.5, 0.65, p),
-			Vector3(0.16, 1.3, 0.99), concrete)
-		if i < 7 or i > 8:
-			_make_box(world, Vector3(p, 0.65, (SIZE - 1) * 0.5),
-				Vector3(0.99, 1.3, 0.16), concrete)
-	# Temporary geometry: actual GLB models and saved ABLETON GYM layout come next.
-	_make_box(world, Vector3(0, 0.42, 2.5), Vector3(2, 0.85, 0.8), Color("#34283e"))
-	_make_box(world, Vector3(-4.5, 0.48, -5.5), Vector3(2, 0.95, 0.7), Color("#50334e"))
-	_make_box(world, Vector3(4.5, 0.48, -5.5), Vector3(2, 0.95, 0.7), Color("#50334e"))
+			_make_box(club, Vector3(x - 7.5, 0.025 if dance else -0.055, y - 7.5),
+				Vector3(0.99, 0.15 if dance else 0.10, 0.99),
+				dance_color if dance else (dark if (x + y) % 2 == 0 else light))
+	# Original saved ABLETON GYM layout, including rotations.
+	var items := [
+		[6,0,"poster",0],[0,4,"poster",0],[0,12,"poster",0],[15,12,"poster",0],
+		[1,1,"light",0],[3,1,"sofa",3],[4,1,"plant2",0],[5,1,"laser",0],[7,1,"table",0],
+		[9,1,"laser",0],[10,1,"plant2",0],[12,1,"bar",3],[14,1,"light",0],
+		[6,2,"speaker",0],[8,2,"speaker",0],[1,3,"plant2",0],[14,3,"plant2",0],
+		[14,5,"sofa",2],[1,6,"plant2",0],[14,6,"table",0],[1,7,"laser",1],
+		[14,8,"sofa",2],[1,8,"bar",0],[2,9,"stool",0],[14,9,"plant2",0],
+		[1,10,"laser",1],[5,10,"light",2],[7,10,"dj",1],[10,10,"light",2],
+		[1,11,"plant2",0],[14,10,"plant2",0],[14,11,"plant2",0],
+		[2,13,"stool",0],[11,13,"stool",0],[1,14,"light",2],[2,14,"bar",1],
+		[5,14,"speaker",2],[10,14,"speaker",2],[11,14,"bar",1],[13,14,"wc",1]
+	]
+	for y in range(SIZE):
+		for x in range(SIZE):
+			if x == 0 or x == SIZE - 1 or y == 0 or y == SIZE - 1:
+				if y == SIZE - 1 and (x == 7 or x == 8):
+					continue
+				var is_poster := (x == 6 and y == 0) or (x == 0 and y in [4,12]) or (x == 15 and y == 12)
+				if not is_poster:
+					_model(club, "wall", x, y, 1 if x == 0 or x == SIZE - 1 else 0)
+	for item in items:
+		_model(club, item[2], item[0], item[1], item[3])
+	_model(club, "entrance", 7, 15, 0)
 	var ambient := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
