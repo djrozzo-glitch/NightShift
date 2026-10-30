@@ -847,6 +847,7 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
 	spot.light_energy = 4.0 if night_active else 0.0
 	spot.shadow_enabled = false
+	spot.light_volumetric_fog_energy = 3.0 if kind == "light" else 0.0
 	fixture.add_child(spot)
 	# Aim the beam from the projector toward the room, slightly upward.
 	if kind == "laser":
@@ -906,7 +907,7 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		inner.material_override = _disco_beam_material(0.13)
 		beam.add_child(inner)
 	spot.add_child(beam)
-	beam.visible = night_active
+	beam.visible = night_active and kind == "laser"
 	beam_meshes.append(beam)
 	stage_lights.append(spot)
 	if kind == "light":
@@ -937,6 +938,7 @@ func _set_night_lighting(enabled: bool) -> void:
 	if club_environment != null:
 		club_environment.ambient_light_energy = 0.48 if enabled else 0.85
 		club_environment.background_color = Color("#080b18") if enabled else Color("#131a2b")
+		club_environment.volumetric_fog_enabled = enabled
 	if club_sun != null:
 		club_sun.light_energy = 0.33 if enabled else 1.0
 	for spot in stage_lights:
@@ -944,7 +946,8 @@ func _set_night_lighting(enabled: bool) -> void:
 			spot.light_energy = 4.0 if enabled else 0.0
 	for beam in beam_meshes:
 		if is_instance_valid(beam):
-			beam.visible = enabled
+			# Only lasers use geometry; moving-head beams come from volumetric fog.
+			beam.visible = enabled and beam.get_node_or_null("LaserHalo") != null
 	for glow in dance_lights:
 		if is_instance_valid(glow):
 			glow.light_energy = 1.2 if enabled else 0.0
@@ -1342,6 +1345,13 @@ func _build_world() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color("#d4c7ed")
 	env.ambient_light_energy = 0.85
+	# Forward+ volumetric haze: low density keeps the club readable.
+	env.volumetric_fog_enabled = false
+	env.volumetric_fog_density = 0.018
+	env.volumetric_fog_albedo = Color("#b6a7d4")
+	env.volumetric_fog_emission = Color("#08050e")
+	env.volumetric_fog_emission_energy = 0.15
+	env.volumetric_fog_anisotropy = 0.55
 	club_environment = env
 	ambient.environment = env
 	add_child(ambient)
