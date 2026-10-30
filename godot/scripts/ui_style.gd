@@ -1,24 +1,24 @@
 extends RefCounted
 ## NightShift UI design tokens and reusable Godot Control styling.
-const BG := Color("#171923")
-const PANEL := Color("#242632")
-const EDGE := Color("#464052")
-const TEXT := Color("#eee9f4")
-const MUTED := Color("#aaa4b6")
-const ACCENT := Color("#ad79df")
+const BG := Color("#10121d")
+const PANEL := Color("#1c2030")
+const EDGE := Color("#35334d")
+const TEXT := Color("#f3effa")
+const MUTED := Color("#a6a1b9")
+const ACCENT := Color("#d05ac3")
 
 static func panel_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = PANEL
 	style.border_color = EDGE
 	style.set_border_width_all(1)
-	style.set_corner_radius_all(9)
+	style.set_corner_radius_all(12)
 	style.content_margin_left = 16
 	style.content_margin_right = 16
 	style.content_margin_top = 14
 	style.content_margin_bottom = 14
 	style.shadow_color = Color(0, 0, 0, 0.35)
-	style.shadow_size = 8
+	style.shadow_size = 12
 	return style
 
 static func button_style(hovered: bool = false, pressed: bool = false) -> StyleBoxFlat:
@@ -50,3 +50,16 @@ static func decorate_button(button: Button, prominent: bool = false) -> void:
 static func decorate_label(label: Label, size: int = 14, muted: bool = false) -> void:
 	label.add_theme_color_override("font_color", MUTED if muted else TEXT)
 	label.add_theme_font_size_override("font_size", size)
+
+static func make_theme() -> Theme:
+	# One native Godot Theme ensures consistent typography across all controls.
+	var result := Theme.new()
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray(["Inter", "SF Pro Display", "Arial"])
+	result.default_font = font
+	result.default_font_size = 14
+	result.set_color("font_color", "Label", TEXT)
+	result.set_color("font_color", "Button", TEXT)
+	result.set_color("font_color", "OptionButton", TEXT)
+	result.set_color("font_color", "PopupMenu", TEXT)
+	return result
