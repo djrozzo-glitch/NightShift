@@ -714,7 +714,7 @@ func _process(delta: float) -> void:
 		var remaining := ceili(NIGHT_DURATION - night_elapsed)
 		night_time_label.text = "TIME LEFT  %d:%02d  |  €%d TICKETS  €%d BAR" % [int(remaining / 60.0), remaining % 60, night_ticket_income, night_drink_income]
 	guest_spawn_clock += step
-	if guest_spawn_clock >= clampf((6.5 - float(club_level - 1) * 0.12 - float(reputation) * 0.018) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < MAX_GUESTS:
+	if guest_spawn_clock >= clampf((6.5 + maxf(0.0, float(ticket_price - 20)) * 0.075 - float(club_level - 1) * 0.12 - float(reputation) * 0.018) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < MAX_GUESTS:
 		guest_spawn_clock = 0.0
 		_spawn_guest()
 	for guest in guests:
@@ -757,7 +757,7 @@ func _process(delta: float) -> void:
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
 				else:
-					var wants_drink := float(guest["thirst"]) > 0.55 and int(guest["wallet"]) >= drink_price
+					var wants_drink := float(guest["thirst"]) > (0.55 + maxf(0.0, float(drink_price - 8)) * 0.012) and int(guest["wallet"]) >= drink_price
 					var wants_rest := float(guest["energy"]) < 0.45
 					var activity := "bar" if wants_drink else "sofa" if wants_rest else ("bar" if randf() < 0.3 and int(guest["wallet"]) >= drink_price else "sofa")
 					if not _guest_route(guest, activity):
@@ -2027,7 +2027,7 @@ func _build_overlay() -> void:
 	start_night_button.custom_minimum_size = Vector2(255, 48)
 	night_controls.add_child(start_night_button)
 	night_time_label = Label.new()
-	night_time_label.text = "3-MINUTE NIGHT  |  TICKETS €20  |  DRINKS €8"
+	night_time_label.text = "3-MINUTE NIGHT  |  TICKETS €%d  |  DRINKS €%d" % [ticket_price, drink_price]
 	UIStyle.decorate_label(night_time_label, 12, true)
 	night_controls.add_child(night_time_label)
 	var speed_controls := HBoxContainer.new()
