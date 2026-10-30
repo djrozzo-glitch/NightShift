@@ -1378,6 +1378,8 @@ func _enable_erase() -> void:
 
 func _toggle_build_panel() -> void:
 	build_panel.visible = not build_panel.visible
+	if progression_panel != null:
+		progression_panel.visible = false
 	build_toggle.text = "CLOSE BUILD" if build_panel.visible else "BUILD  [B]"
 	_update_hover(get_viewport().get_mouse_position())
 
@@ -1578,10 +1580,22 @@ func _build_overlay() -> void:
 	UIStyle.decorate_button(erase_button)
 	erase_button.pressed.connect(_enable_erase)
 	choices.add_child(erase_button)
+	var progression_toggle := Button.new()
+	progression_toggle.text = "★ PROGRESSION"
+	progression_toggle.position = Vector2(20, 205)
+	progression_toggle.custom_minimum_size = Vector2(166, 38)
+	UIStyle.decorate_button(progression_toggle, true)
+	progression_toggle.pressed.connect(func() -> void:
+		progression_panel.visible = not progression_panel.visible
+		build_panel.visible = false
+		build_toggle.text = "BUILD  [B]"
+	)
+	ui.add_child(progression_toggle)
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
 	progression_panel.position = Vector2(20, 255)
 	progression_panel.custom_minimum_size = Vector2(290, 0)
+	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
 	ui.add_child(progression_panel)
 	var progress_content := VBoxContainer.new()
@@ -1698,13 +1712,13 @@ func _build_overlay() -> void:
 	_refresh_readiness()
 	var help_button := Button.new()
 	help_button.text = "?  HELP"
-	help_button.position = Vector2(20, 205)
+	help_button.position = Vector2(200, 205)
 	UIStyle.decorate_button(help_button)
 	help_button.pressed.connect(_toggle_help)
 	ui.add_child(help_button)
 	help_label = Label.new()
 	help_label.text = "Drag: rotate   Shift+drag: pan\nWheel/pinch or +/-: zoom\nR: rotate furniture / reset camera\nB: build   X: erase   Ctrl/Cmd+Z: undo"
-	help_label.position = Vector2(20, 250)
+	help_label.position = Vector2(330, 205)
 	help_label.visible = false
 	UIStyle.decorate_label(help_label, 13, true)
 	ui.add_child(help_label)
