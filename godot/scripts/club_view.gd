@@ -1366,11 +1366,11 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventPanGesture:
-		# macOS may send smooth scrolling as a pan gesture rather than wheel buttons.
-		if absf(event.delta.y) > 0.001:
-			zoom = clampf(zoom * exp(event.delta.y * 0.055), MIN_ZOOM, MAX_ZOOM)
-			_update_camera()
-			get_viewport().set_input_as_handled()
+		# Trackpad two-finger gesture: rotate/tilt. Pinch and wheel handle zoom.
+		yaw -= event.delta.x * 0.022
+		tilt = clampf(tilt + event.delta.y * 0.018, deg_to_rad(-85.0), deg_to_rad(-20.0))
+		_update_camera()
+		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouseMotion and build_mode:
 		_update_hover(event.position)
@@ -1393,7 +1393,15 @@ func _input(event: InputEvent) -> void:
 					_place_selected()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			dragging = event.pressed
+			if event.pressed:
+				var over_ui := false
+				if build_toggle != null and build_toggle.get_global_rect().has_point(event.position):
+					over_ui = true
+				if build_panel != null and build_panel.visible and build_panel.get_global_rect().has_point(event.position):
+					over_ui = true
+				dragging = not over_ui
+			else:
+				dragging = false
 			last_mouse = event.position
 	elif event is InputEventMouseMotion and dragging:
 		var delta: Vector2 = event.position - last_mouse
