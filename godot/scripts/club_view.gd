@@ -823,7 +823,7 @@ func _build_stage_lights() -> void:
 		spot.shadow_enabled = false
 		fixture.add_child(spot)
 		# Aim the beam from the projector toward the room, slightly upward.
-		spot.rotation_degrees.x = 58.0 if str(record["kind"]) == "laser" else -90.0
+		spot.rotation_degrees.x = -58.0 if str(record["kind"]) == "laser" else -90.0
 		var beam := MeshInstance3D.new()
 		var cone := CylinderMesh.new()
 		cone.top_radius = 0.035
@@ -883,7 +883,10 @@ func _animate_stage_lights(delta: float) -> void:
 		if not is_instance_valid(spot):
 			continue
 		var phase := lighting_clock * (0.8 + float(index % 4) * 0.17) + float(index) * 1.7
-		spot.rotation = Vector3(-PI * 0.5 + sin(phase) * 0.25, sin(phase * 0.6) * 0.45, cos(phase) * 0.25)
+		if laser_spots.has(spot):
+			spot.rotation = Vector3(deg_to_rad(-58.0) + sin(phase) * 0.13, sin(phase * 0.6) * 0.45, cos(phase) * 0.16)
+		else:
+			spot.rotation = Vector3(-PI * 0.5 + sin(phase) * 0.25, sin(phase * 0.6) * 0.45, cos(phase) * 0.25)
 		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
 	# Each light has a different phase; no part of the floor goes fully dark.
 	for index in range(dance_lights.size()):
