@@ -50,13 +50,9 @@ var guests: Array[Dictionary] = []
 var guest_spawn_clock := 0.0
 var guest_count := 0
 const MAX_GUESTS := 28
-const GUEST_MODEL_PATHS := [
-	"res://assets/models/guest_01.glb",
-	"res://assets/models/guest_02.glb",
-	"res://assets/models/guest_03.glb",
-	"res://assets/models/guest_04.glb"
-]
-var guest_models: Array[PackedScene] = []
+const GUEST_CHARACTER_NAMES := ["baggy_m", "fashion_f", "jungle_f", "raver_f", "raver_m"]
+var guest_models: Dictionary = {}
+
 const GUEST_ENTRY := Vector2i(7, 14)
 const WALK_DIRS := [Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1)]
 const DJ_ROSTER := [
@@ -322,11 +318,40 @@ func _dance_destination() -> Vector2i:
 
 func _load_guest_models() -> void:
 	guest_models.clear()
-	for path in GUEST_MODEL_PATHS:
-		if ResourceLoader.exists(path):
-			var packed := load(path) as PackedScene
-			if packed != null:
-				guest_models.append(packed)
+	for character_name in GUEST_CHARACTER_NAMES:
+		var variants: Dictionary = {}
+		for motion in ["idle", "walk", "dance"]:
+			var path := "res://characters/%s_%s.glb" % [character_name, motion]
+			if ResourceLoader.exists(path):
+				var packed := load(path) as PackedScene
+				if packed != null:
+					variants[motion] = packed
+		if variants.has("walk") and variants.has("dance"):
+			guest_models[character_name] = variants
+
+func _guest_animated_model(packed: PackedScene, parent: Node3D) -> Node3D:
+	var imported := packed.instantiate() as Node3D
+	if imported == null:
+		return null
+	parent.add_child(imported)
+	var bounds := _visual_bounds(imported)
+	if bounds.size.y > 0.001:
+		var factor := 1.05 / bounds.size.y
+		imported.scale = Vector3.ONE * factor
+		bounds = _visual_bounds(imported)
+		imported.position.y -= bounds.position.y
+	for animation_node in imported.find_children("*", "AnimationPlayer", true, false):
+		var player := animation_node as AnimationPlayer
+		var names := player.get_animation_list()
+		if not names.is_empty():
+			var animation_name := names[0]
+			for name in names:
+				if name != "RESET":
+					animation_name = name
+					break
+			player.play(animation_name)
+			player.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
+	return imported
 
 func _guest_limb(parent: Node3D, location: Vector3, dimensions: Vector3, color: Color) -> Node3D:
 	var pivot_node := Node3D.new()
@@ -339,18 +364,20 @@ func _guest_visual(parent: Node3D) -> Dictionary:
 	var visual := Node3D.new()
 	parent.add_child(visual)
 	if not guest_models.is_empty():
-		var packed: PackedScene = guest_models.pick_random()
-		var imported := packed.instantiate() as Node3D
-		if imported != null:
-			visual.add_child(imported)
-			var bounds := _visual_bounds(visual)
-			if bounds.size.length_squared() > 0.000001:
-				var factor := 1.05 / maxf(bounds.size.y, 0.001)
-				imported.scale = Vector3.ONE * factor
-				bounds = _visual_bounds(visual)
-				imported.position.y -= bounds.position.y
-				return {"visual": visual, "arms": [], "legs": [], "imported": true}
-			imported.queue_free()
+		var character_name: String = guest_models.keys().pick_random()
+		var variants: Dictionary = guest_models[character_name]
+		var imported_nodes: Dictionary = {}
+		for motion in ["idle", "walk", "dance"]:
+			if not variants.has(motion):
+				continue
+			var imported := _guest_animated_model(variants[motion], visual)
+			if imported != null:
+				imported.visible = motion == "walk"
+				imported_nodes[motion] = imported
+		if imported_nodes.has("walk") and imported_nodes.has("dance"):
+			return {"visual": visual, "arms": [], "legs": [], "imported": true, "motions": imported_nodes, "motion": "walk"}
+		for node in imported_nodes.values():
+			(node as Node3D).queue_free()
 	var jacket := Color.from_hsv(randf(), randf_range(0.12, 0.45), randf_range(0.22, 0.52))
 	var trousers := Color("#20212d") if randf() < 0.7 else Color("#4c485a")
 	var skin: Color = [Color("#e0b69b"), Color("#b77e62"), Color("#815444"), Color("#f1c9ad")].pick_random()
@@ -373,7 +400,7 @@ func _guest_visual(parent: Node3D) -> Dictionary:
 	for side in [-1.0, 1.0]:
 		arms.append(_guest_limb(visual, Vector3(side * 0.19, 0.87, 0), Vector3(0.105, 0.37, 0.13), jacket))
 		legs.append(_guest_limb(visual, Vector3(side * 0.085, 0.51, 0), Vector3(0.13, 0.48, 0.16), trousers))
-	return {"visual": visual, "arms": arms, "legs": legs, "imported": false}
+	return {"visual": visual, "arms": arms, "legs": legs, "imported": false, "motions": {}, "motion": "walk"}
 
 func _spawn_guest() -> void:
 	if guests.size() >= MAX_GUESTS or not _walkable(GUEST_ENTRY):
@@ -388,7 +415,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85)})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85)})
 	guest_count += 1
 	_refresh_readiness()
 
@@ -415,6 +442,13 @@ func _process(delta: float) -> void:
 				(arms[index] as Node3D).rotation.x = sin(phase + float(index) * PI) * (0.65 if guest["dance"] else 0.35)
 				(arms[index] as Node3D).rotation.z = sign * (0.4 if guest["dance"] else 0.08)
 				(legs[index] as Node3D).rotation.x = sin(phase + float(index) * PI) * (0.23 if guest["dance"] else 0.45)
+		if guest["imported"]:
+			var desired_motion := "dance" if guest["dance"] else "walk"
+			if guest["motion"] != desired_motion:
+				var motions: Dictionary = guest["motions"]
+				for motion_name in motions:
+					(motions[motion_name] as Node3D).visible = motion_name == desired_motion
+				guest["motion"] = desired_motion
 		if guest["dance"]:
 			person.rotation.y += delta * 0.5
 			visual.rotation.z = sin(phase * 0.5) * 0.11
