@@ -814,14 +814,16 @@ func _build_stage_lights() -> void:
 		var fixture: Node3D = record["node"]
 		var spot := SpotLight3D.new()
 		spot.name = "ClubSpot"
-		spot.position = Vector3(0.0, 1.4, 0.0)
+		# Laser emission begins at the projector lens, not above its housing.
+		spot.position = Vector3(0.0, 0.34, 0.0) if str(record["kind"]) == "laser" else Vector3(0.0, 1.4, 0.0)
 		spot.spot_range = 11.0
 		spot.spot_angle = 34.0 if str(record["kind"]) == "light" else 13.0
 		spot.light_color = Color("#c15dff") if str(record["kind"]) == "light" else LASER_COLORS[0]
 		spot.light_energy = 0.0
 		spot.shadow_enabled = false
 		fixture.add_child(spot)
-		spot.rotation_degrees.x = -90.0
+		# Aim the beam from the projector toward the room, slightly upward.
+		spot.rotation_degrees.x = 58.0 if str(record["kind"]) == "laser" else -90.0
 		var beam := MeshInstance3D.new()
 		var cone := CylinderMesh.new()
 		cone.top_radius = 0.035
