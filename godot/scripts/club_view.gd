@@ -259,7 +259,7 @@ func _refresh_readiness() -> void:
 	else:
 		readiness_label.text = "NEEDS: " + ", ".join(issues)
 	if start_night_button != null:
-		start_night_button.disabled = night_active or not issues.is_empty()
+		start_night_button.disabled = not night_active and not issues.is_empty()
 
 func _start_night() -> void:
 	_refresh_readiness()
