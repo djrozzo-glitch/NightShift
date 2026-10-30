@@ -30,6 +30,13 @@ var placed_objects: Dictionary = {}
 var object_at_cell: Dictionary = {}
 var next_object_id := 1
 var action_history: Array[Dictionary] = []
+# Prototype economy: prices and starting balance will be balanced later.
+const BUILD_PRICES := {"speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450}
+var cash := 15000
+var reputation := 100
+var club_level := 1
+var economy_label: Label
+var notice_label: Label
 
 func _ready() -> void:
 	_build_world()
@@ -202,6 +209,14 @@ func _register_object(node: Node3D, kind: String, x: int, y: int, turn: int) -> 
 		object_at_cell[cell] = id
 	return id
 
+func _refresh_economy() -> void:
+	if economy_label != null:
+		economy_label.text = "CASH  €%d     REP  %d/100     LEVEL  %d" % [cash, reputation, club_level]
+
+func _notify(message: String) -> void:
+	if notice_label != null:
+		notice_label.text = message
+
 func _remove_object(id: int) -> Dictionary:
 	if not placed_objects.has(id):
 		return {}
@@ -214,7 +229,7 @@ func _remove_object(id: int) -> Dictionary:
 		node.get_parent().remove_child(node)
 		node.queue_free()
 	placed_objects.erase(id)
-	return {"kind": record["kind"], "x": record["x"], "y": record["y"], "turn": record["turn"]}
+	return {"kind": record["kind"], "x": record["x"], "y": record["y"], "turn": record["turn"], "paid": record.get("paid", false)}
 
 func _erase_hovered() -> void:
 	var id: int = int(object_at_cell.get(hover_cell, -1))
@@ -222,7 +237,11 @@ func _erase_hovered() -> void:
 		return
 	var record := _remove_object(id)
 	if not record.is_empty():
-		action_history.append({"action": "erase", "record": record})
+		var refund := int(BUILD_PRICES.get(record["kind"], 0)) / 2 if record["paid"] else 0
+		cash += refund
+		action_history.append({"action": "erase", "record": record, "refund": refund})
+		_refresh_economy()
+		_notify("Removed %s  |  Refund €%d" % [str(record["kind"]).capitalize(), refund])
 	_refresh_preview()
 	_update_hover(get_viewport().get_mouse_position())
 
@@ -231,11 +250,18 @@ func _undo_action() -> void:
 		return
 	var action: Dictionary = action_history.pop_back()
 	if action["action"] == "place":
-		_remove_object(int(action["id"]))
+		var removed := _remove_object(int(action["id"]))
+		if not removed.is_empty():
+			cash += int(action["cost"])
+			_notify("Placement undone  |  €%d returned" % int(action["cost"]))
 	elif action["action"] == "erase":
 		var record: Dictionary = action["record"]
 		var node := _model(club, record["kind"], record["x"], record["y"], record["turn"])
-		_register_object(node, record["kind"], record["x"], record["y"], record["turn"])
+		var restored_id := _register_object(node, record["kind"], record["x"], record["y"], record["turn"])
+		placed_objects[restored_id]["paid"] = record["paid"]
+		cash -= int(action["refund"])
+		_notify("Removal undone")
+	_refresh_economy()
 	_refresh_preview()
 	_update_hover(get_viewport().get_mouse_position())
 
@@ -320,9 +346,17 @@ func _update_hover(screen_pos: Vector2) -> void:
 func _place_selected() -> void:
 	if not _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn):
 		return
+	var cost := int(BUILD_PRICES.get(selected_kind, 0))
+	if cash < cost:
+		_notify("Not enough cash  |  Need €%d" % cost)
+		return
 	var node := _model(club, selected_kind, hover_cell.x, hover_cell.y, build_turn)
 	var id := _register_object(node, selected_kind, hover_cell.x, hover_cell.y, build_turn)
-	action_history.append({"action": "place", "id": id})
+	placed_objects[id]["paid"] = true
+	cash -= cost
+	action_history.append({"action": "place", "id": id, "cost": cost})
+	_refresh_economy()
+	_notify("Built %s  |  -€%d" % [selected_kind.capitalize(), cost])
 	_refresh_preview()
 	_update_hover(get_viewport().get_mouse_position())
 
@@ -427,21 +461,29 @@ func _build_overlay() -> void:
 	if not missing_models.is_empty():
 		var warning := Label.new()
 		warning.text = "Missing GLB: " + ", ".join(missing_models)
-		warning.position = Vector2(20, 95)
+		warning.position = Vector2(300, 120)
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
 		ui.add_child(warning)
+	economy_label = Label.new()
+	economy_label.position = Vector2(20, 91)
+	economy_label.add_theme_font_size_override("font_size", 18)
+	ui.add_child(economy_label)
+	_refresh_economy()
+	notice_label = Label.new()
+	notice_label.position = Vector2(20, 120)
+	ui.add_child(notice_label)
 	status_label = Label.new()
-	status_label.position = Vector2(20, 92)
-	status_label.text = "MODE: CAMERA   |   B: build speaker   ESC: camera"
+	status_label.position = Vector2(20, 151)
+	status_label.text = "MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
 	ui.add_child(status_label)
 	build_panel = PanelContainer.new()
-	build_panel.position = Vector2(20, 140)
+	build_panel.position = Vector2(20, 190)
 	ui.add_child(build_panel)
 	var choices := VBoxContainer.new()
 	build_panel.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
-		button.text = {"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize())
+		button.text = "%s   €%d" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), int(BUILD_PRICES.get(kind, 0))]
 		button.custom_minimum_size = Vector2(130, 27)
 		button.pressed.connect(_choose_kind.bind(kind))
 		choices.add_child(button)
