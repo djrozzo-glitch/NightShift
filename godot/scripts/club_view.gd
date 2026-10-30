@@ -43,6 +43,8 @@ var total_xp := 0
 var perk_points := 0
 var unlocked_perks: Array[String] = []
 var progression_panel: PanelContainer
+var xp_bar: ProgressBar
+var rep_bar: ProgressBar
 var progression_details: Label
 var perk_buttons: Array[Button] = []
 var expansion_details: Label
@@ -1516,7 +1518,12 @@ func _refresh_progression() -> void:
 	if progression_details == null:
 		return
 	var level_name: String = LEVEL_NAMES[mini(club_level - 1, LEVEL_NAMES.size() - 1)]
-	progression_details.text = "LVL %d  ·  %s\nXP %d / %d     ·     PERK POINTS %d" % [club_level, level_name, club_xp, _xp_needed(club_level), perk_points]
+	progression_details.text = "LVL %d  ·  %s\n%d / %d XP   ·   %d PERK POINTS" % [club_level, level_name, club_xp, _xp_needed(club_level), perk_points]
+	if xp_bar != null:
+		xp_bar.max_value = maxi(1, _xp_needed(club_level))
+		xp_bar.value = club_xp
+	if rep_bar != null:
+		rep_bar.value = reputation
 	for i in range(perk_buttons.size()):
 		var option: Dictionary = PERK_OPTIONS[i]
 		var owned := unlocked_perks.has(str(option["id"]))
@@ -1644,11 +1651,13 @@ func _build_overlay() -> void:
 	# Compact management dropdown; all actions stay in the game.
 	var manage_button := MenuButton.new()
 	manage_button.text = "☰  CLUB MENU"
-	manage_button.position = Vector2(20, 150)
+	manage_button.position = Vector2(20, 160)
 	manage_button.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(manage_button)
 	theme_root.add_child(manage_button)
 	var popup := manage_button.get_popup()
+	popup.add_theme_font_size_override("font_size", 13)
+	popup.add_theme_stylebox_override("panel", UIStyle.panel_style())
 	popup.add_item("Save Club", 0)
 	popup.add_item("Load Club", 1)
 	popup.add_separator()
@@ -1666,11 +1675,17 @@ func _build_overlay() -> void:
 	new_confirmation.dialog_text = "Your current unsaved progress will be lost. Your saved club will remain available."
 	theme_root.add_child(new_confirmation)
 	new_confirmation.confirmed.connect(_new_club)
+	var header_panel := PanelContainer.new()
+	header_panel.position = Vector2(12, 12)
+	header_panel.custom_minimum_size = Vector2(480, 135)
+	UIStyle.decorate_panel(header_panel)
+	header_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	theme_root.add_child(header_panel)
 	var title := Label.new()
 	title.text = "ABLETON GYM"
 	UIStyle.decorate_label(title, 24)
 	title.add_theme_color_override("font_color", Color("#f4eafa"))
-	title.position = Vector2(20, 20)
+	title.position = Vector2(30, 25)
 	
 	theme_root.add_child(title)
 	if not missing_models.is_empty():
@@ -1680,28 +1695,28 @@ func _build_overlay() -> void:
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
 		theme_root.add_child(warning)
 	economy_label = Label.new()
-	economy_label.position = Vector2(20, 63)
+	economy_label.position = Vector2(30, 65)
 	UIStyle.decorate_label(economy_label, 15)
 	theme_root.add_child(economy_label)
 	_refresh_economy()
 	notice_label = Label.new()
-	notice_label.position = Vector2(20, 97)
+	notice_label.position = Vector2(30, 97)
 	UIStyle.decorate_label(notice_label, 13, true)
 	theme_root.add_child(notice_label)
 	status_label = Label.new()
-	status_label.position = Vector2(20, 122)
+	status_label.position = Vector2(30, 122)
 	status_label.text = "MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
 	UIStyle.decorate_label(status_label, 13, true)
 	theme_root.add_child(status_label)
 	build_toggle = Button.new()
 	build_toggle.text = "BUILD  [B]"
-	build_toggle.position = Vector2(20, 202)
+	build_toggle.position = Vector2(20, 210)
 	build_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(build_toggle, true)
 	build_toggle.pressed.connect(_toggle_build_panel)
 	theme_root.add_child(build_toggle)
 	build_panel = PanelContainer.new()
-	build_panel.position = Vector2(20, 296)
+	build_panel.position = Vector2(20, 310)
 	build_panel.visible = false
 	UIStyle.decorate_panel(build_panel)
 	theme_root.add_child(build_panel)
@@ -1722,7 +1737,7 @@ func _build_overlay() -> void:
 	choices.add_child(erase_button)
 	var progression_toggle := Button.new()
 	progression_toggle.text = "★ PROGRESSION"
-	progression_toggle.position = Vector2(20, 249)
+	progression_toggle.position = Vector2(20, 260)
 	progression_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(progression_toggle, true)
 	progression_toggle.pressed.connect(func() -> void:
@@ -1733,13 +1748,13 @@ func _build_overlay() -> void:
 	theme_root.add_child(progression_toggle)
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
-	progression_panel.position = Vector2(20, 296)
+	progression_panel.position = Vector2(20, 310)
 	progression_panel.custom_minimum_size = Vector2(290, 0)
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
 	theme_root.add_child(progression_panel)
 	var progress_content := VBoxContainer.new()
-	progress_content.add_theme_constant_override("separation", 6)
+	progress_content.add_theme_constant_override("separation", 9)
 	progression_panel.add_child(progress_content)
 	var progress_heading := Label.new()
 	progress_heading.text = "CLUB PROGRESSION"
@@ -1748,10 +1763,21 @@ func _build_overlay() -> void:
 	progression_details = Label.new()
 	UIStyle.decorate_label(progression_details, 13)
 	progress_content.add_child(progression_details)
+	xp_bar = ProgressBar.new()
+	UIStyle.decorate_progress(xp_bar)
+	progress_content.add_child(xp_bar)
+	var reputation_heading := Label.new()
+	reputation_heading.text = "REPUTATION"
+	UIStyle.decorate_section(reputation_heading)
+	progress_content.add_child(reputation_heading)
+	rep_bar = ProgressBar.new()
+	rep_bar.max_value = 100
+	UIStyle.decorate_progress(rep_bar)
+	progress_content.add_child(rep_bar)
 	for branch in ["MUSIC", "BAR", "COMMUNITY"]:
 		var branch_label := Label.new()
 		branch_label.text = "✦ " + branch + " PERKS"
-		UIStyle.decorate_label(branch_label, 12, true)
+		UIStyle.decorate_section(branch_label)
 		progress_content.add_child(branch_label)
 		for option in PERK_OPTIONS:
 			if option["branch"] != branch:
@@ -1764,7 +1790,7 @@ func _build_overlay() -> void:
 			perk_buttons.append(perk_button)
 	var expansion_heading := Label.new()
 	expansion_heading.text = "✦ NEXT BIG GOAL"
-	UIStyle.decorate_label(expansion_heading, 14)
+	UIStyle.decorate_section(expansion_heading)
 	progress_content.add_child(expansion_heading)
 	expansion_details = Label.new()
 	UIStyle.decorate_label(expansion_details, 12, true)
@@ -1773,18 +1799,20 @@ func _build_overlay() -> void:
 	_refresh_progression()
 	var night_panel := PanelContainer.new()
 	night_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	night_panel.offset_left = -335
-	night_panel.offset_right = -20
-	night_panel.offset_top = 20
-	night_panel.offset_bottom = 20
+	night_panel.offset_left = -345
+	night_panel.offset_right = -16
+	night_panel.offset_top = 16
+	night_panel.offset_bottom = 16
 	UIStyle.decorate_panel(night_panel)
 	night_panel.custom_minimum_size = Vector2(275, 0)
 	theme_root.add_child(night_panel)
 	var night_controls := VBoxContainer.new()
+	night_controls.add_theme_constant_override("separation", 10)
 	night_panel.add_child(night_controls)
 	var heading := Label.new()
 	heading.text = "CLUB OPENING"
-	UIStyle.decorate_label(heading, 19)
+	UIStyle.decorate_label(heading, 18)
+	heading.add_theme_color_override("font_color", Color("#e2a2d9"))
 	night_controls.add_child(heading)
 	readiness_label = Label.new()
 	readiness_label.custom_minimum_size = Vector2(255, 40)
@@ -1800,6 +1828,7 @@ func _build_overlay() -> void:
 		dj_picker.add_item("%s  •  €%d" % [dj["name"], dj["fee"]])
 	dj_picker.selected = 0
 	dj_picker.item_selected.connect(func(_index: int) -> void: _refresh_readiness())
+	UIStyle.decorate_option(dj_picker)
 	night_controls.add_child(dj_picker)
 	start_night_button = Button.new()
 	start_night_button.text = "START NIGHT"
@@ -1833,8 +1862,8 @@ func _build_overlay() -> void:
 	speed_controls.add_child(night_speed_button)
 	night_report_panel = PanelContainer.new()
 	night_report_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	night_report_panel.offset_left = -335
-	night_report_panel.offset_right = -20
+	night_report_panel.offset_left = -345
+	night_report_panel.offset_right = -16
 	night_report_panel.offset_top = 330
 	night_report_panel.offset_bottom = 330
 	night_report_panel.custom_minimum_size = Vector2(275, 0)
@@ -1844,7 +1873,8 @@ func _build_overlay() -> void:
 	var report_content := VBoxContainer.new()
 	night_report_panel.add_child(report_content)
 	night_report_heading = Label.new()
-	UIStyle.decorate_label(night_report_heading, 18)
+	UIStyle.decorate_label(night_report_heading, 17)
+	night_report_heading.add_theme_color_override("font_color", Color("#e2a2d9"))
 	report_content.add_child(night_report_heading)
 	night_report_details = Label.new()
 	UIStyle.decorate_label(night_report_details, 13)
@@ -1852,13 +1882,13 @@ func _build_overlay() -> void:
 	_refresh_readiness()
 	var help_button := Button.new()
 	help_button.text = "?  HELP"
-	help_button.position = Vector2(200, 249)
+	help_button.position = Vector2(200, 260)
 	UIStyle.decorate_button(help_button)
 	help_button.pressed.connect(_toggle_help)
 	theme_root.add_child(help_button)
 	help_label = Label.new()
 	help_label.text = "Drag: rotate   Shift+drag: pan\nWheel/pinch or +/-: zoom\nR: rotate furniture / reset camera\nB: build   X: erase   Ctrl/Cmd+Z: undo"
-	help_label.position = Vector2(330, 249)
+	help_label.position = Vector2(330, 260)
 	help_label.visible = false
 	UIStyle.decorate_label(help_label, 13, true)
 	theme_root.add_child(help_label)
