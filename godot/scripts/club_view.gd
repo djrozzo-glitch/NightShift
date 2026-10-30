@@ -561,7 +561,6 @@ func _process(delta: float) -> void:
 			if not motions.has(desired_motion):
 				desired_motion = "idle" if motions.has("idle") else "walk"
 			if guest["motion"] != desired_motion:
-				var motions: Dictionary = guest["motions"]
 				for motion_name in motions:
 					(motions[motion_name] as Node3D).visible = motion_name == desired_motion
 				guest["motion"] = desired_motion
