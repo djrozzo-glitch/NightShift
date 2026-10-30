@@ -95,16 +95,13 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 		target_x = 0.88
 		target_z = 0.88
 
-	# Fit horizontal dimensions independently; preserve a sensible height.
-	var horizontal_scale := minf(target_x / maxf(bounds.size.x, 0.001),
+	# Preserve the GLB proportions. Never stretch one axis to force a footprint:
+	# rotate the original long axis into local Z, then scale uniformly.
+	var fit_scale := minf(target_x / maxf(bounds.size.x, 0.001),
 		target_z / maxf(bounds.size.z, 0.001))
 	var height_cap := 0.8 if kind == "stool" else (0.22 if kind == "floor" else 2.2)
-	var vertical_scale := minf(horizontal_scale, height_cap / maxf(bounds.size.y, 0.001))
-	visual.scale = Vector3(
-		target_x / maxf(bounds.size.x, 0.001),
-		vertical_scale,
-		target_z / maxf(bounds.size.z, 0.001)
-	)
+	fit_scale = minf(fit_scale, height_cap / maxf(bounds.size.y, 0.001))
+	visual.scale = Vector3.ONE * fit_scale
 	bounds = _visual_bounds(visual)
 	# Bottom of the geometry rests on top of the base floor, not inside it.
 	# The footprint center is half a cell forward for two-cell objects.
