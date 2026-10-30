@@ -1,0 +1,10 @@
+# macOS Finder metadata
+.DS_Store
+**/.DS_Store
+
+# Godot 4 generated import cache and editor state
+**/.godot/
+
+# Local editor and temporary files
+*.swp
+*.tmp
