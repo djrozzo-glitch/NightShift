@@ -93,6 +93,8 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	var visual := (models[kind] as PackedScene).instantiate() as Node3D
 	pivot_node.add_child(visual)
 	var bounds := _visual_bounds(visual)
+	var native_width := minf(bounds.size.x, bounds.size.z)
+	var native_length := maxf(bounds.size.x, bounds.size.z)
 	if bounds.size.length_squared() < 0.000001:
 		push_warning("NightShift: empty model %s" % kind)
 		return
@@ -125,9 +127,10 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> void
 	# their LONG side; never independently stretch their X and Z axes.
 	var fit_scale: float
 	if kind in TWO_CELL:
-		fit_scale = target_z / maxf(bounds.size.z, 0.001)
-		# The long footprint is authoritative: a narrow-side cap previously
-		# shrank every two-cell asset to roughly one tile.
+		fit_scale = minf(target_z / maxf(native_length, 0.001),
+			target_x / maxf(native_width, 0.001))
+		# Measure the original GLB before rotating it: imported node transforms
+		# can make rotated AABBs report the wrong length during this frame.
 	else:
 		fit_scale = minf(target_x / maxf(bounds.size.x, 0.001),
 			target_z / maxf(bounds.size.z, 0.001))
