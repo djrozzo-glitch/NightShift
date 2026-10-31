@@ -1819,7 +1819,7 @@ func _build_world() -> void:
 	add_child(club)
 	var dark := Color("#272735")
 	var light := Color("#343342")
-		for y in range(SIZE):
+	for y in range(SIZE):
 		for x in range(SIZE):
 			_make_box(club, Vector3(x - 7.5, -0.055, y - 7.5),
 				Vector3(0.99, 0.10, 0.99),
