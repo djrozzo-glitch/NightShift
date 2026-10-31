@@ -2002,7 +2002,13 @@ func _build_overlay() -> void:
 	theme_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(theme_root)
 	guest_info_panel = PanelContainer.new()
-	guest_info_panel.position = Vector2(20, 228)
+	guest_info_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	guest_info_panel.anchor_top = 1.0
+	guest_info_panel.anchor_bottom = 1.0
+	guest_info_panel.offset_left = 20.0
+	guest_info_panel.offset_right = 320.0
+	guest_info_panel.offset_top = -185.0
+	guest_info_panel.offset_bottom = -20.0
 	guest_info_panel.custom_minimum_size = Vector2(300, 165)
 	guest_info_panel.visible = false
 	guest_info_panel.mouse_filter = Control.MOUSE_FILTER_STOP
