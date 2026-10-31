@@ -29,6 +29,8 @@ var build_panel: PanelContainer
 var build_toggle: Button
 var help_label: Label
 var erase_mode := false
+var moving_object_id := -1
+var moving_turn := 0
 var placed_objects: Dictionary = {}
 var object_at_cell: Dictionary = {}
 var next_object_id := 1
@@ -1369,6 +1371,14 @@ func _undo_action() -> void:
 		if not removed.is_empty():
 			cash += int(action["cost"])
 			_notify("Placement undone  |  €%d returned" % int(action["cost"]))
+	elif action["action"] == "move":
+		var current := _remove_object(int(action["id"]))
+		if not current.is_empty():
+			var node := _model(club, str(current["kind"]), int(action["x"]), int(action["y"]), int(action["turn"]))
+			var restored := _register_object(node, str(current["kind"]), int(action["x"]), int(action["y"]), int(action["turn"]))
+			_attach_fixture_lighting(node, str(current["kind"]))
+			placed_objects[restored]["paid"] = current["paid"]
+			_notify("Move undone")
 	elif action["action"] == "erase":
 		var record: Dictionary = action["record"]
 		var node := _model(club, record["kind"], record["x"], record["y"], record["turn"])
@@ -1415,13 +1425,15 @@ func _refresh_preview() -> void:
 		child.queue_free()
 	if not build_mode or erase_mode or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
 		return
-	var node := _model(preview_root, selected_kind, hover_cell.x, hover_cell.y, build_turn)
+	var preview_kind := str(placed_objects[moving_object_id]["kind"]) if placed_objects.has(moving_object_id) else selected_kind
+	var preview_turn := moving_turn if moving_object_id >= 0 else build_turn
+	var node := _model(preview_root, preview_kind, hover_cell.x, hover_cell.y, preview_turn)
 	for mesh_node in node.find_children("*", "MeshInstance3D", true, false):
 		var mesh := mesh_node as MeshInstance3D
 		var overlay := StandardMaterial3D.new()
 		overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		overlay.albedo_color = Color(0.25, 1.0, 0.6, 0.32) if _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn) else Color(1.0, 0.2, 0.3, 0.35)
+		overlay.albedo_color = Color(0.25, 1.0, 0.6, 0.32) if (_can_move_to(hover_cell.x, hover_cell.y) if moving_object_id >= 0 else _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn)) else Color(1.0, 0.2, 0.3, 0.35)
 		mesh.material_overlay = overlay
 
 func _update_hover(screen_pos: Vector2) -> void:
@@ -1455,9 +1467,56 @@ func _update_hover(screen_pos: Vector2) -> void:
 	preview_root.visible = true
 	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(next_cell, 0.0)) + 0.035, y - 7.5)
 	var mat := hover_mesh.material_override as StandardMaterial3D
-	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if _can_place(x, y, selected_kind, build_turn) else Color(1.0, 0.25, 0.3, 0.4))
+	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if (_can_move_to(x, y) if moving_object_id >= 0 else _can_place(x, y, selected_kind, build_turn)) else Color(1.0, 0.25, 0.3, 0.4))
 	if changed:
 		_refresh_preview()
+
+func _can_move_to(x: int, y: int) -> bool:
+	if not placed_objects.has(moving_object_id):
+		return false
+	var record: Dictionary = placed_objects[moving_object_id]
+	for cell in _footprint(x, y, str(record["kind"]), moving_turn):
+		if cell.x <= 0 or cell.y <= 0 or cell.x >= SIZE - 1 or cell.y >= SIZE - 1:
+			return false
+		if occupied.has(cell) and int(object_at_cell.get(cell, -1)) != moving_object_id:
+			return false
+	return true
+
+
+func _cancel_move() -> void:
+	moving_object_id = -1
+	_refresh_preview()
+
+
+func _move_click() -> void:
+	if moving_object_id < 0:
+		if object_at_cell.has(hover_cell):
+			moving_object_id = int(object_at_cell[hover_cell])
+			moving_turn = int(placed_objects[moving_object_id]["turn"])
+			status_label.text = "MOVE OBJECT  |  Click: place  R: rotate  ESC: cancel"
+			_refresh_preview()
+		else:
+			_place_selected()
+		return
+	if not _can_move_to(hover_cell.x, hover_cell.y):
+		_notify("Space occupied or outside club")
+		return
+	var record: Dictionary = placed_objects[moving_object_id]
+	var old_x := int(record["x"])
+	var old_y := int(record["y"])
+	var old_turn := int(record["turn"])
+	var old_record := _remove_object(moving_object_id)
+	var node := _model(club, str(old_record["kind"]), hover_cell.x, hover_cell.y, moving_turn)
+	var new_id := _register_object(node, str(old_record["kind"]), hover_cell.x, hover_cell.y, moving_turn)
+	_attach_fixture_lighting(node, str(old_record["kind"]))
+	placed_objects[new_id]["paid"] = old_record["paid"]
+	action_history.append({"action": "move", "id": new_id, "x": old_x, "y": old_y, "turn": old_turn})
+	moving_object_id = -1
+	status_label.text = "BUILD  |  Click object: move  R: rotate"
+	_refresh_preview()
+	_refresh_economy()
+	_notify("Object moved")
+
 
 func _place_selected() -> void:
 	if club_level < int(LEVEL_UNLOCKS.get(selected_kind, 1)):
@@ -1484,6 +1543,7 @@ func _place_selected() -> void:
 	_update_hover(get_viewport().get_mouse_position())
 
 func _enable_erase() -> void:
+	_cancel_move()
 	if night_active:
 		return
 	build_mode = true
@@ -1504,6 +1564,7 @@ func _toggle_help() -> void:
 	help_label.visible = not help_label.visible
 
 func _choose_kind(kind: String) -> void:
+	_cancel_move()
 	if night_active:
 		return
 	if club_level < int(LEVEL_UNLOCKS.get(kind, 1)):
@@ -2394,7 +2455,7 @@ func _input(event: InputEvent) -> void:
 				if erase_mode:
 					_erase_hovered()
 				else:
-					_place_selected()
+					_move_click()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
@@ -2435,6 +2496,9 @@ func _input(event: InputEvent) -> void:
 		_refresh_preview()
 		_update_hover(get_viewport().get_mouse_position())
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		if moving_object_id >= 0:
+			_cancel_move()
+			return
 		build_mode = false
 		erase_mode = false
 		dragging = false
@@ -2448,7 +2512,10 @@ func _input(event: InputEvent) -> void:
 		zoom = min(MAX_ZOOM, zoom * 1.15)
 		_update_camera()
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_R and build_mode and not erase_mode:
-		build_turn = (build_turn + 1) % 4
+		if moving_object_id >= 0:
+			moving_turn = (moving_turn + 1) % 4
+		else:
+			build_turn = (build_turn + 1) % 4
 		_refresh_preview()
 		_update_hover(get_viewport().get_mouse_position())
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_R:
