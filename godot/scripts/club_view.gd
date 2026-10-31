@@ -81,6 +81,10 @@ var guest_layer: Node3D
 var guests: Array[Dictionary] = []
 var guest_spawn_clock := 0.0
 var guest_count := 0
+var night_mood_total := 0.0
+var night_mood_samples := 0
+var night_mood_last := 100.0
+var mood_update_clock := 0.0
 const NIGHT_DURATION := 180.0
 var ticket_price := 20
 var drink_price := 8
@@ -576,7 +580,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(12, 48), "thirst": randf_range(0.25, 0.65), "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(12, 48), "thirst": randf_range(0.25, 0.65), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
 	guest_count += 1
 	night_ticket_income += ticket_price
 	cash += ticket_price
@@ -726,6 +730,28 @@ func _guest_arrived(guest: Dictionary) -> void:
 		guest["dance"] = true
 		guest["wait"] = randf_range(9.0, 17.0)
 
+func _guest_mood(guest: Dictionary) -> float:
+	var thirst_penalty := maxf(0.0, float(guest["thirst"]) - 0.35) * 65.0
+	var fatigue_penalty := maxf(0.0, 0.55 - float(guest["energy"])) * 65.0
+	var waiting_penalty := minf(22.0, float(guest.get("blocked_time", 0.0)) * 1.4)
+	var service_penalty := 0.0
+	if float(guest["thirst"]) > 0.65 and _count_kind("bar") == 0:
+		service_penalty += 22.0
+	if float(guest["energy"]) < 0.35 and _count_kind("sofa") == 0:
+		service_penalty += 12.0
+	var dancing_bonus := 9.0 if bool(guest["dance"]) else 0.0
+	return clampf(90.0 + dancing_bonus - thirst_penalty - fatigue_penalty - waiting_penalty - service_penalty, 0.0, 100.0)
+
+
+func _average_guest_mood() -> float:
+	if guests.is_empty():
+		return night_mood_last
+	var total := 0.0
+	for guest in guests:
+		total += float(guest.get("mood", 85.0))
+	return total / float(guests.size())
+
+
 func _process(delta: float) -> void:
 	_animate_poster_leds(delta)
 	_animate_stage_lights(delta)
@@ -739,6 +765,14 @@ func _process(delta: float) -> void:
 	if night_time_label != null:
 		var remaining := ceili(NIGHT_DURATION - night_elapsed)
 		night_time_label.text = "TIME LEFT  %d:%02d  |  €%d TICKETS  €%d BAR" % [int(remaining / 60.0), remaining % 60, night_ticket_income, night_drink_income]
+	mood_update_clock += step
+	if mood_update_clock >= 1.0:
+		mood_update_clock = 0.0
+		if not guests.is_empty():
+			night_mood_last = _average_guest_mood()
+			night_mood_total += night_mood_last
+			night_mood_samples += 1
+		_update_night_stats()
 	guest_spawn_clock += step
 	if guest_spawn_clock >= clampf((6.5 + maxf(0.0, float(ticket_price - 20)) * 0.075 - float(club_level - 1) * 0.12 - float(reputation) * 0.018) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < MAX_GUESTS:
 		guest_spawn_clock = 0.0
@@ -747,6 +781,7 @@ func _process(delta: float) -> void:
 		# Guest needs evolve during the night and influence where they go.
 		guest["thirst"] = minf(1.0, float(guest["thirst"]) + step * (0.0025 if bool(guest["dance"]) else 0.001))
 		guest["energy"] = maxf(0.0, float(guest["energy"]) - step * (0.0018 if bool(guest["dance"]) else 0.0005))
+		guest["mood"] = _guest_mood(guest)
 		var state: String = guest["state"]
 		if state in ["dancing", "ordering", "resting", "sitting", "standing"]:
 			guest["wait"] = float(guest["wait"]) - step
@@ -1167,6 +1202,10 @@ func _start_night() -> void:
 	cash -= fee
 	night_dj_fee = fee
 	night_elapsed = 0.0
+	night_mood_total = 0.0
+	night_mood_samples = 0
+	night_mood_last = 100.0
+	mood_update_clock = 0.0
 	music_beat_clock = 0.0
 	poster_led_clock = 0.0
 	night_paused = false
@@ -1217,7 +1256,8 @@ func _end_night() -> void:
 	var profit := revenue - costs
 	var turnout_score := float(guest_count) / float(MAX_GUESTS)
 	var service_score := float(night_drinks_sold) / float(maxi(1, guest_count))
-	var reputation_delta := roundi((turnout_score - 0.45) * 8.0 + (service_score - 0.3) * 5.0 + (2.0 if profit > 0 else -3.0))
+	var average_mood := night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last
+	var reputation_delta := roundi((turnout_score - 0.45) * 6.0 + (service_score - 0.3) * 3.0 + (average_mood - 65.0) * 0.14 + (2.0 if profit > 0 else -3.0))
 	last_rep_change = clampi(reputation_delta, -7, 7)
 	reputation = clampi(reputation + last_rep_change, 0, 100)
 	last_xp_gain = maxi(5, guest_count * 3 + night_drinks_sold * 2 + (10 if profit > 0 else 0))
@@ -1241,7 +1281,8 @@ func _update_night_stats() -> void:
 	var expenses := night_dj_fee + STAFF_COST
 	var profit := revenue - expenses
 	night_report_heading.text = "NIGHT %d  |  %s" % [night_number, "LIVE STATS" if night_active else "REPORT"]
-	night_report_details.text = "GUESTS                 %d\nTICKET REVENUE    €%d\nDRINKS SOLD          %d\nBAR REVENUE        €%d\n\nTOTAL REVENUE     €%d\nDJ BOOKING           -€%d\nSTAFF                      -€%d\n\nNET PROFIT             %s€%d\n\nLEVEL %d   XP %d/%d\nREPUTATION %d/100%s" % [guest_count, night_ticket_income, night_drinks_sold, night_drink_income, revenue, night_dj_fee, STAFF_COST, "+" if profit >= 0 else "-", absi(profit), club_level, club_xp, _xp_needed(club_level), reputation, "" if night_active else "\nNIGHT XP +%d   REP %+d" % [last_xp_gain, last_rep_change]]
+	var mood := _average_guest_mood() if night_active else (night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last)
+	night_report_details.text = "GUEST MOOD           %d%%\nGUESTS                 %d\nTICKET REVENUE    €%d\nDRINKS SOLD          %d\nBAR REVENUE        €%d\n\nTOTAL REVENUE     €%d\nDJ BOOKING           -€%d\nSTAFF                      -€%d\n\nNET PROFIT             %s€%d\n\nLEVEL %d   XP %d/%d\nREPUTATION %d/100%s" % [roundi(mood), guest_count, night_ticket_income, night_drinks_sold, night_drink_income, revenue, night_dj_fee, STAFF_COST, "+" if profit >= 0 else "-", absi(profit), club_level, club_xp, _xp_needed(club_level), reputation, "" if night_active else "\nNIGHT XP +%d   REP %+d" % [last_xp_gain, last_rep_change]]
 
 func _refresh_prices() -> void:
 	if ticket_value_label != null:
