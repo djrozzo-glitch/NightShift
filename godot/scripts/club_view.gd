@@ -32,6 +32,7 @@ var build_toggle: Button
 var help_label: Label
 var erase_mode := false
 var moving_object_id := -1
+var moving_dance_tile := Vector2i(-1, -1)
 var moving_turn := 0
 var build_kind_selected := false
 var rotate_object_button: Button
@@ -1545,7 +1546,15 @@ func _undo_action() -> void:
 	if action_history.is_empty():
 		return
 	var action: Dictionary = action_history.pop_back()
-	if action["action"] == "tile_place":
+	if action["action"] == "tile_move":
+		var destination: Vector2i = action["to"]
+		var origin: Vector2i = action["from"]
+		if dance_tiles.has(destination) and not dance_tiles.has(origin):
+			var paid := bool(dance_tiles[destination].get("paid", false))
+			_remove_dance_tile(destination)
+			_add_dance_tile(origin, paid)
+			moving_dance_tile = origin if moving_dance_tile == destination else moving_dance_tile
+	elif action["action"] == "tile_place":
 		_remove_dance_tile(action["cell"])
 		cash += int(action["cost"])
 	elif action["action"] == "tile_erase":
@@ -1612,7 +1621,7 @@ func _refresh_preview() -> void:
 		child.queue_free()
 	if (not build_mode and not object_dragging) or erase_mode or (not build_kind_selected and not object_dragging) or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
 		return
-	var preview_kind := str(placed_objects[moving_object_id]["kind"]) if placed_objects.has(moving_object_id) else selected_kind
+	var preview_kind := "dance_tile" if moving_dance_tile.x >= 0 else (str(placed_objects[moving_object_id]["kind"]) if placed_objects.has(moving_object_id) else selected_kind)
 	var preview_turn := moving_turn if moving_object_id >= 0 else build_turn
 	var node := _make_dance_tile(hover_cell, preview_root) if preview_kind == "dance_tile" else _model(preview_root, preview_kind, hover_cell.x, hover_cell.y, preview_turn)
 	for mesh_node in node.find_children("*", "MeshInstance3D", true, false):
@@ -1620,7 +1629,7 @@ func _refresh_preview() -> void:
 		var overlay := StandardMaterial3D.new()
 		overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		overlay.albedo_color = Color(0.25, 1.0, 0.6, 0.32) if (_can_move_to(hover_cell.x, hover_cell.y) if moving_object_id >= 0 else _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn)) else Color(1.0, 0.2, 0.3, 0.35)
+		overlay.albedo_color = Color(0.25, 1.0, 0.6, 0.32) if (_can_move_to(hover_cell.x, hover_cell.y) if moving_object_id >= 0 or moving_dance_tile.x >= 0 else _can_place(hover_cell.x, hover_cell.y, selected_kind, build_turn)) else Color(1.0, 0.2, 0.3, 0.35)
 		mesh.material_overlay = overlay
 
 func _update_hover(screen_pos: Vector2) -> void:
@@ -1654,7 +1663,7 @@ func _update_hover(screen_pos: Vector2) -> void:
 	preview_root.visible = (build_mode and build_kind_selected) or object_dragging
 	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(next_cell, 0.0)) + 0.035, y - 7.5)
 	var mat := hover_mesh.material_override as StandardMaterial3D
-	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) or dance_tiles.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if (_can_move_to(x, y) if moving_object_id >= 0 else _can_place(x, y, selected_kind, build_turn)) else Color(1.0, 0.25, 0.3, 0.4))
+	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) or dance_tiles.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if (_can_move_to(x, y) if moving_object_id >= 0 or moving_dance_tile.x >= 0 else _can_place(x, y, selected_kind, build_turn)) else Color(1.0, 0.25, 0.3, 0.4))
 	if changed:
 		_refresh_preview()
 	_update_rotate_button()
@@ -1694,6 +1703,9 @@ func _rotate_moving_object() -> void:
 
 
 func _can_move_to(x: int, y: int) -> bool:
+	if moving_dance_tile.x >= 0:
+		var target := Vector2i(x, y)
+		return x > 0 and y > 0 and x < SIZE - 1 and y < SIZE - 1 and not occupied.has(target) and (not dance_tiles.has(target) or target == moving_dance_tile)
 	if not placed_objects.has(moving_object_id):
 		return false
 	var record: Dictionary = placed_objects[moving_object_id]
@@ -1706,11 +1718,29 @@ func _can_move_to(x: int, y: int) -> bool:
 
 
 func _cancel_move() -> void:
+	moving_dance_tile = Vector2i(-1, -1)
 	moving_object_id = -1
 	object_drag_armed = false
 	object_dragging = false
 	_update_rotate_button()
 	_refresh_preview()
+
+
+func _move_dance_tile(destination: Vector2i) -> void:
+	if night_active or moving_dance_tile.x < 0 or not dance_tiles.has(moving_dance_tile):
+		return
+	if not _can_move_to(destination.x, destination.y):
+		return
+	var origin := moving_dance_tile
+	if origin == destination:
+		return
+	var paid := bool(dance_tiles[origin].get("paid", false))
+	_remove_dance_tile(origin)
+	_add_dance_tile(destination, paid)
+	action_history.append({"action": "tile_move", "from": origin, "to": destination})
+	moving_dance_tile = destination
+	_refresh_economy()
+	_notify("Dance tile moved")
 
 
 func _move_click() -> void:
@@ -2756,7 +2786,10 @@ func _input(event: InputEvent) -> void:
 		if object_dragging:
 			_update_hover(event.position)
 			if _can_move_to(hover_cell.x, hover_cell.y):
-				_move_click()
+				if moving_dance_tile.x >= 0:
+					_move_dance_tile(hover_cell)
+				else:
+					_move_click()
 			else:
 				_notify("Cannot move there")
 			object_dragging = false
@@ -2804,7 +2837,15 @@ func _input(event: InputEvent) -> void:
 					_erase_hovered()
 				elif build_kind_selected and build_mode:
 					_move_click()
+				elif dance_tiles.has(hover_cell) and not object_at_cell.has(hover_cell):
+					moving_object_id = -1
+					moving_dance_tile = hover_cell
+					object_drag_armed = true
+					object_drag_start = event.position
+					status_label.text = "DANCE TILE SELECTED  |  Drag: move  ESC: deselect"
+					_update_rotate_button()
 				elif object_at_cell.has(hover_cell):
+					moving_dance_tile = Vector2i(-1, -1)
 					var clicked_id := int(object_at_cell[hover_cell])
 					if moving_object_id != clicked_id:
 						moving_object_id = -1
@@ -2813,7 +2854,7 @@ func _input(event: InputEvent) -> void:
 					object_drag_start = event.position
 				else:
 					object_drag_armed = false
-					if moving_object_id >= 0:
+					if moving_object_id >= 0 or moving_dance_tile.x >= 0:
 						_cancel_move()
 					# Empty floor still rotates the camera in normal mode.
 					if not build_mode:
