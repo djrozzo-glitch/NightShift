@@ -1624,7 +1624,7 @@ func _refresh_preview() -> void:
 		mesh.material_overlay = overlay
 
 func _update_hover(screen_pos: Vector2) -> void:
-	if (not build_mode and not object_dragging and moving_object_id < 0) or (build_panel != null and build_panel.visible and build_panel.get_global_rect().has_point(screen_pos)) or (build_toggle != null and build_toggle.get_global_rect().has_point(screen_pos)):
+	if (build_panel != null and build_panel.visible and build_panel.get_global_rect().has_point(screen_pos)) or (build_toggle != null and build_toggle.get_global_rect().has_point(screen_pos)):
 		hover_mesh.visible = false
 		preview_root.visible = false
 		return
