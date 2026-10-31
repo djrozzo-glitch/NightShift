@@ -217,7 +217,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 			pivot_node.rotation.y = PI * 0.5
 		elif x == SIZE - 1:
 			pivot_node.rotation.y = -PI * 0.5
-		elif y == 0:
+		elif y == SIZE - 1:
 			pivot_node.rotation.y = PI
 	if kind == "poster":
 		_attach_poster_text(pivot_node)
@@ -1159,6 +1159,7 @@ func _start_night() -> void:
 	night_number += 1
 	night_active = true
 	_refresh_poster_text()
+	_refresh_club_sign()
 	_set_night_lighting(true)
 	_play_dj_music()
 	night_report_panel.show()
@@ -1185,6 +1186,7 @@ func _end_night() -> void:
 		return
 	night_active = false
 	_refresh_poster_text()
+	_refresh_club_sign()
 	_set_night_lighting(false)
 	_stop_dj_music()
 	var costs := night_dj_fee + STAFF_COST
@@ -1316,6 +1318,10 @@ func _remove_object(id: int) -> Dictionary:
 				if child is MeshInstance3D:
 					beam_meshes.erase(child)
 					laser_beams.erase(child)
+		if str(record["kind"]) == "poster":
+			var label := node.find_child("DJPosterText", true, false) as Label3D
+			if label != null:
+				poster_labels.erase(label)
 		node.get_parent().remove_child(node)
 		node.queue_free()
 	placed_objects.erase(id)
@@ -2150,40 +2156,82 @@ func _build_overlay() -> void:
 	UIStyle.decorate_label(help_label, 13, true)
 	theme_root.add_child(help_label)
 
-func _make_world_text(parent: Node3D, name: String, value: String, height: float, width: float) -> Label3D:
+func _make_sign_board(parent: Node3D, name: String, size: Vector2, position: Vector3) -> Node3D:
+	var board := Node3D.new()
+	board.name = name
+	board.position = position
+	parent.add_child(board)
+	var backing := MeshInstance3D.new()
+	backing.name = "DarkMetalBacking"
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(size.x, size.y, 0.075)
+	backing.mesh = mesh
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color("#14101d")
+	mat.metallic = 0.65
+	mat.roughness = 0.35
+	backing.material_override = mat
+	board.add_child(backing)
+	var border := MeshInstance3D.new()
+	border.name = "VioletBorder"
+	var rim := BoxMesh.new()
+	rim.size = Vector3(size.x + 0.08, size.y + 0.08, 0.035)
+	border.mesh = rim
+	border.position.z = -0.055
+	var rim_mat := StandardMaterial3D.new()
+	rim_mat.albedo_color = Color("#643c82")
+	rim_mat.emission_enabled = true
+	rim_mat.emission = Color("#a95de8")
+	rim_mat.emission_energy_multiplier = 0.25
+	border.material_override = rim_mat
+	board.add_child(border)
+	return board
+
+
+func _make_sign_letters(board: Node3D, name: String, font_size: int, pixel_size: float) -> Label3D:
 	var label := Label3D.new()
 	label.name = name
-	label.text = value
-	label.position = Vector3(0, height, 0.12)
-	label.font_size = 56
-	label.pixel_size = 0.0028
-	label.modulate = Color("#f2d8ff")
-	label.outline_modulate = Color("#100d1d")
-	label.outline_size = 10
-	label.width = width
+	label.position.z = 0.052
+	label.font_size = font_size
+	label.pixel_size = pixel_size
+	label.modulate = Color("#e9c8ff")
+	label.outline_modulate = Color("#24112f")
+	label.outline_size = 6
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.double_sided = true
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.double_sided = false
 	label.no_depth_test = false
-	parent.add_child(label)
+	board.add_child(label)
 	return label
 
 
 func _attach_poster_text(node: Node3D) -> void:
-	var label := _make_world_text(node, "DJPosterText", "", 1.12, 190.0)
+	# The poster pivot is already rotated toward the club interior.
+	var board := _make_sign_board(node, "DJPosterBoard", Vector2(0.73, 0.77), Vector3(0, 1.13, 0.13))
+	var label := _make_sign_letters(board, "DJPosterText", 56, 0.0019)
+	label.position.y = -0.06
 	poster_labels.append(label)
 	_refresh_poster_text()
 
 
 func _attach_entrance_sign(node: Node3D) -> void:
-	entrance_sign = _make_world_text(node, "ClubNameSign", club_name, 2.15, 320.0)
-	entrance_sign.position.z = 0.0
-	entrance_sign.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	# Entrance pivot has a PI rotation. Turn the sign back toward the outside (+Z).
+	var board := _make_sign_board(node, "ClubMarquee", Vector2(2.45, 0.47), Vector3(0, 2.02, 0.02))
+	board.rotation.y = PI
+	entrance_sign = _make_sign_letters(board, "ClubNameSign", 64, 0.0032)
 	_refresh_club_sign()
+
+
+func _set_sign_glow(label: Label3D, active: bool) -> void:
+	label.modulate = Color("#ffffff") if active else Color("#e9c8ff")
+	label.outline_modulate = Color("#8b33b9") if active else Color("#24112f")
+	label.outline_size = 12 if active else 6
 
 
 func _refresh_club_sign() -> void:
 	if is_instance_valid(entrance_sign):
 		entrance_sign.text = club_name.to_upper() if not club_name.is_empty() else "NIGHTSHIFT"
+		_set_sign_glow(entrance_sign, night_active)
 
 
 func _refresh_poster_text() -> void:
@@ -2191,8 +2239,9 @@ func _refresh_poster_text() -> void:
 	if dj_picker != null and dj_picker.selected >= 0:
 		dj_name = str(DJ_ROSTER[dj_picker.selected]["name"]).to_upper()
 	for label in poster_labels:
-		if is_instance_valid(label):
-			label.text = dj_name if night_active else "COMING UP\n" + dj_name
+		if is_instance_valid(label) and not label.is_queued_for_deletion():
+			label.text = dj_name if night_active else "UP NEXT\n" + dj_name
+			_set_sign_glow(label, night_active)
 
 
 func _pointer_over_ui(position: Vector2) -> bool:
