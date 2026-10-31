@@ -19,7 +19,7 @@ var build_mode := false
 var occupied: Dictionary = {}
 var floor_heights: Dictionary = {}
 var dance_tiles: Dictionary = {}
-var free_dance_tiles := 6
+var free_dance_tiles := 0
 var hover_cell := Vector2i(-1, -1)
 var hover_mesh: MeshInstance3D
 var status_label: Label
@@ -324,7 +324,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 	visual.position += Vector3(-bounds.get_center().x,
 		base_y - bounds.position.y,
 		offset_z - bounds.get_center().z)
-	if kind == "floor":
+	if kind == "floor" and parent == club:
 		floor_heights[Vector2i(x, y)] = _visual_bounds(pivot_node).end.y
 	# Sign geometry must be added AFTER fitting the GLB, or it distorts its bounds.
 	if kind == "poster":
@@ -465,28 +465,16 @@ func _path_around_guests(start: Vector2i, goal: Vector2i, self_guest: Dictionary
 	return result
 
 func _make_dance_tile(cell: Vector2i, parent: Node3D) -> Node3D:
-	var root := Node3D.new()
-	root.name = "DanceTile_%d_%d" % [cell.x, cell.y]
-	parent.add_child(root)
-	root.position = Vector3(cell.x - 7.5, 0, cell.y - 7.5)
-	# The upper face sits 0.07 above the base floor. Guest feet use its height.
-	var tile := _make_box(root, Vector3(0, 0.025, 0), Vector3(0.96, 0.09, 0.96), Color("#443052"))
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color("#443052")
-	mat.metallic = 0.55
-	mat.roughness = 0.28
-	mat.emission_enabled = true
-	mat.emission = Color("#762eac")
-	mat.emission_energy_multiplier = 0.35
-	tile.material_override = mat
-	return root
+	# Reuse the imported floor.glb and the existing grid model fitting.
+	# _model also updates floor_heights from the actual visible mesh top.
+	return _model(parent, "floor", cell.x, cell.y)
 
 
 func _add_dance_tile(cell: Vector2i, paid: bool = false) -> void:
 	if dance_tiles.has(cell):
 		return
 	dance_tiles[cell] = {"node": _make_dance_tile(cell, club), "paid": paid}
-	floor_heights[cell] = 0.07
+	floor_heights[cell] = _visual_bounds(dance_tiles[cell]["node"]).end.y
 
 
 func _remove_dance_tile(cell: Vector2i) -> Dictionary:
@@ -1560,8 +1548,6 @@ func _undo_action() -> void:
 	if action["action"] == "tile_place":
 		_remove_dance_tile(action["cell"])
 		cash += int(action["cost"])
-		if int(action["cost"]) == 0:
-			free_dance_tiles += 1
 	elif action["action"] == "tile_erase":
 		_add_dance_tile(action["cell"], bool(action["paid"]))
 		cash -= int(action["refund"])
@@ -1769,15 +1755,13 @@ func _place_selected() -> void:
 	if night_active:
 		_notify("Finish the night before building")
 		return
-	var cost := 0 if selected_kind == "dance_tile" and free_dance_tiles > 0 else int(BUILD_PRICES.get(selected_kind, 0))
+	var cost := int(BUILD_PRICES.get(selected_kind, 0))
 	if cash < cost:
 		_notify("Not enough cash  |  Need €%d" % cost)
 		return
 	var id := -1
 	if selected_kind == "dance_tile":
 		_add_dance_tile(hover_cell, cost > 0)
-		if cost == 0:
-			free_dance_tiles -= 1
 	else:
 		var node := _model(club, selected_kind, hover_cell.x, hover_cell.y, build_turn)
 		id = _register_object(node, selected_kind, hover_cell.x, hover_cell.y, build_turn)
@@ -1835,16 +1819,15 @@ func _build_world() -> void:
 	add_child(club)
 	var dark := Color("#272735")
 	var light := Color("#343342")
-	var dance_color := Color("#6a3b7d")
-	for y in range(SIZE):
+		for y in range(SIZE):
 		for x in range(SIZE):
 			_make_box(club, Vector3(x - 7.5, -0.055, y - 7.5),
 				Vector3(0.99, 0.10, 0.99),
 				dark if (x + y) % 2 == 0 else light)
 			floor_heights[Vector2i(x, y)] = -0.005
-	# Sample club has six tiles. A new club starts empty with six free tiles to place.
+	# Sample club has six purchased tiles. New clubs start with none.
 	for cell in [Vector2i(6, 6), Vector2i(7, 6), Vector2i(8, 6), Vector2i(6, 7), Vector2i(7, 7), Vector2i(8, 7)]:
-		_add_dance_tile(cell)
+		_add_dance_tile(cell, true)
 	free_dance_tiles = 0
 	# Original saved ABLETON GYM layout, including rotations.
 	var items := [
@@ -2031,7 +2014,7 @@ func _load_club() -> void:
 	occupied.clear()
 	object_at_cell.clear()
 	action_history.clear()
-	free_dance_tiles = maxi(0, int(data.get("free_dance_tiles", 0)))
+	free_dance_tiles = 0
 	for tile in data.get("dance_tiles", []):
 		var cell := Vector2i(int(tile.get("x", -1)), int(tile.get("y", -1)))
 		if cell.x > 0 and cell.x < SIZE - 1 and cell.y > 0 and cell.y < SIZE - 1:
@@ -2100,7 +2083,7 @@ func _new_club() -> void:
 	occupied.clear()
 	object_at_cell.clear()
 	action_history.clear()
-	free_dance_tiles = 6
+	free_dance_tiles = 0
 	poster_labels.clear()
 	poster_led_materials.clear()
 	poster_led_accents.clear()
