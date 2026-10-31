@@ -2228,7 +2228,7 @@ func _animate_poster_leds(delta: float) -> void:
 			material.emission_energy_multiplier = 0.08 + (7.0 + 3.0 * pulse if night_active else 0.0)
 	for accent in poster_led_accents:
 		if accent != null:
-			accent.emission_energy_multiplier = (5.0 + 2.0 * pulse) if night_active else 0.2
+			accent.emission_energy_multiplier = (10.0 + 4.0 * pulse) if night_active else 0.2
 	for light in poster_led_lights:
 		if is_instance_valid(light):
 			light.light_energy = (0.8 + 0.5 * pulse) if night_active else 0.0
@@ -2320,8 +2320,8 @@ func _refresh_poster_text() -> void:
 		if is_instance_valid(label) and not label.is_queued_for_deletion():
 			label.text = dj_name if night_active else "UP NEXT\n" + dj_name
 			_set_sign_glow(label, night_active)
-			label.modulate = Color("#ffffff") if night_active else Color("#aa88c2")
-			label.outline_modulate = Color("#bb65ff") if night_active else Color("#24112f")
+			label.modulate = Color(2.0, 2.0, 2.0, 1.0) if night_active else Color("#aa88c2")
+			label.outline_modulate = Color(1.46, 0.79, 2.0, 1.0) if night_active else Color("#24112f")
 
 
 func _pointer_over_ui(position: Vector2) -> bool:
