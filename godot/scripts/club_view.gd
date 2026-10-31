@@ -33,6 +33,9 @@ var moving_object_id := -1
 var moving_turn := 0
 var build_kind_selected := false
 var rotate_object_button: Button
+var object_drag_armed := false
+var object_dragging := false
+var object_drag_start := Vector2.ZERO
 var placed_objects: Dictionary = {}
 var object_at_cell: Dictionary = {}
 var next_object_id := 1
@@ -1425,7 +1428,7 @@ func _refresh_preview() -> void:
 	for child in preview_root.get_children():
 		preview_root.remove_child(child)
 		child.queue_free()
-	if not build_mode or erase_mode or (not build_kind_selected and moving_object_id < 0) or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
+	if not build_mode or erase_mode or (not build_kind_selected and not object_dragging) or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
 		return
 	var preview_kind := str(placed_objects[moving_object_id]["kind"]) if placed_objects.has(moving_object_id) else selected_kind
 	var preview_turn := moving_turn if moving_object_id >= 0 else build_turn
@@ -1465,8 +1468,8 @@ func _update_hover(screen_pos: Vector2) -> void:
 	var next_cell := Vector2i(x, y)
 	var changed := next_cell != hover_cell
 	hover_cell = next_cell
-	hover_mesh.visible = erase_mode or build_kind_selected or moving_object_id >= 0
-	preview_root.visible = build_kind_selected or moving_object_id >= 0
+	hover_mesh.visible = erase_mode or build_kind_selected or object_dragging
+	preview_root.visible = build_kind_selected or object_dragging
 	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(next_cell, 0.0)) + 0.035, y - 7.5)
 	var mat := hover_mesh.material_override as StandardMaterial3D
 	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if (_can_move_to(x, y) if moving_object_id >= 0 else _can_place(x, y, selected_kind, build_turn)) else Color(1.0, 0.25, 0.3, 0.4))
@@ -1477,10 +1480,13 @@ func _update_hover(screen_pos: Vector2) -> void:
 func _update_rotate_button() -> void:
 	if rotate_object_button == null:
 		return
-	var show_button := build_mode and not night_active and moving_object_id >= 0 and hover_cell.x >= 0
+	var show_button := build_mode and not night_active and moving_object_id >= 0 and not object_dragging
 	rotate_object_button.visible = show_button
 	if show_button:
-		var screen := camera.unproject_position(Vector3(hover_cell.x - 7.5, 1.6, hover_cell.y - 7.5))
+		var record: Dictionary = placed_objects.get(moving_object_id, {})
+		if record.is_empty():
+			return
+		var screen := camera.unproject_position(Vector3(int(record["x"]) - 7.5, 1.6, int(record["y"]) - 7.5))
 		rotate_object_button.position = screen + Vector2(24, -20)
 
 
@@ -1506,6 +1512,8 @@ func _can_move_to(x: int, y: int) -> bool:
 
 func _cancel_move() -> void:
 	moving_object_id = -1
+	object_drag_armed = false
+	object_dragging = false
 	_update_rotate_button()
 	_refresh_preview()
 
@@ -1516,7 +1524,7 @@ func _move_click() -> void:
 			moving_object_id = int(object_at_cell[hover_cell])
 			moving_turn = int(placed_objects[moving_object_id]["turn"])
 			_update_rotate_button()
-			status_label.text = "MOVE OBJECT  |  Click: place  R: rotate  ESC: cancel"
+			status_label.text = "SELECTED  |  Drag: move  ↻/R: rotate  ESC: deselect"
 			_refresh_preview()
 		elif build_kind_selected:
 			_place_selected()
@@ -2451,6 +2459,23 @@ func _pointer_over_ui(position: Vector2) -> bool:
 
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and object_drag_armed and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		if not object_dragging and event.position.distance_to(object_drag_start) > 9.0:
+			object_dragging = true
+			_refresh_preview()
+			_update_rotate_button()
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and object_drag_armed:
+		object_drag_armed = false
+		if object_dragging:
+			_update_hover(event.position)
+			if _can_move_to(hover_cell.x, hover_cell.y):
+				_move_click()
+			else:
+				_notify("Cannot move there")
+			object_dragging = false
+			_refresh_preview()
+			_update_rotate_button()
+		return
 	# Ignore pointer input on HUD, including sliders and dropdowns.
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		dragging = false
@@ -2490,8 +2515,17 @@ func _input(event: InputEvent) -> void:
 				_update_hover(event.position)
 				if erase_mode:
 					_erase_hovered()
-				else:
+				elif build_kind_selected:
 					_move_click()
+				elif object_at_cell.has(hover_cell):
+					var clicked_id := int(object_at_cell[hover_cell])
+					if moving_object_id != clicked_id:
+						moving_object_id = -1
+						_move_click()
+					object_drag_armed = true
+					object_drag_start = event.position
+				else:
+					object_drag_armed = false
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
