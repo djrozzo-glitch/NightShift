@@ -159,6 +159,7 @@ var entrance_sign: Label3D
 var poster_labels: Array[Label3D] = []
 var poster_led_materials: Array[StandardMaterial3D] = []
 var poster_led_lights: Array[OmniLight3D] = []
+var poster_led_accents: Array[StandardMaterial3D] = []
 var poster_led_clock := 0.0
 var club: Node3D
 var missing_models: Array[String] = []
@@ -1569,6 +1570,10 @@ func _build_world() -> void:
 	env.volumetric_fog_emission = Color("#08050e")
 	env.volumetric_fog_emission_energy = 0.15
 	env.volumetric_fog_anisotropy = 0.55
+	env.glow_enabled = true
+	env.glow_intensity = 1.1
+	env.glow_strength = 1.15
+	env.glow_bloom = 0.22
 	club_environment = env
 	ambient.environment = env
 	add_child(ambient)
@@ -2220,7 +2225,10 @@ func _animate_poster_leds(delta: float) -> void:
 	var pulse := 0.5 + 0.5 * sin(poster_led_clock * 3.5)
 	for material in poster_led_materials:
 		if material != null:
-			material.emission_energy_multiplier = 0.08 + (3.5 + 2.5 * pulse if night_active else 0.0)
+			material.emission_energy_multiplier = 0.08 + (7.0 + 3.0 * pulse if night_active else 0.0)
+	for accent in poster_led_accents:
+		if accent != null:
+			accent.emission_energy_multiplier = (5.0 + 2.0 * pulse) if night_active else 0.2
 	for light in poster_led_lights:
 		if is_instance_valid(light):
 			light.light_energy = (0.8 + 0.5 * pulse) if night_active else 0.0
@@ -2242,14 +2250,31 @@ func _attach_poster_text(node: Node3D) -> void:
 	face.mesh = face_mesh
 	face.position.z = 0.042
 	var led_mat := StandardMaterial3D.new()
-	led_mat.albedo_color = Color("#090711")
+	led_mat.albedo_color = Color("#140526")
 	led_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	led_mat.emission_enabled = true
-	led_mat.emission = Color("#7034b2")
+	led_mat.emission = Color("#a239ff")
 	led_mat.emission_energy_multiplier = 0.08
 	face.material_override = led_mat
 	board.add_child(face)
 	poster_led_materials.append(led_mat)
+	# Bright thin horizontal LED accents give the screen a recognizable club look.
+	for edge_y in [-1.0, 1.0]:
+		var accent := MeshInstance3D.new()
+		accent.name = "LEDAccent"
+		var strip := BoxMesh.new()
+		strip.size = Vector3(0.81, 0.014, 0.012)
+		accent.mesh = strip
+		accent.position = Vector3(0, edge_y * (screen_height * 0.5 - 0.035), 0.054)
+		var accent_mat := StandardMaterial3D.new()
+		accent_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		accent_mat.albedo_color = Color("#bd58ff")
+		accent_mat.emission_enabled = true
+		accent_mat.emission = Color("#c963ff")
+		accent_mat.emission_energy_multiplier = 0.2
+		accent.material_override = accent_mat
+		board.add_child(accent)
+		poster_led_accents.append(accent_mat)
 	# Emissive materials alone do not illuminate nearby geometry.
 	var led_light := OmniLight3D.new()
 	led_light.name = "LEDSpill"
