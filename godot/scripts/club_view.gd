@@ -78,7 +78,20 @@ var start_night_button: Button
 var night_active := false
 var night_number := 0
 var guest_layer: Node3D
+const RAVER_THOUGHTS := {
+	"thirst": ["Need water before the next drop.","That bar looks like salvation.","My mouth is basically concrete.","One drink and I'm back in orbit.","Where did I leave my water?","The bass is dry, so am I.","I could drink the whole ice bucket.","Bar queue, please move.","A cold drink would fix everything.","Even ravers need hydration."],
+	"tired": ["My legs are filing a complaint.","That sofa is calling my name.","One more track, then I sit.","I need five minutes off the floor.","Who invented knees anyway?","My sneakers have seen too much.","A little rest and I'll be fine.","The kick is strong; I am not.","I could sleep standing up.","Maybe the chillout corner is free."],
+	"happy": ["This groove is ridiculous.","I could stay here forever.","Who needs daylight?","The room is absolutely locked in.","This is why we go out.","That bassline just rewired me.","I love this tiny sweaty universe.","Nobody's filming. Perfect.","Best night I've had in ages.","The DJ gets it."],
+	"unhappy": ["Why is everyone blocking the way?","The vibe is slipping.","I expected a better night.","Is there even a way to the bar?","Too much waiting, not enough dancing.","I might call it a night.","This place needs some work.","I paid for this?","I can't find a quiet corner.","Maybe the next club is better."],
+	"dancing": ["Four to the floor, no thoughts.","This loop has me hypnotized.","Don't touch that filter yet.","That hi-hat is doing things.","I live for this exact moment.","The sub is shaking my ribs.","Another sixteen bars, please.","That transition was filthy.","Deep in the pocket right now.","I can feel the groove in my teeth."],
+	"neutral": ["Wonder who's on after this.","Nice crowd tonight.","I should check out the other room.","Did I lock my bike?","This place has potential.","Where did my friends disappear?","Interesting sound system.","I like the lighting in here.","One more tune before deciding.","This feels properly underground."]
+}
 var guests: Array[Dictionary] = []
+var selected_guest_node: Node3D
+var guest_info_panel: PanelContainer
+var guest_info_label: Label
+var guest_thought := ""
+var guest_thought_clock := 0.0
 var guest_spawn_clock := 0.0
 var guest_count := 0
 var night_mood_total := 0.0
@@ -752,7 +765,66 @@ func _average_guest_mood() -> float:
 	return total / float(guests.size())
 
 
+func _guest_thought_category(guest: Dictionary) -> String:
+	if float(guest["thirst"]) > 0.68:
+		return "thirst"
+	if float(guest["energy"]) < 0.35:
+		return "tired"
+	if float(guest.get("mood", 85.0)) < 55.0:
+		return "unhappy"
+	if bool(guest.get("dance", false)):
+		return "dancing" if randf() < 0.65 else "happy"
+	if float(guest.get("mood", 85.0)) > 83.0:
+		return "happy"
+	return "neutral"
+
+
+func _refresh_guest_info(delta: float) -> void:
+	if guest_info_panel == null or selected_guest_node == null or not is_instance_valid(selected_guest_node):
+		if guest_info_panel != null:
+			guest_info_panel.hide()
+		return
+	for guest in guests:
+		if guest["node"] != selected_guest_node:
+			continue
+		guest_info_panel.show()
+		guest_thought_clock -= delta
+		if guest_thought_clock <= 0.0:
+			var category := _guest_thought_category(guest)
+			guest_thought = str(RAVER_THOUGHTS[category].pick_random())
+			guest_thought_clock = randf_range(6.0, 11.0)
+		var activity := str(guest.get("state", "dancing")).replace("_", " ").capitalize()
+		guest_info_label.text = "RAVER  |  %s\nMOOD       %d%%\nTHIRST      %d%%\nENERGY     %d%%\n\n“%s”" % [activity, roundi(float(guest.get("mood", 85.0))), roundi(float(guest["thirst"]) * 100.0), roundi(float(guest["energy"]) * 100.0), guest_thought]
+		return
+	guest_info_panel.hide()
+
+
+func _select_guest_at(screen_pos: Vector2) -> bool:
+	var closest := 32.0
+	var found: Node3D = null
+	for guest in guests:
+		var person := guest["node"] as Node3D
+		if not is_instance_valid(person) or camera.is_position_behind(person.global_position + Vector3.UP * 0.7):
+			continue
+		var screen := camera.unproject_position(person.global_position + Vector3.UP * 0.7)
+		var distance := screen.distance_to(screen_pos)
+		if distance < closest:
+			closest = distance
+			found = person
+	if found == null:
+		selected_guest_node = null
+		if guest_info_panel != null:
+			guest_info_panel.hide()
+		return false
+	selected_guest_node = found
+	guest_thought_clock = 0.0
+	_refresh_guest_info(0.0)
+	return true
+
+
 func _process(delta: float) -> void:
+	if night_active:
+		_refresh_guest_info(delta)
 	_animate_poster_leds(delta)
 	_animate_stage_lights(delta)
 	if not night_active or night_paused:
@@ -896,6 +968,9 @@ func _process(delta: float) -> void:
 			person.rotation.y = atan2(direction.x, direction.z)
 
 func _clear_guests() -> void:
+	selected_guest_node = null
+	if guest_info_panel != null:
+		guest_info_panel.hide()
 	for guest in guests:
 		var person: Node3D = guest["node"]
 		if is_instance_valid(person):
@@ -1926,6 +2001,18 @@ func _build_overlay() -> void:
 	theme_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(theme_root)
+	guest_info_panel = PanelContainer.new()
+	guest_info_panel.position = Vector2(20, 228)
+	guest_info_panel.custom_minimum_size = Vector2(300, 165)
+	guest_info_panel.visible = false
+	guest_info_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	UIStyle.decorate_panel(guest_info_panel)
+	theme_root.add_child(guest_info_panel)
+	guest_info_panel.add_to_group("nightshift_ui_blocker")
+	guest_info_label = Label.new()
+	guest_info_label.custom_minimum_size = Vector2(280, 150)
+	guest_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	guest_info_panel.add_child(guest_info_label)
 	rotate_object_button = Button.new()
 	rotate_object_button.text = "↻"
 	rotate_object_button.tooltip_text = "Rotate selected object 90° (R)"
@@ -2583,6 +2670,8 @@ func _input(event: InputEvent) -> void:
 					object_drag_armed = false
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed and night_active and _select_guest_at(event.position):
+				return
 			if event.pressed:
 				var over_ui := false
 				if build_toggle != null and build_toggle.get_global_rect().has_point(event.position):
