@@ -124,7 +124,7 @@ const WALK_DIRS := [Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0
 const DJ_ROSTER := [
 	{"name": "Vanya Velin", "fee": 400},
 	{"name": "Velvet 37", "fee": 300},
-	{"name": "rozzo", "fee": 350},
+	{"name": "rozzo", "fee": 350, "bpm": 125.0},
 	{"name": "lowQ", "fee": 250}
 ]
 
@@ -167,6 +167,7 @@ var club_environment: Environment
 var club_sun: DirectionalLight3D
 var stage_lights: Array[SpotLight3D] = []
 var lighting_clock := 0.0
+var music_beat_clock := 0.0
 var dance_lights: Array[OmniLight3D] = []
 var beam_meshes: Array[MeshInstance3D] = []
 var disco_spots: Array[SpotLight3D] = []
@@ -1075,6 +1076,7 @@ func _animate_stage_lights(delta: float) -> void:
 	if not night_active or night_paused:
 		return
 	lighting_clock += delta * night_speed
+	var synced_beat := _rozzo_beat()
 	for index in range(stage_lights.size()):
 		var spot := stage_lights[index]
 		if not is_instance_valid(spot):
@@ -1089,7 +1091,7 @@ func _animate_stage_lights(delta: float) -> void:
 			var local_direction := Vector3(sin(phase) * 0.65, 0.8 + sin(phase * 0.7) * 0.25, 3.0)
 			var direction := fixture.global_basis * local_direction
 			spot.look_at(spot.global_position + direction, Vector3.UP)
-		spot.light_energy = 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
+		spot.light_energy = (2.5 + 4.0 * synced_beat) if synced_beat >= 0.0 else 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
 	# Independent color changes and a restrained rhythmic flash for moving heads.
 	for index in range(disco_spots.size()):
 		var disco := disco_spots[index]
@@ -1098,7 +1100,7 @@ func _animate_stage_lights(delta: float) -> void:
 		var palette_index := (int(floor(lighting_clock / 5.0)) + index * 2) % DISCO_COLORS.size()
 		var color: Color = DISCO_COLORS[palette_index]
 		disco.light_color = color
-		var beat := pow(maxf(0.0, sin(lighting_clock * 4.0 + float(index) * 1.7)), 8.0)
+		var beat := synced_beat if synced_beat >= 0.0 else pow(maxf(0.0, sin(lighting_clock * 4.0 + float(index) * 1.7)), 8.0)
 		disco.light_energy = 3.6 + 2.3 * beat
 		var cone := disco.get_node_or_null("VisibleBeam") as MeshInstance3D
 		if cone == null:
@@ -1158,6 +1160,8 @@ func _start_night() -> void:
 	cash -= fee
 	night_dj_fee = fee
 	night_elapsed = 0.0
+	music_beat_clock = 0.0
+	poster_led_clock = 0.0
 	night_paused = false
 	night_speed = 1.0
 	night_ticket_income = 0
@@ -2219,10 +2223,24 @@ func _make_sign_letters(board: Node3D, name: String, font_size: int, pixel_size:
 	return label
 
 
+func _rozzo_beat() -> float:
+	if not night_active or dj_picker == null or dj_picker.selected < 0:
+		return -1.0
+	var dj: Dictionary = DJ_ROSTER[dj_picker.selected]
+	if not dj.has("bpm"):
+		return -1.0
+	var beat_phase := fposmod(music_beat_clock * float(dj["bpm"]) / 60.0, 1.0)
+	return pow(1.0 - beat_phase, 4.0)
+
+
 func _animate_poster_leds(delta: float) -> void:
 	if night_active and not night_paused:
 		poster_led_clock += delta * night_speed
+		music_beat_clock += delta * night_speed
 	var pulse := 0.5 + 0.5 * sin(poster_led_clock * 3.5)
+	var synced_beat := _rozzo_beat()
+	if synced_beat >= 0.0:
+		pulse = synced_beat
 	for material in poster_led_materials:
 		if material != null:
 			material.emission_energy_multiplier = 0.08 + (7.0 + 3.0 * pulse if night_active else 0.0)
