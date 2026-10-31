@@ -464,7 +464,7 @@ func _path_around_guests(start: Vector2i, goal: Vector2i, self_guest: Dictionary
 		cell = previous[cell]
 	return result
 
-func _make_dance_tile(cell: Vector2i, parent: Node3D = club) -> Node3D:
+func _make_dance_tile(cell: Vector2i, parent: Node3D) -> Node3D:
 	var root := Node3D.new()
 	root.name = "DanceTile_%d_%d" % [cell.x, cell.y]
 	parent.add_child(root)
@@ -485,7 +485,7 @@ func _make_dance_tile(cell: Vector2i, parent: Node3D = club) -> Node3D:
 func _add_dance_tile(cell: Vector2i, paid: bool = false) -> void:
 	if dance_tiles.has(cell):
 		return
-	dance_tiles[cell] = {"node": _make_dance_tile(cell), "paid": paid}
+	dance_tiles[cell] = {"node": _make_dance_tile(cell, club), "paid": paid}
 	floor_heights[cell] = 0.07
 
 
@@ -1972,12 +1972,15 @@ func _save_club() -> void:
 			"kind": record["kind"], "x": record["x"], "y": record["y"],
 			"turn": record["turn"], "paid": record.get("paid", false)
 		})
+	var tile_data: Array[Dictionary] = []
+	for cell in dance_tiles:
+		tile_data.append({"x": cell.x, "y": cell.y, "paid": bool(dance_tiles[cell].get("paid", false))})
 	var data := {
-		"version": 1, "club_name": club_name, "cash": cash, "reputation": reputation,
+		"version": 2, "club_name": club_name, "cash": cash, "reputation": reputation,
 		"level": club_level, "xp": club_xp, "total_xp": total_xp,
 		"perk_points": perk_points, "perks": unlocked_perks,
 		"night_number": night_number, "ticket_price": ticket_price, "drink_price": drink_price, "objects": furniture,
-		"dance_tiles": dance_tiles.keys().map(func(cell: Vector2i) -> Dictionary: return {"x": cell.x, "y": cell.y, "paid": bool(dance_tiles[cell].get("paid", false))}), "free_dance_tiles": free_dance_tiles
+		"dance_tiles": tile_data, "free_dance_tiles": free_dance_tiles
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
