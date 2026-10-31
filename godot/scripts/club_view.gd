@@ -1610,7 +1610,7 @@ func _refresh_preview() -> void:
 	for child in preview_root.get_children():
 		preview_root.remove_child(child)
 		child.queue_free()
-	if not build_mode or erase_mode or (not build_kind_selected and not object_dragging) or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
+	if (not build_mode and not object_dragging) or erase_mode or (not build_kind_selected and not object_dragging) or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
 		return
 	var preview_kind := str(placed_objects[moving_object_id]["kind"]) if placed_objects.has(moving_object_id) else selected_kind
 	var preview_turn := moving_turn if moving_object_id >= 0 else build_turn
@@ -1624,7 +1624,7 @@ func _refresh_preview() -> void:
 		mesh.material_overlay = overlay
 
 func _update_hover(screen_pos: Vector2) -> void:
-	if not build_mode or (build_panel != null and build_panel.visible and build_panel.get_global_rect().has_point(screen_pos)) or (build_toggle != null and build_toggle.get_global_rect().has_point(screen_pos)):
+	if (not build_mode and not object_dragging and moving_object_id < 0) or (build_panel != null and build_panel.visible and build_panel.get_global_rect().has_point(screen_pos)) or (build_toggle != null and build_toggle.get_global_rect().has_point(screen_pos)):
 		hover_mesh.visible = false
 		preview_root.visible = false
 		return
@@ -1650,8 +1650,8 @@ func _update_hover(screen_pos: Vector2) -> void:
 	var next_cell := Vector2i(x, y)
 	var changed := next_cell != hover_cell
 	hover_cell = next_cell
-	hover_mesh.visible = erase_mode or build_kind_selected or object_dragging
-	preview_root.visible = build_kind_selected or object_dragging
+	hover_mesh.visible = (build_mode and (erase_mode or build_kind_selected)) or object_dragging
+	preview_root.visible = (build_mode and build_kind_selected) or object_dragging
 	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(next_cell, 0.0)) + 0.035, y - 7.5)
 	var mat := hover_mesh.material_override as StandardMaterial3D
 	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) or dance_tiles.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if (_can_move_to(x, y) if moving_object_id >= 0 else _can_place(x, y, selected_kind, build_turn)) else Color(1.0, 0.25, 0.3, 0.4))
@@ -1662,7 +1662,7 @@ func _update_hover(screen_pos: Vector2) -> void:
 func _update_rotate_button() -> void:
 	if rotate_object_button == null:
 		return
-	var show_button := build_mode and not night_active and moving_object_id >= 0 and not object_dragging
+	var show_button := not night_active and moving_object_id >= 0 and not object_dragging
 	rotate_object_button.visible = show_button
 	if show_button:
 		var record: Dictionary = placed_objects.get(moving_object_id, {})
@@ -2785,7 +2785,7 @@ func _input(event: InputEvent) -> void:
 			_update_camera()
 			get_viewport().set_input_as_handled()
 		return
-	if event is InputEventMouseMotion and build_mode:
+	if event is InputEventMouseMotion and (build_mode or object_dragging or moving_object_id >= 0):
 		_update_hover(event.position)
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
@@ -2797,12 +2797,12 @@ func _input(event: InputEvent) -> void:
 				_update_camera()
 				get_viewport().set_input_as_handled()
 			return
-		if event.button_index == MOUSE_BUTTON_LEFT and build_mode:
+		if event.button_index == MOUSE_BUTTON_LEFT and (build_mode or not night_active):
 			if event.pressed and not (build_panel.visible and build_panel.get_global_rect().has_point(event.position)) and not build_toggle.get_global_rect().has_point(event.position) and not night_active:
 				_update_hover(event.position)
-				if erase_mode:
+				if erase_mode and build_mode:
 					_erase_hovered()
-				elif build_kind_selected:
+				elif build_kind_selected and build_mode:
 					_move_click()
 				elif object_at_cell.has(hover_cell):
 					var clicked_id := int(object_at_cell[hover_cell])
@@ -2813,6 +2813,12 @@ func _input(event: InputEvent) -> void:
 					object_drag_start = event.position
 				else:
 					object_drag_armed = false
+					if moving_object_id >= 0:
+						_cancel_move()
+					# Empty floor still rotates the camera in normal mode.
+					if not build_mode:
+						dragging = true
+						last_mouse = event.position
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed and night_active and _select_guest_at(event.position):
