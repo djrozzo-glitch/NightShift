@@ -1491,9 +1491,22 @@ func _update_rotate_button() -> void:
 
 
 func _rotate_moving_object() -> void:
-	if moving_object_id < 0:
+	if moving_object_id < 0 or not placed_objects.has(moving_object_id) or night_active:
 		return
-	moving_turn = (moving_turn + 1) % 4
+	var record: Dictionary = placed_objects[moving_object_id]
+	var x := int(record["x"])
+	var y := int(record["y"])
+	var next_turn := (int(record["turn"]) + 1) % 4
+	moving_turn = next_turn
+	if not _can_move_to(x, y):
+		moving_turn = int(record["turn"])
+		_notify("Not enough room to rotate")
+		return
+	# Rotation is an immediate edit, not a preview awaiting a second click.
+	var saved_hover := hover_cell
+	hover_cell = Vector2i(x, y)
+	_move_click()
+	hover_cell = saved_hover
 	_refresh_preview()
 	_update_hover(get_viewport().get_mouse_position())
 
@@ -1542,9 +1555,10 @@ func _move_click() -> void:
 	_attach_fixture_lighting(node, str(old_record["kind"]))
 	placed_objects[new_id]["paid"] = old_record["paid"]
 	action_history.append({"action": "move", "id": new_id, "x": old_x, "y": old_y, "turn": old_turn})
-	moving_object_id = -1
+	moving_object_id = new_id
+	moving_turn = int(placed_objects[new_id]["turn"])
 	_update_rotate_button()
-	status_label.text = "BUILD  |  Click object: move  R: rotate"
+	status_label.text = "SELECTED  |  Drag: move  ↻/R: rotate  ESC: deselect"
 	_refresh_preview()
 	_refresh_economy()
 	_notify("Object moved")
@@ -2586,7 +2600,7 @@ func _input(event: InputEvent) -> void:
 		_update_camera()
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_R and build_mode and not erase_mode:
 		if moving_object_id >= 0:
-			moving_turn = (moving_turn + 1) % 4
+			_rotate_moving_object()
 		elif build_kind_selected:
 			build_turn = (build_turn + 1) % 4
 		_refresh_preview()
