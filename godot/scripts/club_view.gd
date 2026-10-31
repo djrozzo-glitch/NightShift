@@ -158,6 +158,7 @@ var club_name_edit: LineEdit
 var entrance_sign: Label3D
 var poster_labels: Array[Label3D] = []
 var poster_led_materials: Array[StandardMaterial3D] = []
+var poster_led_lights: Array[OmniLight3D] = []
 var poster_led_clock := 0.0
 var club: Node3D
 var missing_models: Array[String] = []
@@ -2219,7 +2220,10 @@ func _animate_poster_leds(delta: float) -> void:
 	var pulse := 0.5 + 0.5 * sin(poster_led_clock * 3.5)
 	for material in poster_led_materials:
 		if material != null:
-			material.emission_energy_multiplier = 0.08 + (0.65 + 0.55 * pulse if night_active else 0.0)
+			material.emission_energy_multiplier = 0.08 + (3.5 + 2.5 * pulse if night_active else 0.0)
+	for light in poster_led_lights:
+		if is_instance_valid(light):
+			light.light_energy = (0.8 + 0.5 * pulse) if night_active else 0.0
 
 
 func _attach_poster_text(node: Node3D) -> void:
@@ -2246,8 +2250,18 @@ func _attach_poster_text(node: Node3D) -> void:
 	face.material_override = led_mat
 	board.add_child(face)
 	poster_led_materials.append(led_mat)
+	# Emissive materials alone do not illuminate nearby geometry.
+	var led_light := OmniLight3D.new()
+	led_light.name = "LEDSpill"
+	led_light.position = Vector3(0, 0, 0.32)
+	led_light.light_color = Color("#b36aff")
+	led_light.omni_range = 2.3
+	led_light.shadow_enabled = false
+	led_light.light_energy = 0.0
+	board.add_child(led_light)
+	poster_led_lights.append(led_light)
 	var label := _make_sign_letters(board, "DJPosterText", 56, 0.0019)
-	label.position.z = 0.065
+	label.position.z = 0.09
 	label.position.y = 0.0
 	poster_labels.append(label)
 	_refresh_poster_text()
@@ -2281,7 +2295,8 @@ func _refresh_poster_text() -> void:
 		if is_instance_valid(label) and not label.is_queued_for_deletion():
 			label.text = dj_name if night_active else "UP NEXT\n" + dj_name
 			_set_sign_glow(label, night_active)
-			label.modulate = Color("#f7eaff") if night_active else Color("#aa88c2")
+			label.modulate = Color("#ffffff") if night_active else Color("#aa88c2")
+			label.outline_modulate = Color("#bb65ff") if night_active else Color("#24112f")
 
 
 func _pointer_over_ui(position: Vector2) -> bool:
