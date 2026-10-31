@@ -2212,7 +2212,7 @@ func _make_sign_letters(board: Node3D, name: String, font_size: int, pixel_size:
 
 func _attach_poster_text(node: Node3D) -> void:
 	# The poster pivot is already rotated toward the club interior.
-	var board := _make_sign_board(node, "DJPosterBoard", Vector2(0.86, 0.96), Vector3(0, 0.67, 0.16))
+	var board := _make_sign_board(node, "DJPosterBoard", Vector2(0.86, 1.95), Vector3(0, 0.99, 0.16))
 	var label := _make_sign_letters(board, "DJPosterText", 56, 0.0019)
 	label.position.y = 0.0
 	poster_labels.append(label)
