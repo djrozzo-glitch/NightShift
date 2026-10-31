@@ -153,6 +153,10 @@ func _make_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> Mes
 
 const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light", "laser", "plant2", "table", "stool", "wc", "entrance", "floor"]
 var models: Dictionary = {}
+var club_name := "ABLETON GYM"
+var club_name_edit: LineEdit
+var entrance_sign: Label3D
+var poster_labels: Array[Label3D] = []
 var club: Node3D
 var missing_models: Array[String] = []
 var club_environment: Environment
@@ -215,6 +219,10 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 			pivot_node.rotation.y = -PI * 0.5
 		elif y == 0:
 			pivot_node.rotation.y = PI
+	if kind == "poster":
+		_attach_poster_text(pivot_node)
+	elif kind == "entrance":
+		_attach_entrance_sign(pivot_node)
 	if not models.has(kind):
 		var color: Color = Color("#5d456a") if kind in TWO_CELL else Color("#53505b")
 		_make_box(pivot_node, Vector3(0, 0.4, 0.5 if kind in TWO_CELL else 0.0),
@@ -1150,6 +1158,7 @@ func _start_night() -> void:
 	_update_night_stats()
 	night_number += 1
 	night_active = true
+	_refresh_poster_text()
 	_set_night_lighting(true)
 	_play_dj_music()
 	night_report_panel.show()
@@ -1175,6 +1184,7 @@ func _end_night() -> void:
 	if not night_active:
 		return
 	night_active = false
+	_refresh_poster_text()
 	_set_night_lighting(false)
 	_stop_dj_music()
 	var costs := night_dj_fee + STAFF_COST
@@ -1628,7 +1638,7 @@ func _save_club() -> void:
 			"turn": record["turn"], "paid": record.get("paid", false)
 		})
 	var data := {
-		"version": 1, "cash": cash, "reputation": reputation,
+		"version": 1, "club_name": club_name, "cash": cash, "reputation": reputation,
 		"level": club_level, "xp": club_xp, "total_xp": total_xp,
 		"perk_points": perk_points, "perks": unlocked_perks,
 		"night_number": night_number, "ticket_price": ticket_price, "drink_price": drink_price, "objects": furniture
@@ -1690,6 +1700,10 @@ func _load_club() -> void:
 		var id := _register_object(node, kind, x, y, turn)
 		placed_objects[id]["paid"] = bool(entry.get("paid", false))
 		_attach_fixture_lighting(node, kind)
+	club_name = str(data.get("club_name", "ABLETON GYM")).strip_edges().substr(0, 28)
+	if club_name.is_empty():
+		club_name = "ABLETON GYM"
+	_refresh_club_sign()
 	cash = int(data.get("cash", 15000))
 	reputation = clampi(int(data.get("reputation", 100)), 0, 100)
 	club_level = maxi(1, int(data.get("level", 1)))
@@ -1741,7 +1755,7 @@ func _build_overlay() -> void:
 	# Compact management dropdown; all actions stay in the game.
 	var manage_button := MenuButton.new()
 	manage_button.text = "☰  CLUB MENU"
-	manage_button.position = Vector2(20, 160)
+	manage_button.position = Vector2(20, 172)
 	manage_button.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(manage_button)
 	theme_root.add_child(manage_button)
@@ -1768,18 +1782,29 @@ func _build_overlay() -> void:
 	new_confirmation.confirmed.connect(_new_club)
 	var header_panel := PanelContainer.new()
 	header_panel.position = Vector2(12, 12)
-	header_panel.custom_minimum_size = Vector2(480, 135)
+	header_panel.custom_minimum_size = Vector2(480, 150)
 	UIStyle.decorate_panel(header_panel)
 	header_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	theme_root.add_child(header_panel)
 	header_panel.add_to_group("nightshift_ui_blocker")
 	var title := Label.new()
-	title.text = "ABLETON GYM"
-	UIStyle.decorate_label(title, 24)
+	title.text = "CLUB NAME"
+	UIStyle.decorate_label(title, 12)
 	title.add_theme_color_override("font_color", Color("#f4eafa"))
-	title.position = Vector2(30, 25)
+	title.position = Vector2(30, 20)
 	
 	theme_root.add_child(title)
+	club_name_edit = LineEdit.new()
+	club_name_edit.position = Vector2(30, 39)
+	club_name_edit.size = Vector2(270, 32)
+	club_name_edit.text = club_name
+	club_name_edit.max_length = 28
+	club_name_edit.placeholder_text = "Name your club"
+	club_name_edit.text_changed.connect(func(value: String) -> void:
+		club_name = value.strip_edges()
+		_refresh_club_sign()
+	)
+	theme_root.add_child(club_name_edit)
 	if not missing_models.is_empty():
 		var warning := Label.new()
 		warning.text = "Missing GLB: " + ", ".join(missing_models)
@@ -1787,29 +1812,29 @@ func _build_overlay() -> void:
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
 		theme_root.add_child(warning)
 	economy_label = Label.new()
-	economy_label.position = Vector2(30, 65)
+	economy_label.position = Vector2(30, 78)
 	UIStyle.decorate_label(economy_label, 15)
 	theme_root.add_child(economy_label)
 	_refresh_economy()
 	notice_label = Label.new()
-	notice_label.position = Vector2(30, 97)
+	notice_label.position = Vector2(30, 107)
 	UIStyle.decorate_label(notice_label, 13, true)
 	theme_root.add_child(notice_label)
 	status_label = Label.new()
-	status_label.position = Vector2(30, 122)
+	status_label.position = Vector2(30, 130)
 	status_label.text = "MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
 	UIStyle.decorate_label(status_label, 13, true)
 	theme_root.add_child(status_label)
 	build_toggle = Button.new()
 	build_toggle.text = "BUILD  [B]"
-	build_toggle.position = Vector2(20, 210)
+	build_toggle.position = Vector2(20, 222)
 	build_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(build_toggle, true)
 	build_toggle.pressed.connect(_toggle_build_panel)
 	theme_root.add_child(build_toggle)
 	build_toggle.add_to_group("nightshift_ui_blocker")
 	build_panel = PanelContainer.new()
-	build_panel.position = Vector2(20, 310)
+	build_panel.position = Vector2(20, 322)
 	build_panel.visible = false
 	UIStyle.decorate_panel(build_panel)
 	theme_root.add_child(build_panel)
@@ -1831,7 +1856,7 @@ func _build_overlay() -> void:
 	choices.add_child(erase_button)
 	var progression_toggle := Button.new()
 	progression_toggle.text = "★ PROGRESSION"
-	progression_toggle.position = Vector2(20, 260)
+	progression_toggle.position = Vector2(20, 272)
 	progression_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(progression_toggle, true)
 	progression_toggle.pressed.connect(func() -> void:
@@ -1842,7 +1867,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(progression_toggle)
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
-	progression_panel.position = Vector2(20, 310)
+	progression_panel.position = Vector2(20, 322)
 	progression_panel.custom_minimum_size = Vector2(344, 0)
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
@@ -1951,6 +1976,7 @@ func _build_overlay() -> void:
 	dj_picker.item_selected.connect(func(_index: int) -> void:
 		_refresh_readiness()
 		_refresh_dj_card()
+		_refresh_poster_text()
 	)
 	UIStyle.decorate_option(dj_picker)
 	night_controls.add_child(dj_picker)
@@ -2067,10 +2093,40 @@ func _build_overlay() -> void:
 	UIStyle.decorate_panel(night_report_panel)
 	theme_root.add_child(night_report_panel)
 	night_report_panel.add_to_group("nightshift_ui_blocker")
-	# The opening panel grows with pricing sliders and DJ card.
-	# Position stats from its measured height, never a fixed pixel offset.
-	night_panel.resized.connect(_position_night_report.bind(night_panel))
-	call_deferred("_position_night_report", night_panel)
+	# Scroll the whole right HUD as one column, preserving panel order.
+	var right_scroll := ScrollContainer.new()
+	right_scroll.name = "RightHUDScroll"
+	right_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	right_scroll.anchor_left = 1.0
+	right_scroll.anchor_right = 1.0
+	right_scroll.offset_left = -365
+	right_scroll.offset_right = -8
+	right_scroll.offset_top = 8
+	right_scroll.offset_bottom = -8
+	right_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	theme_root.add_child(right_scroll)
+	right_scroll.add_to_group("nightshift_ui_blocker")
+	var right_stack := VBoxContainer.new()
+	right_stack.add_theme_constant_override("separation", 12)
+	right_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_scroll.add_child(right_stack)
+	theme_root.remove_child(night_panel)
+	right_stack.add_child(night_panel)
+	night_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	night_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	night_panel.offset_left = 0
+	night_panel.offset_top = 0
+	night_panel.offset_right = 0
+	night_panel.offset_bottom = 0
+	theme_root.remove_child(night_report_panel)
+	right_stack.add_child(night_report_panel)
+	night_report_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	night_report_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	night_report_panel.offset_left = 0
+	night_report_panel.offset_top = 0
+	night_report_panel.offset_right = 0
+	night_report_panel.offset_bottom = 0
 	var report_content := VBoxContainer.new()
 	night_report_panel.add_child(report_content)
 	night_report_heading = Label.new()
@@ -2083,23 +2139,60 @@ func _build_overlay() -> void:
 	_refresh_readiness()
 	var help_button := Button.new()
 	help_button.text = "?  HELP"
-	help_button.position = Vector2(200, 260)
+	help_button.position = Vector2(200, 272)
 	UIStyle.decorate_button(help_button)
 	help_button.pressed.connect(_toggle_help)
 	theme_root.add_child(help_button)
 	help_label = Label.new()
 	help_label.text = "Drag: rotate   Shift+drag: pan\nWheel/pinch or +/-: zoom\nR: rotate furniture / reset camera\nB: build   X: erase   Ctrl/Cmd+Z: undo"
-	help_label.position = Vector2(330, 260)
+	help_label.position = Vector2(330, 272)
 	help_label.visible = false
 	UIStyle.decorate_label(help_label, 13, true)
 	theme_root.add_child(help_label)
 
-func _position_night_report(opening_panel: Control) -> void:
-	if not is_instance_valid(opening_panel) or not is_instance_valid(night_report_panel):
-		return
-	var top := opening_panel.position.y + opening_panel.size.y + 12.0
-	night_report_panel.offset_top = top
-	night_report_panel.offset_bottom = top
+func _make_world_text(parent: Node3D, name: String, value: String, height: float, width: float) -> Label3D:
+	var label := Label3D.new()
+	label.name = name
+	label.text = value
+	label.position = Vector3(0, height, 0.12)
+	label.font_size = 56
+	label.pixel_size = 0.0028
+	label.modulate = Color("#f2d8ff")
+	label.outline_modulate = Color("#100d1d")
+	label.outline_size = 10
+	label.width = width
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.double_sided = true
+	label.no_depth_test = false
+	parent.add_child(label)
+	return label
+
+
+func _attach_poster_text(node: Node3D) -> void:
+	var label := _make_world_text(node, "DJPosterText", "", 1.12, 190.0)
+	poster_labels.append(label)
+	_refresh_poster_text()
+
+
+func _attach_entrance_sign(node: Node3D) -> void:
+	entrance_sign = _make_world_text(node, "ClubNameSign", club_name, 2.15, 320.0)
+	entrance_sign.position.z = 0.0
+	entrance_sign.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_refresh_club_sign()
+
+
+func _refresh_club_sign() -> void:
+	if is_instance_valid(entrance_sign):
+		entrance_sign.text = club_name.to_upper() if not club_name.is_empty() else "NIGHTSHIFT"
+
+
+func _refresh_poster_text() -> void:
+	var dj_name := "TONIGHT"
+	if dj_picker != null and dj_picker.selected >= 0:
+		dj_name = str(DJ_ROSTER[dj_picker.selected]["name"]).to_upper()
+	for label in poster_labels:
+		if is_instance_valid(label):
+			label.text = dj_name if night_active else "COMING UP\n" + dj_name
 
 
 func _pointer_over_ui(position: Vector2) -> bool:
