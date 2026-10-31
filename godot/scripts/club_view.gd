@@ -2070,6 +2070,7 @@ func _new_club() -> void:
 		return
 	_cancel_move()
 	_clear_guests()
+	_clear_dance_tiles()
 	# Remove the sample layout, including perimeter posters. Keep the floor,
 	# existing perimeter walls, and the two-cell entrance.
 	var poster_positions: Array[Vector2i] = []
