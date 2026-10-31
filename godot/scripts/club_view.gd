@@ -219,14 +219,14 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 			pivot_node.rotation.y = -PI * 0.5
 		elif y == SIZE - 1:
 			pivot_node.rotation.y = PI
-	if kind == "poster":
-		_attach_poster_text(pivot_node)
-	elif kind == "entrance":
-		_attach_entrance_sign(pivot_node)
 	if not models.has(kind):
 		var color: Color = Color("#5d456a") if kind in TWO_CELL else Color("#53505b")
 		_make_box(pivot_node, Vector3(0, 0.4, 0.5 if kind in TWO_CELL else 0.0),
 			Vector3(0.8, 0.8, 1.8 if kind in TWO_CELL else 0.8), color)
+		if kind == "poster":
+			_attach_poster_text(pivot_node)
+		elif kind == "entrance":
+			_attach_entrance_sign(pivot_node)
 		return pivot_node
 
 	var visual := (models[kind] as PackedScene).instantiate() as Node3D
@@ -294,6 +294,11 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 		offset_z - bounds.get_center().z)
 	if kind == "floor":
 		floor_heights[Vector2i(x, y)] = _visual_bounds(pivot_node).end.y
+	# Sign geometry must be added AFTER fitting the GLB, or it distorts its bounds.
+	if kind == "poster":
+		_attach_poster_text(pivot_node)
+	elif kind == "entrance":
+		_attach_entrance_sign(pivot_node)
 	return pivot_node
 
 func _visual_bounds(root: Node3D) -> AABB:
@@ -2207,9 +2212,9 @@ func _make_sign_letters(board: Node3D, name: String, font_size: int, pixel_size:
 
 func _attach_poster_text(node: Node3D) -> void:
 	# The poster pivot is already rotated toward the club interior.
-	var board := _make_sign_board(node, "DJPosterBoard", Vector2(0.73, 0.77), Vector3(0, 1.13, 0.13))
+	var board := _make_sign_board(node, "DJPosterBoard", Vector2(0.86, 0.96), Vector3(0, 0.67, 0.16))
 	var label := _make_sign_letters(board, "DJPosterText", 56, 0.0019)
-	label.position.y = -0.06
+	label.position.y = 0.0
 	poster_labels.append(label)
 	_refresh_poster_text()
 
@@ -2217,7 +2222,7 @@ func _attach_poster_text(node: Node3D) -> void:
 func _attach_entrance_sign(node: Node3D) -> void:
 	# Entrance pivot has a PI rotation. Turn the sign back toward the outside (+Z).
 	var board := _make_sign_board(node, "ClubMarquee", Vector2(2.45, 0.47), Vector3(0, 2.02, 0.02))
-	board.rotation.y = PI
+	board.rotation.y = PI * 0.5
 	entrance_sign = _make_sign_letters(board, "ClubNameSign", 64, 0.0032)
 	_refresh_club_sign()
 
