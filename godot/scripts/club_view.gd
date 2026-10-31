@@ -2131,7 +2131,10 @@ func _build_overlay() -> void:
 	build_panel.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
-		button.text = "%s   €%d%s" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), int(BUILD_PRICES.get(kind, 0)), "  [LVL %d]" % int(LEVEL_UNLOCKS[kind]) if LEVEL_UNLOCKS.has(kind) else ""]
+		var required_level := int(LEVEL_UNLOCKS.get(kind, 1))
+		var locked := club_level < required_level
+		button.text = "🔒 %s  ·  LVL %d" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), required_level] if locked else "%s   €%d" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), int(BUILD_PRICES.get(kind, 0))]
+		button.tooltip_text = "Unlocks at club level %d. Play nights to earn XP." % required_level if locked else "Place %s for €%d" % [kind, int(BUILD_PRICES.get(kind, 0))]
 		button.custom_minimum_size = Vector2(142, 34)
 		UIStyle.decorate_button(button)
 		button.pressed.connect(_choose_kind.bind(kind))
