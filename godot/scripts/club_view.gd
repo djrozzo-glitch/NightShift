@@ -18,10 +18,12 @@ var last_mouse := Vector2.ZERO
 var build_mode := false
 var occupied: Dictionary = {}
 var floor_heights: Dictionary = {}
+var dance_tiles: Dictionary = {}
+var free_dance_tiles := 6
 var hover_cell := Vector2i(-1, -1)
 var hover_mesh: MeshInstance3D
 var status_label: Label
-const BUILD_TYPES := ["speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser"]
+const BUILD_TYPES := ["dance_tile", "speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser"]
 var selected_kind := "speaker"
 var build_turn := 0
 var preview_root: Node3D
@@ -41,7 +43,7 @@ var object_at_cell: Dictionary = {}
 var next_object_id := 1
 var action_history: Array[Dictionary] = []
 # Prototype economy: prices and starting balance will be balanced later.
-const BUILD_PRICES := {"speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450}
+const BUILD_PRICES := {"dance_tile": 70, "speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450}
 const STARTING_CAPITAL := 6000
 var cash := STARTING_CAPITAL
 var reputation := 55
@@ -372,6 +374,8 @@ func _count_kind(kind: String) -> int:
 
 func _readiness_issues() -> Array[String]:
 	var issues: Array[String] = []
+	if dance_tiles.size() < 6:
+		issues.append("6 dance tiles")
 	if _count_kind("dj") < 1:
 		issues.append("DJ booth")
 	if _count_kind("speaker") < 2:
@@ -460,6 +464,48 @@ func _path_around_guests(start: Vector2i, goal: Vector2i, self_guest: Dictionary
 		cell = previous[cell]
 	return result
 
+func _make_dance_tile(cell: Vector2i, parent: Node3D = club) -> Node3D:
+	var root := Node3D.new()
+	root.name = "DanceTile_%d_%d" % [cell.x, cell.y]
+	parent.add_child(root)
+	root.position = Vector3(cell.x - 7.5, 0, cell.y - 7.5)
+	# The upper face sits 0.07 above the base floor. Guest feet use its height.
+	var tile := _make_box(root, Vector3(0, 0.025, 0), Vector3(0.96, 0.09, 0.96), Color("#443052"))
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color("#443052")
+	mat.metallic = 0.55
+	mat.roughness = 0.28
+	mat.emission_enabled = true
+	mat.emission = Color("#762eac")
+	mat.emission_energy_multiplier = 0.35
+	tile.material_override = mat
+	return root
+
+
+func _add_dance_tile(cell: Vector2i, paid: bool = false) -> void:
+	if dance_tiles.has(cell):
+		return
+	dance_tiles[cell] = {"node": _make_dance_tile(cell), "paid": paid}
+	floor_heights[cell] = 0.07
+
+
+func _remove_dance_tile(cell: Vector2i) -> Dictionary:
+	if not dance_tiles.has(cell):
+		return {}
+	var record: Dictionary = dance_tiles[cell]
+	var node := record["node"] as Node3D
+	if is_instance_valid(node):
+		node.queue_free()
+	dance_tiles.erase(cell)
+	floor_heights[cell] = -0.005
+	return {"paid": bool(record.get("paid", false))}
+
+
+func _clear_dance_tiles() -> void:
+	for cell in dance_tiles.keys().duplicate():
+		_remove_dance_tile(cell)
+
+
 func _cell_position(cell: Vector2i) -> Vector3:
 	return Vector3(cell.x - 7.5, float(floor_heights.get(cell, 0.0)) + 0.05, cell.y - 7.5)
 
@@ -482,7 +528,10 @@ func _guest_too_close(check_position: Vector3, except_guest: Dictionary, minimum
 
 func _dance_destination() -> Vector2i:
 	for attempt in range(35):
-		var candidate := Vector2i(randi_range(3, 12), randi_range(3, 9))
+		var candidates: Array = dance_tiles.keys()
+		if candidates.is_empty():
+			return Vector2i(-1, -1)
+		var candidate: Vector2i = candidates.pick_random()
 		if _walkable(candidate) and not _destination_taken(candidate) and not _path_to(GUEST_ENTRY, candidate).is_empty():
 			return candidate
 	return Vector2i(-1, -1)
@@ -1481,6 +1530,15 @@ func _erase_hovered() -> void:
 		_notify("Finish the night before editing")
 		return
 	var id: int = int(object_at_cell.get(hover_cell, -1))
+	if id < 0 and dance_tiles.has(hover_cell):
+		var removed_tile := _remove_dance_tile(hover_cell)
+		var refund := 35 if bool(removed_tile.get("paid", false)) else 0
+		cash += refund
+		action_history.append({"action": "tile_erase", "cell": hover_cell, "paid": bool(removed_tile.get("paid", false)), "refund": refund})
+		_refresh_economy()
+		_refresh_preview()
+		_update_hover(get_viewport().get_mouse_position())
+		return
 	if id < 0:
 		return
 	var record := _remove_object(id)
@@ -1499,7 +1557,15 @@ func _undo_action() -> void:
 	if action_history.is_empty():
 		return
 	var action: Dictionary = action_history.pop_back()
-	if action["action"] == "place":
+	if action["action"] == "tile_place":
+		_remove_dance_tile(action["cell"])
+		cash += int(action["cost"])
+		if int(action["cost"]) == 0:
+			free_dance_tiles += 1
+	elif action["action"] == "tile_erase":
+		_add_dance_tile(action["cell"], bool(action["paid"]))
+		cash -= int(action["refund"])
+	elif action["action"] == "place":
 		var removed := _remove_object(int(action["id"]))
 		if not removed.is_empty():
 			cash += int(action["cost"])
@@ -1536,6 +1602,8 @@ func _footprint(x: int, y: int, kind: String, turn: int) -> Array[Vector2i]:
 
 func _can_place(x: int, y: int, kind: String = "speaker", turn: int = 0) -> bool:
 	for cell in _footprint(x, y, kind, turn):
+		if kind == "dance_tile" and dance_tiles.has(cell):
+			return false
 		if cell.x <= 0 or cell.y <= 0 or cell.x >= SIZE - 1 or cell.y >= SIZE - 1 or occupied.has(cell):
 			return false
 	return true
@@ -1560,7 +1628,7 @@ func _refresh_preview() -> void:
 		return
 	var preview_kind := str(placed_objects[moving_object_id]["kind"]) if placed_objects.has(moving_object_id) else selected_kind
 	var preview_turn := moving_turn if moving_object_id >= 0 else build_turn
-	var node := _model(preview_root, preview_kind, hover_cell.x, hover_cell.y, preview_turn)
+	var node := _make_dance_tile(hover_cell, preview_root) if preview_kind == "dance_tile" else _model(preview_root, preview_kind, hover_cell.x, hover_cell.y, preview_turn)
 	for mesh_node in node.find_children("*", "MeshInstance3D", true, false):
 		var mesh := mesh_node as MeshInstance3D
 		var overlay := StandardMaterial3D.new()
@@ -1600,7 +1668,7 @@ func _update_hover(screen_pos: Vector2) -> void:
 	preview_root.visible = build_kind_selected or object_dragging
 	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(next_cell, 0.0)) + 0.035, y - 7.5)
 	var mat := hover_mesh.material_override as StandardMaterial3D
-	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if (_can_move_to(x, y) if moving_object_id >= 0 else _can_place(x, y, selected_kind, build_turn)) else Color(1.0, 0.25, 0.3, 0.4))
+	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) or dance_tiles.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if (_can_move_to(x, y) if moving_object_id >= 0 else _can_place(x, y, selected_kind, build_turn)) else Color(1.0, 0.25, 0.3, 0.4))
 	if changed:
 		_refresh_preview()
 	_update_rotate_button()
@@ -1701,16 +1769,22 @@ func _place_selected() -> void:
 	if night_active:
 		_notify("Finish the night before building")
 		return
-	var cost := int(BUILD_PRICES.get(selected_kind, 0))
+	var cost := 0 if selected_kind == "dance_tile" and free_dance_tiles > 0 else int(BUILD_PRICES.get(selected_kind, 0))
 	if cash < cost:
 		_notify("Not enough cash  |  Need €%d" % cost)
 		return
-	var node := _model(club, selected_kind, hover_cell.x, hover_cell.y, build_turn)
-	var id := _register_object(node, selected_kind, hover_cell.x, hover_cell.y, build_turn)
-	_attach_fixture_lighting(node, selected_kind)
-	placed_objects[id]["paid"] = true
+	var id := -1
+	if selected_kind == "dance_tile":
+		_add_dance_tile(hover_cell, cost > 0)
+		if cost == 0:
+			free_dance_tiles -= 1
+	else:
+		var node := _model(club, selected_kind, hover_cell.x, hover_cell.y, build_turn)
+		id = _register_object(node, selected_kind, hover_cell.x, hover_cell.y, build_turn)
+		_attach_fixture_lighting(node, selected_kind)
+		placed_objects[id]["paid"] = true
 	cash -= cost
-	action_history.append({"action": "place", "id": id, "cost": cost})
+	action_history.append({"action": "tile_place", "cell": hover_cell, "cost": cost} if selected_kind == "dance_tile" else {"action": "place", "id": id, "cost": cost})
 	_refresh_economy()
 	_notify("Built %s  |  -€%d" % [selected_kind.capitalize(), cost])
 	_refresh_preview()
@@ -1764,14 +1838,14 @@ func _build_world() -> void:
 	var dance_color := Color("#6a3b7d")
 	for y in range(SIZE):
 		for x in range(SIZE):
-			var dance := x >= 3 and x <= 12 and y >= 3 and y <= 9
-			if dance and models.has("floor"):
-				_model(club, "floor", x, y)
-				continue
-			_make_box(club, Vector3(x - 7.5, 0.025 if dance else -0.055, y - 7.5),
-				Vector3(0.99, 0.15 if dance else 0.10, 0.99),
-				dance_color if dance else (dark if (x + y) % 2 == 0 else light))
-			floor_heights[Vector2i(x, y)] = 0.10 if dance else -0.005
+			_make_box(club, Vector3(x - 7.5, -0.055, y - 7.5),
+				Vector3(0.99, 0.10, 0.99),
+				dark if (x + y) % 2 == 0 else light)
+			floor_heights[Vector2i(x, y)] = -0.005
+	# Sample club has six tiles. A new club starts empty with six free tiles to place.
+	for cell in [Vector2i(6, 6), Vector2i(7, 6), Vector2i(8, 6), Vector2i(6, 7), Vector2i(7, 7), Vector2i(8, 7)]:
+		_add_dance_tile(cell)
+	free_dance_tiles = 0
 	# Original saved ABLETON GYM layout, including rotations.
 	var items := [
 		[6,0,"poster",0],[0,4,"poster",0],[0,12,"poster",0],[15,12,"poster",0],
@@ -1902,7 +1976,8 @@ func _save_club() -> void:
 		"version": 1, "club_name": club_name, "cash": cash, "reputation": reputation,
 		"level": club_level, "xp": club_xp, "total_xp": total_xp,
 		"perk_points": perk_points, "perks": unlocked_perks,
-		"night_number": night_number, "ticket_price": ticket_price, "drink_price": drink_price, "objects": furniture
+		"night_number": night_number, "ticket_price": ticket_price, "drink_price": drink_price, "objects": furniture,
+		"dance_tiles": dance_tiles.keys().map(func(cell: Vector2i) -> Dictionary: return {"x": cell.x, "y": cell.y, "paid": bool(dance_tiles[cell].get("paid", false))}), "free_dance_tiles": free_dance_tiles
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
@@ -1949,9 +2024,15 @@ func _load_club() -> void:
 	_clear_guests()
 	for id in placed_objects.keys().duplicate():
 		_remove_object(int(id))
+	_clear_dance_tiles()
 	occupied.clear()
 	object_at_cell.clear()
 	action_history.clear()
+	free_dance_tiles = maxi(0, int(data.get("free_dance_tiles", 0)))
+	for tile in data.get("dance_tiles", []):
+		var cell := Vector2i(int(tile.get("x", -1)), int(tile.get("y", -1)))
+		if cell.x > 0 and cell.x < SIZE - 1 and cell.y > 0 and cell.y < SIZE - 1:
+			_add_dance_tile(cell, bool(tile.get("paid", false)))
 	for entry in data["objects"]:
 		var kind := str(entry["kind"])
 		var x := int(entry["x"])
@@ -2016,6 +2097,7 @@ func _new_club() -> void:
 	occupied.clear()
 	object_at_cell.clear()
 	action_history.clear()
+	free_dance_tiles = 6
 	poster_labels.clear()
 	poster_led_materials.clear()
 	poster_led_accents.clear()
