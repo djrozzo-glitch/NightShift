@@ -157,6 +157,8 @@ var club_name := "ABLETON GYM"
 var club_name_edit: LineEdit
 var entrance_sign: Label3D
 var poster_labels: Array[Label3D] = []
+var poster_led_materials: Array[StandardMaterial3D] = []
+var poster_led_clock := 0.0
 var club: Node3D
 var missing_models: Array[String] = []
 var club_environment: Environment
@@ -715,6 +717,7 @@ func _guest_arrived(guest: Dictionary) -> void:
 		guest["wait"] = randf_range(9.0, 17.0)
 
 func _process(delta: float) -> void:
+	_animate_poster_leds(delta)
 	_animate_stage_lights(delta)
 	if not night_active or night_paused:
 		return
@@ -2210,6 +2213,15 @@ func _make_sign_letters(board: Node3D, name: String, font_size: int, pixel_size:
 	return label
 
 
+func _animate_poster_leds(delta: float) -> void:
+	if night_active and not night_paused:
+		poster_led_clock += delta * night_speed
+	var pulse := 0.5 + 0.5 * sin(poster_led_clock * 3.5)
+	for material in poster_led_materials:
+		if material != null:
+			material.emission_energy_multiplier = 0.08 + (0.65 + 0.55 * pulse if night_active else 0.0)
+
+
 func _attach_poster_text(node: Node3D) -> void:
 	# The poster pivot is already rotated toward the club interior.
 	# Fit the screen to the actual poster top, preserving its current bottom edge.
@@ -2218,7 +2230,24 @@ func _attach_poster_text(node: Node3D) -> void:
 	var screen_bottom := 0.99 - 1.95 * 0.5
 	var screen_height := maxf(0.01, poster_top - screen_bottom)
 	var board := _make_sign_board(node, "DJPosterBoard", Vector2(0.86, screen_height), Vector3(0, screen_bottom + screen_height * 0.5, 0.16))
+	# LED face sits slightly in front of the existing backing and rim.
+	var face := MeshInstance3D.new()
+	face.name = "LEDFace"
+	var face_mesh := BoxMesh.new()
+	face_mesh.size = Vector3(0.835, maxf(0.01, screen_height - 0.025), 0.008)
+	face.mesh = face_mesh
+	face.position.z = 0.042
+	var led_mat := StandardMaterial3D.new()
+	led_mat.albedo_color = Color("#090711")
+	led_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	led_mat.emission_enabled = true
+	led_mat.emission = Color("#7034b2")
+	led_mat.emission_energy_multiplier = 0.08
+	face.material_override = led_mat
+	board.add_child(face)
+	poster_led_materials.append(led_mat)
 	var label := _make_sign_letters(board, "DJPosterText", 56, 0.0019)
+	label.position.z = 0.065
 	label.position.y = 0.0
 	poster_labels.append(label)
 	_refresh_poster_text()
@@ -2252,6 +2281,7 @@ func _refresh_poster_text() -> void:
 		if is_instance_valid(label) and not label.is_queued_for_deletion():
 			label.text = dj_name if night_active else "UP NEXT\n" + dj_name
 			_set_sign_glow(label, night_active)
+			label.modulate = Color("#f7eaff") if night_active else Color("#aa88c2")
 
 
 func _pointer_over_ui(position: Vector2) -> bool:
