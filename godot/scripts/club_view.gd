@@ -31,6 +31,8 @@ var help_label: Label
 var erase_mode := false
 var moving_object_id := -1
 var moving_turn := 0
+var build_kind_selected := false
+var rotate_object_button: Button
 var placed_objects: Dictionary = {}
 var object_at_cell: Dictionary = {}
 var next_object_id := 1
@@ -1423,7 +1425,7 @@ func _refresh_preview() -> void:
 	for child in preview_root.get_children():
 		preview_root.remove_child(child)
 		child.queue_free()
-	if not build_mode or erase_mode or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
+	if not build_mode or erase_mode or (not build_kind_selected and moving_object_id < 0) or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
 		return
 	var preview_kind := str(placed_objects[moving_object_id]["kind"]) if placed_objects.has(moving_object_id) else selected_kind
 	var preview_turn := moving_turn if moving_object_id >= 0 else build_turn
@@ -1463,13 +1465,32 @@ func _update_hover(screen_pos: Vector2) -> void:
 	var next_cell := Vector2i(x, y)
 	var changed := next_cell != hover_cell
 	hover_cell = next_cell
-	hover_mesh.visible = true
-	preview_root.visible = true
+	hover_mesh.visible = erase_mode or build_kind_selected or moving_object_id >= 0
+	preview_root.visible = build_kind_selected or moving_object_id >= 0
 	hover_mesh.position = Vector3(x - 7.5, float(floor_heights.get(next_cell, 0.0)) + 0.035, y - 7.5)
 	var mat := hover_mesh.material_override as StandardMaterial3D
 	mat.albedo_color = (Color(1.0, 0.35, 0.2, 0.45) if object_at_cell.has(next_cell) else Color(0.5, 0.5, 0.5, 0.25)) if erase_mode else (Color(0.2, 1.0, 0.55, 0.4) if (_can_move_to(x, y) if moving_object_id >= 0 else _can_place(x, y, selected_kind, build_turn)) else Color(1.0, 0.25, 0.3, 0.4))
 	if changed:
 		_refresh_preview()
+	_update_rotate_button()
+
+func _update_rotate_button() -> void:
+	if rotate_object_button == null:
+		return
+	var show_button := build_mode and not night_active and moving_object_id >= 0 and hover_cell.x >= 0
+	rotate_object_button.visible = show_button
+	if show_button:
+		var screen := camera.unproject_position(Vector3(hover_cell.x - 7.5, 1.6, hover_cell.y - 7.5))
+		rotate_object_button.position = screen + Vector2(24, -20)
+
+
+func _rotate_moving_object() -> void:
+	if moving_object_id < 0:
+		return
+	moving_turn = (moving_turn + 1) % 4
+	_refresh_preview()
+	_update_hover(get_viewport().get_mouse_position())
+
 
 func _can_move_to(x: int, y: int) -> bool:
 	if not placed_objects.has(moving_object_id):
@@ -1485,6 +1506,7 @@ func _can_move_to(x: int, y: int) -> bool:
 
 func _cancel_move() -> void:
 	moving_object_id = -1
+	_update_rotate_button()
 	_refresh_preview()
 
 
@@ -1493,9 +1515,10 @@ func _move_click() -> void:
 		if object_at_cell.has(hover_cell):
 			moving_object_id = int(object_at_cell[hover_cell])
 			moving_turn = int(placed_objects[moving_object_id]["turn"])
+			_update_rotate_button()
 			status_label.text = "MOVE OBJECT  |  Click: place  R: rotate  ESC: cancel"
 			_refresh_preview()
-		else:
+		elif build_kind_selected:
 			_place_selected()
 		return
 	if not _can_move_to(hover_cell.x, hover_cell.y):
@@ -1512,6 +1535,7 @@ func _move_click() -> void:
 	placed_objects[new_id]["paid"] = old_record["paid"]
 	action_history.append({"action": "move", "id": new_id, "x": old_x, "y": old_y, "turn": old_turn})
 	moving_object_id = -1
+	_update_rotate_button()
 	status_label.text = "BUILD  |  Click object: move  R: rotate"
 	_refresh_preview()
 	_refresh_economy()
@@ -1544,6 +1568,7 @@ func _place_selected() -> void:
 
 func _enable_erase() -> void:
 	_cancel_move()
+	build_kind_selected = false
 	if night_active:
 		return
 	build_mode = true
@@ -1571,6 +1596,7 @@ func _choose_kind(kind: String) -> void:
 		_notify("%s unlocks at level %d" % [kind.capitalize(), int(LEVEL_UNLOCKS[kind])])
 		return
 	selected_kind = kind
+	build_kind_selected = true
 	erase_mode = false
 	build_mode = true
 	dragging = false
@@ -1837,6 +1863,16 @@ func _build_overlay() -> void:
 	theme_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(theme_root)
+	rotate_object_button = Button.new()
+	rotate_object_button.text = "↻"
+	rotate_object_button.tooltip_text = "Rotate selected object 90° (R)"
+	rotate_object_button.custom_minimum_size = Vector2(42, 42)
+	rotate_object_button.visible = false
+	rotate_object_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	UIStyle.decorate_button(rotate_object_button)
+	rotate_object_button.pressed.connect(_rotate_moving_object)
+	theme_root.add_child(rotate_object_button)
+	rotate_object_button.add_to_group("nightshift_ui_blocker")
 	# Compact management dropdown; all actions stay in the game.
 	var manage_button := MenuButton.new()
 	manage_button.text = "☰  CLUB MENU"
@@ -2489,6 +2525,8 @@ func _input(event: InputEvent) -> void:
 			_enable_erase()
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B and not night_active:
 		build_mode = not build_mode
+		build_kind_selected = false
+		_cancel_move()
 		if not build_mode:
 			erase_mode = false
 		dragging = false
@@ -2500,6 +2538,7 @@ func _input(event: InputEvent) -> void:
 			_cancel_move()
 			return
 		build_mode = false
+		build_kind_selected = false
 		erase_mode = false
 		dragging = false
 		status_label.text = "MODE: CAMERA   |   B: build   ESC: camera"
@@ -2514,7 +2553,7 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_R and build_mode and not erase_mode:
 		if moving_object_id >= 0:
 			moving_turn = (moving_turn + 1) % 4
-		else:
+		elif build_kind_selected:
 			build_turn = (build_turn + 1) % 4
 		_refresh_preview()
 		_update_hover(get_viewport().get_mouse_position())
