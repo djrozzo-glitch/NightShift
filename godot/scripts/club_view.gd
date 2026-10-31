@@ -42,8 +42,9 @@ var next_object_id := 1
 var action_history: Array[Dictionary] = []
 # Prototype economy: prices and starting balance will be balanced later.
 const BUILD_PRICES := {"speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450}
-var cash := 15000
-var reputation := 100
+const STARTING_CAPITAL := 6000
+var cash := STARTING_CAPITAL
+var reputation := 55
 var club_level := 1
 var club_xp := 0
 var total_xp := 0
@@ -99,8 +100,8 @@ var night_mood_samples := 0
 var night_mood_last := 100.0
 var mood_update_clock := 0.0
 const NIGHT_DURATION := 180.0
-var ticket_price := 20
-var drink_price := 8
+var ticket_price := 15
+var drink_price := 7
 var ticket_value_label: Label
 var drink_value_label: Label
 var ticket_slider: HSlider
@@ -127,7 +128,7 @@ var night_report_details: Label
 const MAX_GUESTS := 28
 
 func _xp_needed(level: int) -> int:
-	return 80 + (level - 1) * 45 + (level - 1) * (level - 1) * 5
+	return 210 + (level - 1) * 85 + (level - 1) * (level - 1) * 10
 
 func _award_xp(amount: int) -> int:
 	var gained_levels := 0
@@ -603,7 +604,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(12, 48), "thirst": randf_range(0.25, 0.65), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(18, 60), "thirst": randf_range(0.25, 0.65), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
 	guest_count += 1
 	night_ticket_income += ticket_price
 	cash += ticket_price
@@ -856,7 +857,7 @@ func _process(delta: float) -> void:
 			night_mood_samples += 1
 		_update_night_stats()
 	guest_spawn_clock += step
-	if guest_spawn_clock >= clampf((6.5 + maxf(0.0, float(ticket_price - 20)) * 0.075 - float(club_level - 1) * 0.12 - float(reputation) * 0.018) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < MAX_GUESTS:
+	if guest_spawn_clock >= clampf((7.0 + maxf(0.0, float(ticket_price - 12)) * 0.13 - float(club_level - 1) * 0.16 - float(reputation - 50) * 0.027) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < MAX_GUESTS:
 		guest_spawn_clock = 0.0
 		_spawn_guest()
 	for guest in guests:
@@ -900,7 +901,7 @@ func _process(delta: float) -> void:
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
 				else:
-					var wants_drink := float(guest["thirst"]) > (0.55 + maxf(0.0, float(drink_price - 8)) * 0.012) and int(guest["wallet"]) >= drink_price
+					var wants_drink := float(guest["thirst"]) > (0.48 + maxf(0.0, float(drink_price - 7)) * 0.018) and int(guest["wallet"]) >= drink_price
 					var wants_rest := float(guest["energy"]) < 0.45
 					var activity := "bar" if wants_drink else "sofa" if wants_rest else ("bar" if randf() < 0.3 and int(guest["wallet"]) >= drink_price else "sofa")
 					if not _guest_route(guest, activity):
@@ -1339,13 +1340,14 @@ func _end_night() -> void:
 	# Reputation reflects turnout, bar service and the night's finances.
 	var revenue := night_ticket_income + night_drink_income
 	var profit := revenue - costs
-	var turnout_score := float(guest_count) / float(MAX_GUESTS)
+	var turnout_score := clampf(float(guest_count) / 32.0, 0.0, 1.0)
 	var service_score := float(night_drinks_sold) / float(maxi(1, guest_count))
 	var average_mood := night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last
-	var reputation_delta := roundi((turnout_score - 0.45) * 6.0 + (service_score - 0.3) * 3.0 + (average_mood - 65.0) * 0.14 + (2.0 if profit > 0 else -3.0))
+	var price_pressure := maxf(0.0, float(ticket_price - 20)) * 0.14 + maxf(0.0, float(drink_price - 10)) * 0.18
+	var reputation_delta := roundi((turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure)
 	last_rep_change = clampi(reputation_delta, -7, 7)
 	reputation = clampi(reputation + last_rep_change, 0, 100)
-	last_xp_gain = maxi(5, guest_count * 3 + night_drinks_sold * 2 + (10 if profit > 0 else 0))
+	last_xp_gain = maxi(10, roundi(float(guest_count) * 2.0 + float(night_drinks_sold) * 1.2 + average_mood * 0.22 + (12.0 if profit > 0 else 0.0)))
 	var levels_gained := _award_xp(last_xp_gain)
 	_clear_guests()
 	_refresh_economy()
@@ -1963,7 +1965,7 @@ func _load_club() -> void:
 	if club_name.is_empty():
 		club_name = "ABLETON GYM"
 	_refresh_club_sign()
-	cash = int(data.get("cash", 15000))
+	cash = int(data.get("cash", STARTING_CAPITAL))
 	reputation = clampi(int(data.get("reputation", 100)), 0, 100)
 	club_level = maxi(1, int(data.get("level", 1)))
 	club_xp = maxi(0, int(data.get("xp", 0)))
@@ -1999,8 +2001,64 @@ func _new_club() -> void:
 	if night_active:
 		_notify("Finish the night before starting a new club")
 		return
-	# A new game starts from the original scene; existing save stays intact.
-	get_tree().reload_current_scene()
+	_cancel_move()
+	_clear_guests()
+	# Remove the sample layout, including perimeter posters. Keep the floor,
+	# existing perimeter walls, and the two-cell entrance.
+	var poster_positions: Array[Vector2i] = []
+	for record in placed_objects.values():
+		if str(record["kind"]) == "poster":
+			poster_positions.append(Vector2i(int(record["x"]), int(record["y"])))
+	for id in placed_objects.keys().duplicate():
+		_remove_object(int(id))
+	for cell in poster_positions:
+		_model(club, "wall", cell.x, cell.y, 1 if cell.x == 0 or cell.x == SIZE - 1 else 0)
+	occupied.clear()
+	object_at_cell.clear()
+	action_history.clear()
+	poster_labels.clear()
+	poster_led_materials.clear()
+	poster_led_accents.clear()
+	poster_led_lights.clear()
+	stage_lights.clear()
+	disco_spots.clear()
+	laser_spots.clear()
+	beam_meshes.clear()
+	laser_beams.clear()
+	club_name = "NEW CLUB"
+	club_name_edit.text = club_name
+	_refresh_club_sign()
+	cash = STARTING_CAPITAL
+	reputation = 55
+	club_level = 1
+	club_xp = 0
+	total_xp = 0
+	perk_points = 0
+	unlocked_perks.clear()
+	night_number = 0
+	guest_count = 0
+	night_ticket_income = 0
+	night_drink_income = 0
+	night_drinks_sold = 0
+	night_dj_fee = 0
+	last_xp_gain = 0
+	last_rep_change = 0
+	ticket_price = 15
+	drink_price = 7
+	ticket_slider.value = ticket_price
+	drink_slider.value = drink_price
+	build_mode = false
+	build_kind_selected = false
+	erase_mode = false
+	if build_panel != null:
+		build_panel.hide()
+	build_toggle.text = "BUILD  [B]"
+	_refresh_preview()
+	_refresh_prices()
+	_refresh_economy()
+	_update_night_stats()
+	_refresh_readiness()
+	_notify("NEW CLUB  |  €%d budget. Build DJ booth, 2 speakers, bar and restroom." % STARTING_CAPITAL)
 
 
 func _build_overlay() -> void:
@@ -2052,7 +2110,6 @@ func _build_overlay() -> void:
 	popup.add_theme_stylebox_override("panel", UIStyle.panel_style())
 	popup.add_item("Save Club", 0)
 	popup.add_item("Load Club", 1)
-	popup.add_separator()
 	popup.add_item("New Club", 2)
 	popup.id_pressed.connect(func(id: int) -> void:
 		match id:
