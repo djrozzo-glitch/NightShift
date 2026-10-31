@@ -122,6 +122,11 @@ var night_ticket_income := 0
 var night_drink_income := 0
 var night_dj_fee := 0
 var night_drinks_sold := 0
+var night_bar_missed := 0
+var night_bar_clock := 0.0
+var night_operating_cost := 0
+var night_supply_cost := 0
+var night_capacity_peak := 0
 var night_time_label: Label
 var night_speed_button: Button
 var night_pause_button: Button
@@ -372,6 +377,35 @@ func _count_kind(kind: String) -> int:
 		if record["kind"] == kind:
 			count += 1
 	return count
+
+func _club_capacity() -> int:
+	# Dance area is the primary capacity constraint; restrooms limit safe occupancy.
+	return mini(MAX_GUESTS, mini(dance_tiles.size() * 3, _count_kind("wc") * 24))
+
+
+func _night_utilities() -> int:
+	return 12 + _count_kind("speaker") * 5 + _count_kind("light") * 7 + _count_kind("laser") * 12 + _count_kind("bar") * 8 + _count_kind("wc") * 4
+
+
+func _night_staff_cost() -> int:
+	return STAFF_COST + maxi(0, _count_kind("bar") - 1) * 35 + maxi(0, _count_kind("wc") - 1) * 15
+
+
+func _night_total_expenses() -> int:
+	return night_dj_fee + night_operating_cost + night_supply_cost
+
+
+func _night_advice() -> String:
+	if night_bar_missed >= 3:
+		return "BAR BOTTLENECK: add a bar to serve more guests."
+	if guest_count >= _club_capacity() * 2 and _club_capacity() < MAX_GUESTS:
+		return "CAPACITY LIMIT: expand dance floor / restrooms."
+	if _count_kind("speaker") < 3:
+		return "SOUND: an extra speaker can improve guest mood."
+	if _count_kind("sofa") == 0:
+		return "COMFORT: sofas help tired guests stay happy."
+	return "Keep improving the layout and monitoring guest mood."
+
 
 func _readiness_issues() -> Array[String]:
 	var issues: Array[String] = []
@@ -802,7 +836,10 @@ func _guest_mood(guest: Dictionary) -> float:
 	if float(guest["energy"]) < 0.35 and _count_kind("sofa") == 0:
 		service_penalty += 12.0
 	var dancing_bonus := 9.0 if bool(guest["dance"]) else 0.0
-	return clampf(90.0 + dancing_bonus - thirst_penalty - fatigue_penalty - waiting_penalty - service_penalty, 0.0, 100.0)
+	var sound_bonus := minf(6.0, float(maxi(0, _count_kind("speaker") - 2)) * 2.0)
+	var atmosphere_bonus := minf(8.0, float(_count_kind("light")) * 2.0 + float(_count_kind("laser")) * 3.0 + float(_count_kind("plant2")) * 0.5)
+	var comfort_bonus := minf(4.0, float(_count_kind("table") + _count_kind("stool")) * 0.7)
+	return clampf(86.0 + dancing_bonus + sound_bonus + atmosphere_bonus + comfort_bonus - thirst_penalty - fatigue_penalty - waiting_penalty - service_penalty, 0.0, 100.0)
 
 
 func _average_guest_mood() -> float:
@@ -895,7 +932,9 @@ func _process(delta: float) -> void:
 			night_mood_samples += 1
 		_update_night_stats()
 	guest_spawn_clock += step
-	if guest_spawn_clock >= clampf((7.0 + maxf(0.0, float(ticket_price - 12)) * 0.13 - float(club_level - 1) * 0.16 - float(reputation - 50) * 0.027) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < MAX_GUESTS:
+	night_bar_clock += step
+	night_capacity_peak = maxi(night_capacity_peak, guests.size())
+	if guest_spawn_clock >= clampf((7.0 + maxf(0.0, float(ticket_price - 12)) * 0.13 - float(club_level - 1) * 0.16 - float(reputation - 50) * 0.027) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < _club_capacity():
 		guest_spawn_clock = 0.0
 		_spawn_guest()
 	for guest in guests:
@@ -923,8 +962,13 @@ func _process(delta: float) -> void:
 						guest["wait"] = 5.0
 				elif state == "ordering":
 					# A guest only buys when thirsty enough and able to pay.
-					if float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price:
+					if float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price and night_bar_clock >= 8.0 / float(maxi(1, _count_kind("bar"))):
+						night_bar_clock = 0.0
 						night_drinks_sold += 1
+						night_supply_cost += 2
+					elif float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price:
+						night_bar_missed += 1
+					if night_bar_clock == 0.0:
 						var sale := roundi(float(drink_price) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0)))
 						night_drink_income += sale
 						cash += sale
@@ -1337,6 +1381,11 @@ func _start_night() -> void:
 	night_ticket_income = 0
 	night_drink_income = 0
 	night_drinks_sold = 0
+	night_bar_missed = 0
+	night_bar_clock = 8.0
+	night_supply_cost = 0
+	night_operating_cost = _night_staff_cost() + _night_utilities()
+	night_capacity_peak = 0
 	if night_report_panel != null:
 		night_report_panel.show()
 	_update_night_stats()
@@ -1373,8 +1422,8 @@ func _end_night() -> void:
 	_refresh_club_sign()
 	_set_night_lighting(false)
 	_stop_dj_music()
-	var costs := night_dj_fee + STAFF_COST
-	cash -= STAFF_COST
+	var costs := _night_total_expenses()
+	cash -= night_operating_cost + night_supply_cost
 	# Reputation reflects turnout, bar service and the night's finances.
 	var revenue := night_ticket_income + night_drink_income
 	var profit := revenue - costs
@@ -1403,11 +1452,32 @@ func _update_night_stats() -> void:
 	if night_report_details == null:
 		return
 	var revenue := night_ticket_income + night_drink_income
-	var expenses := night_dj_fee + STAFF_COST
+	var expenses := _night_total_expenses()
 	var profit := revenue - expenses
-	night_report_heading.text = "NIGHT %d  |  %s" % [night_number, "LIVE STATS" if night_active else "REPORT"]
 	var mood := _average_guest_mood() if night_active else (night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last)
-	night_report_details.text = "GUEST MOOD           %d%%\nGUESTS                 %d\nTICKET REVENUE    €%d\nDRINKS SOLD          %d\nBAR REVENUE        €%d\n\nTOTAL REVENUE     €%d\nDJ BOOKING           -€%d\nSTAFF                      -€%d\n\nNET PROFIT             %s€%d\n\nLEVEL %d   XP %d/%d\nREPUTATION %d/100%s" % [roundi(mood), guest_count, night_ticket_income, night_drinks_sold, night_drink_income, revenue, night_dj_fee, STAFF_COST, "+" if profit >= 0 else "-", absi(profit), club_level, club_xp, _xp_needed(club_level), reputation, "" if night_active else "\nNIGHT XP +%d   REP %+d" % [last_xp_gain, last_rep_change]]
+	night_report_heading.text = "NIGHT %d  |  %s" % [night_number, "LIVE STATS" if night_active else "REPORT"]
+	var lines: Array[String] = [
+		"MOOD  %d%%     GUESTS  %d" % [roundi(mood), guest_count],
+		"CAPACITY  %d     PEAK  %d" % [_club_capacity(), night_capacity_peak],
+		"DANCE TILES  %d     BARS  %d" % [dance_tiles.size(), _count_kind("bar")],
+		"DRINKS SOLD  %d     MISSED  %d" % [night_drinks_sold, night_bar_missed],
+		"",
+		"TICKETS                 +€%d" % night_ticket_income,
+		"BAR SALES              +€%d" % night_drink_income,
+		"TOTAL REVENUE      €%d" % revenue,
+		"DJ BOOKING           -€%d" % night_dj_fee,
+		"STAFF + UTILITIES   -€%d" % night_operating_cost,
+		"DRINK SUPPLIES      -€%d" % night_supply_cost,
+		"NET PROFIT            %s€%d" % ["+" if profit >= 0 else "-", absi(profit)],
+		"",
+		"LEVEL %d  XP %d/%d" % [club_level, club_xp, _xp_needed(club_level)],
+		"REPUTATION %d/100" % reputation
+	]
+	if not night_active:
+		lines.append("NIGHT XP +%d    REP %+d" % [last_xp_gain, last_rep_change])
+		lines.append("")
+		lines.append(_night_advice())
+	night_report_details.text = "\n".join(lines)
 
 func _refresh_prices() -> void:
 	if ticket_value_label != null:
