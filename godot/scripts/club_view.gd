@@ -580,6 +580,16 @@ func _guest_visual(parent: Node3D) -> Dictionary:
 		legs.append(_guest_limb(visual, Vector3(side * 0.085, 0.51, 0), Vector3(0.13, 0.48, 0.16), trousers))
 	return {"visual": visual, "arms": arms, "legs": legs, "imported": false, "motions": {}, "motion": "walk"}
 
+const RAVER_FIRST_NAMES_M := ["Bass", "Duke", "Felix", "Milo", "Ricky", "Jasper", "Theo", "Otto", "Benny", "Lenny", "Max", "Arlo", "Dimitri", "Vinyl", "Klaus", "Nico", "Pablo", "Dizzy", "Boris", "Rufus", "Percy", "Remy", "Dexter", "Lars"]
+const RAVER_FIRST_NAMES_F := ["Lola", "Mimi", "Nina", "Roxy", "Luna", "Kiki", "Zelda", "Greta", "Fifi", "Maya", "Juno", "Trixie", "Daisy", "Cleo", "Polly", "Sasha", "Mona", "Rita", "Ivy", "Frida", "Pixie", "Bea", "Nova", "Vera"]
+const RAVER_LAST_NAMES := ["Kickdrum", "Van Bass", "McGroove", "Breakbeat", "Hi-Hat", "Fourfour", "Dubplate", "Sidechain", "Lowpass", "Subwoofer", "Afterhours", "Reverb", "Wobble", "Vinylson", "Snarewell", "De Rave", "Bassington", "Acidberg", "Beatnik", "Fader", "Loopinski", "Technov", "Shuffleton", "Amen", "Oscillator", "Boombox", "Del Delay", "Rumbles", "808", "Backspin", "Kicks", "Detune"]
+
+
+func _generate_raver_name(character: String) -> String:
+	var first_names: Array = RAVER_FIRST_NAMES_F if character.ends_with("_f") else RAVER_FIRST_NAMES_M
+	return str(first_names.pick_random()) + " " + str(RAVER_LAST_NAMES.pick_random())
+
+
 func _spawn_guest() -> void:
 	if guests.size() >= MAX_GUESTS or not _walkable(GUEST_ENTRY) or _guest_too_close(_cell_position(GUEST_ENTRY), {}):
 		return
@@ -593,7 +603,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(12, 48), "thirst": randf_range(0.25, 0.65), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(12, 48), "thirst": randf_range(0.25, 0.65), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
 	guest_count += 1
 	night_ticket_income += ticket_price
 	cash += ticket_price
@@ -794,7 +804,7 @@ func _refresh_guest_info(delta: float) -> void:
 			guest_thought = str(RAVER_THOUGHTS[category].pick_random())
 			guest_thought_clock = randf_range(6.0, 11.0)
 		var activity := str(guest.get("state", "dancing")).replace("_", " ").capitalize()
-		guest_info_label.text = "RAVER  |  %s\nMOOD       %d%%\nTHIRST      %d%%\nENERGY     %d%%\n\n“%s”" % [activity, roundi(float(guest.get("mood", 85.0))), roundi(float(guest["thirst"]) * 100.0), roundi(float(guest["energy"]) * 100.0), guest_thought]
+		guest_info_label.text = "%s  |  %s\nMOOD       %d%%\nTHIRST      %d%%\nENERGY     %d%%\n\n“%s”" % [str(guest.get("full_name", "Raver")), activity, roundi(float(guest.get("mood", 85.0))), roundi(float(guest["thirst"]) * 100.0), roundi(float(guest["energy"]) * 100.0), guest_thought]
 		return
 	guest_info_panel.hide()
 
