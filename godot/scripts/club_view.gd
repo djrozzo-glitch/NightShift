@@ -2212,7 +2212,12 @@ func _make_sign_letters(board: Node3D, name: String, font_size: int, pixel_size:
 
 func _attach_poster_text(node: Node3D) -> void:
 	# The poster pivot is already rotated toward the club interior.
-	var board := _make_sign_board(node, "DJPosterBoard", Vector2(0.86, 1.95), Vector3(0, 0.99, 0.16))
+	# Fit the screen to the actual poster top, preserving its current bottom edge.
+	# Measure before adding the screen so it cannot affect the GLB bounds.
+	var poster_top := _visual_bounds(node).end.y
+	var screen_bottom := 0.99 - 1.95 * 0.5
+	var screen_height := maxf(0.01, poster_top - screen_bottom)
+	var board := _make_sign_board(node, "DJPosterBoard", Vector2(0.86, screen_height), Vector3(0, screen_bottom + screen_height * 0.5, 0.16))
 	var label := _make_sign_letters(board, "DJPosterText", 56, 0.0019)
 	label.position.y = 0.0
 	poster_labels.append(label)
