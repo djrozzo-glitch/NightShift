@@ -135,7 +135,7 @@ var night_pause_button: Button
 var night_report_panel: PanelContainer
 var night_report_heading: Label
 var night_report_details: Label
-const MAX_GUESTS := 28
+const MAX_GUESTS := 48
 
 func _xp_needed(level: int) -> int:
 	return 210 + (level - 1) * 85 + (level - 1) * (level - 1) * 10
@@ -382,7 +382,7 @@ func _count_kind(kind: String) -> int:
 
 func _club_capacity() -> int:
 	# Dance area is the primary capacity constraint; restrooms limit safe occupancy.
-	return mini(MAX_GUESTS, mini(dance_tiles.size() * 3, _count_kind("wc") * 48))
+	return mini(dance_tiles.size() * 3, _count_kind("wc") * 48)
 
 
 func _night_utilities() -> int:
@@ -1496,6 +1496,7 @@ func _update_night_stats() -> void:
 	var lines: Array[String] = [
 		"MOOD  %d%%     GUESTS  %d" % [roundi(mood), guest_count],
 		"CAPACITY  %d     PEAK  %d" % [_club_capacity(), night_capacity_peak],
+		"VISIBLE GUEST LIMIT  %d" % MAX_GUESTS,
 		"DANCE TILES  %d     BARS  %d" % [dance_tiles.size(), _count_kind("bar")],
 		"DRINKS SOLD  %d     MISSED  %d" % [night_drinks_sold, night_bar_missed],
 		"WC VISITS  %d     WC WAITS  %d" % [night_wc_visits, night_wc_waits],
@@ -2681,8 +2682,19 @@ func _build_overlay() -> void:
 	night_report_panel.offset_top = 0
 	night_report_panel.offset_right = 0
 	night_report_panel.offset_bottom = 0
+	# Give the report its own wheel-controlled viewport; it must not enlarge the HUD.
+	var report_scroll := ScrollContainer.new()
+	report_scroll.name = "NightReportScroll"
+	report_scroll.custom_minimum_size = Vector2(0, 260)
+	report_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	report_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	report_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	report_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	night_report_panel.add_child(report_scroll)
+	report_scroll.add_to_group("nightshift_ui_blocker")
 	var report_content := VBoxContainer.new()
-	night_report_panel.add_child(report_content)
+	report_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	report_scroll.add_child(report_content)
 	night_report_heading = Label.new()
 	UIStyle.decorate_label(night_report_heading, 17)
 	night_report_heading.add_theme_color_override("font_color", Color("#e2a2d9"))
@@ -2909,7 +2921,7 @@ func _input(event: InputEvent) -> void:
 		dragging = false
 	if event is InputEventMouseMotion and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		dragging = false
-	if event is InputEventMouse and _pointer_over_ui(event.position):
+	if (event is InputEventMouse or event is InputEventPanGesture or event is InputEventMagnifyGesture) and _pointer_over_ui(event.position):
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			dragging = false
 		return
