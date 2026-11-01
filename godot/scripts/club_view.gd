@@ -124,6 +124,8 @@ var night_dj_fee := 0
 var night_drinks_sold := 0
 var night_bar_missed := 0
 var night_bar_clock := 0.0
+var night_wc_visits := 0
+var night_wc_waits := 0
 var night_operating_cost := 0
 var night_supply_cost := 0
 var night_capacity_peak := 0
@@ -380,15 +382,15 @@ func _count_kind(kind: String) -> int:
 
 func _club_capacity() -> int:
 	# Dance area is the primary capacity constraint; restrooms limit safe occupancy.
-	return mini(MAX_GUESTS, mini(dance_tiles.size() * 3, _count_kind("wc") * 24))
+	return mini(MAX_GUESTS, mini(dance_tiles.size() * 3, _count_kind("wc") * 48))
 
 
 func _night_utilities() -> int:
-	return 12 + _count_kind("speaker") * 5 + _count_kind("light") * 7 + _count_kind("laser") * 12 + _count_kind("bar") * 8 + _count_kind("wc") * 4
+	return 10 + _count_kind("speaker") * 2 + _count_kind("light") * 3 + _count_kind("laser") * 5 + _count_kind("bar") * 3 + _count_kind("wc") * 3
 
 
 func _night_staff_cost() -> int:
-	return STAFF_COST + maxi(0, _count_kind("bar") - 1) * 35 + maxi(0, _count_kind("wc") - 1) * 15
+	return STAFF_COST + maxi(0, _count_kind("bar") - 1) * 8 + maxi(0, _count_kind("wc") - 1) * 8
 
 
 func _night_total_expenses() -> int:
@@ -396,9 +398,9 @@ func _night_total_expenses() -> int:
 
 
 func _night_advice() -> String:
-	if night_bar_missed >= 3:
+	if night_bar_missed >= 3 and _count_kind("bar") < 2:
 		return "BAR BOTTLENECK: add a bar to serve more guests."
-	if guest_count >= _club_capacity() * 2 and _club_capacity() < MAX_GUESTS:
+	if night_capacity_peak >= _club_capacity() and _club_capacity() < MAX_GUESTS:
 		return "CAPACITY LIMIT: expand dance floor / restrooms."
 	if _count_kind("speaker") < 3:
 		return "SOUND: an extra speaker can improve guest mood."
@@ -676,7 +678,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(18, 60), "thirst": randf_range(0.25, 0.65), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(18, 60), "thirst": randf_range(0.25, 0.65), "wc_need": randf_range(0.0, 0.35), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
 	guest_count += 1
 	night_ticket_income += ticket_price
 	cash += ticket_price
@@ -690,6 +692,13 @@ func _service_destination(kind: String, start: Vector2i, guest: Dictionary) -> D
 	var best_length := 999999
 	for object_id in placed_objects:
 		var record: Dictionary = placed_objects[object_id]
+		if kind == "wc":
+			var reservations := 0
+			for other in guests:
+				if other != guest and int(other.get("service_object", -1)) == int(object_id) and str(other.get("state", "")) in ["walk_wc", "using_wc"]:
+					reservations += 1
+			if reservations >= 4:
+				continue
 		if kind == "sofa":
 			var reserved := false
 			for other in guests:
@@ -805,6 +814,12 @@ func _guest_arrived(guest: Dictionary) -> void:
 	if state == "walk_bar":
 		guest["state"] = "ordering"
 		guest["wait"] = randf_range(2.0, 4.0)
+	elif state == "walk_wc":
+		guest["state"] = "using_wc"
+		guest["wait"] = 1.0
+		guest["wc_need"] = 0.0
+		guest["visual"].visible = false
+		night_wc_visits += 1
 	elif state == "walk_sofa":
 		guest["state"] = "resting"
 		guest["wait"] = 2.0
@@ -835,11 +850,12 @@ func _guest_mood(guest: Dictionary) -> float:
 		service_penalty += 22.0
 	if float(guest["energy"]) < 0.35 and _count_kind("sofa") == 0:
 		service_penalty += 12.0
+	var wc_penalty := maxf(0.0, float(guest.get("wc_need", 0.0)) - 0.75) * 65.0
 	var dancing_bonus := 9.0 if bool(guest["dance"]) else 0.0
 	var sound_bonus := minf(6.0, float(maxi(0, _count_kind("speaker") - 2)) * 2.0)
 	var atmosphere_bonus := minf(8.0, float(_count_kind("light")) * 2.0 + float(_count_kind("laser")) * 3.0 + float(_count_kind("plant2")) * 0.5)
 	var comfort_bonus := minf(4.0, float(_count_kind("table") + _count_kind("stool")) * 0.7)
-	return clampf(86.0 + dancing_bonus + sound_bonus + atmosphere_bonus + comfort_bonus - thirst_penalty - fatigue_penalty - waiting_penalty - service_penalty, 0.0, 100.0)
+	return clampf(86.0 + dancing_bonus + sound_bonus + atmosphere_bonus + comfort_bonus - thirst_penalty - fatigue_penalty - waiting_penalty - service_penalty - wc_penalty, 0.0, 100.0)
 
 
 func _average_guest_mood() -> float:
@@ -941,12 +957,20 @@ func _process(delta: float) -> void:
 		# Guest needs evolve during the night and influence where they go.
 		guest["thirst"] = minf(1.0, float(guest["thirst"]) + step * (0.0025 if bool(guest["dance"]) else 0.001))
 		guest["energy"] = maxf(0.0, float(guest["energy"]) - step * (0.0018 if bool(guest["dance"]) else 0.0005))
+		guest["wc_need"] = minf(1.0, float(guest.get("wc_need", 0.0)) + step * 0.002 + (step * 0.0005 if bool(guest["dance"]) else 0.0))
 		guest["mood"] = _guest_mood(guest)
 		var state: String = guest["state"]
-		if state in ["dancing", "ordering", "resting", "sitting", "standing"]:
+		if state in ["dancing", "ordering", "resting", "sitting", "standing", "using_wc"]:
 			guest["wait"] = float(guest["wait"]) - step
 			if float(guest["wait"]) <= 0.0:
-				if state == "sitting":
+				if state == "using_wc":
+					guest["visual"].visible = true
+					guest["wc_need"] = 0.0
+					if not _guest_route(guest, "dance"):
+						guest["state"] = "dancing"
+						guest["dance"] = true
+						guest["wait"] = 5.0
+				elif state == "sitting":
 					guest["state"] = "resting"
 					guest["wait"] = randf_range(5.0, 7.0)
 				elif state == "resting" and bool(guest.get("seated", false)):
@@ -961,21 +985,27 @@ func _process(delta: float) -> void:
 						guest["dance"] = true
 						guest["wait"] = 5.0
 				elif state == "ordering":
-					# A guest only buys when thirsty enough and able to pay.
-					if float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price and night_bar_clock >= 8.0 / float(maxi(1, _count_kind("bar"))):
+					var wants_to_buy := float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price
+					var service_interval := 5.0 / float(maxi(1, _count_kind("bar")))
+					if wants_to_buy and night_bar_clock >= service_interval:
 						night_bar_clock = 0.0
 						night_drinks_sold += 1
 						night_supply_cost += 2
-					elif float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price:
-						night_bar_missed += 1
-					if night_bar_clock == 0.0:
 						var sale := roundi(float(drink_price) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0)))
 						night_drink_income += sale
 						cash += sale
 						guest["wallet"] = int(guest["wallet"]) - drink_price
 						guest["thirst"] = maxf(0.0, float(guest["thirst"]) - 0.65)
+						guest["wc_need"] = minf(1.0, float(guest["wc_need"]) + 0.22)
 						_update_night_stats()
 						_refresh_economy()
+					elif wants_to_buy and float(guest.get("bar_waited", 0.0)) < 12.0:
+						guest["bar_waited"] = float(guest.get("bar_waited", 0.0)) + 2.0
+						guest["wait"] = 2.0
+						continue
+					elif wants_to_buy:
+						night_bar_missed += 1
+					guest["bar_waited"] = 0.0
 					guest["visits"] = int(guest["visits"]) + 1
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
@@ -983,6 +1013,11 @@ func _process(delta: float) -> void:
 					if not _guest_route(guest, "dance"):
 						guest["wait"] = 4.0
 				else:
+					var wants_wc := float(guest.get("wc_need", 0.0)) > 0.7
+					if wants_wc and _guest_route(guest, "wc"):
+						continue
+					if wants_wc:
+						night_wc_waits += 1
 					var wants_drink := float(guest["thirst"]) > (0.48 + maxf(0.0, float(drink_price - 7)) * 0.018) and int(guest["wallet"]) >= drink_price
 					var wants_rest := float(guest["energy"]) < 0.45
 					var activity := "bar" if wants_drink else "sofa" if wants_rest else ("bar" if randf() < 0.3 and int(guest["wallet"]) >= drink_price else "sofa")
@@ -1031,7 +1066,7 @@ func _process(delta: float) -> void:
 			visual.rotation.z = sin(phase * 0.5) * 0.11
 			continue
 		visual.rotation.z = 0.0
-		if str(guest["state"]) in ["ordering", "resting", "sitting", "standing"]:
+		if str(guest["state"]) in ["ordering", "resting", "sitting", "standing", "using_wc"]:
 			continue
 		var path: Array = guest["path"]
 		if path.is_empty():
@@ -1382,7 +1417,9 @@ func _start_night() -> void:
 	night_drink_income = 0
 	night_drinks_sold = 0
 	night_bar_missed = 0
-	night_bar_clock = 8.0
+	night_bar_clock = 0.0
+	night_wc_visits = 0
+	night_wc_waits = 0
 	night_supply_cost = 0
 	night_operating_cost = _night_staff_cost() + _night_utilities()
 	night_capacity_peak = 0
@@ -1461,6 +1498,7 @@ func _update_night_stats() -> void:
 		"CAPACITY  %d     PEAK  %d" % [_club_capacity(), night_capacity_peak],
 		"DANCE TILES  %d     BARS  %d" % [dance_tiles.size(), _count_kind("bar")],
 		"DRINKS SOLD  %d     MISSED  %d" % [night_drinks_sold, night_bar_missed],
+		"WC VISITS  %d     WC WAITS  %d" % [night_wc_visits, night_wc_waits],
 		"",
 		"TICKETS                 +€%d" % night_ticket_income,
 		"BAR SALES              +€%d" % night_drink_income,
