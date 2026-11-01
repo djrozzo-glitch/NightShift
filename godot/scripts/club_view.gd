@@ -153,6 +153,9 @@ func _award_xp(amount: int) -> int:
 
 const GUEST_CHARACTER_NAMES := ["baggy_m", "fashion_f", "jungle_f", "raver_f", "raver_m"]
 var guest_models: Dictionary = {}
+var dj_character_variants: Dictionary = {}
+var dj_performers: Array[Dictionary] = []
+var dj_animation_clock := 0.0
 
 const GUEST_ENTRY := Vector2i(7, 14)
 const WALK_DIRS := [Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1)]
@@ -166,6 +169,7 @@ const DJ_ROSTER := [
 func _ready() -> void:
 	_build_world()
 	_load_guest_models()
+	_load_dj_character_models()
 	guest_layer = Node3D.new()
 	guest_layer.name = "Guests"
 	add_child(guest_layer)
@@ -576,6 +580,77 @@ func _load_guest_models() -> void:
 		if variants.has("walk") and variants.has("dance"):
 			guest_models[character_name] = variants
 
+func _load_dj_character_models() -> void:
+	dj_character_variants.clear()
+	for motion in ["idle", "standing", "handdsup"]:
+		var path := "res://characters/deejay_%s.glb" % motion
+		if ResourceLoader.exists(path):
+			var packed := load(path) as PackedScene
+			if packed != null:
+				dj_character_variants[motion] = packed
+
+
+func _clear_dj_performers() -> void:
+	for performer in dj_performers:
+		var anchor := performer.get("anchor") as Node3D
+		if is_instance_valid(anchor):
+			anchor.queue_free()
+	dj_performers.clear()
+
+
+func _show_dj_motion(performer: Dictionary, motion: String) -> void:
+	var variants: Dictionary = performer["variants"]
+	for key in variants:
+		var visual := variants[key] as Node3D
+		if is_instance_valid(visual):
+			visual.visible = key == motion
+
+
+func _spawn_dj_performers() -> void:
+	_clear_dj_performers()
+	if dj_character_variants.is_empty():
+		return
+	for record in placed_objects.values():
+		if str(record["kind"]) != "dj":
+			continue
+		var booth := record["node"] as Node3D
+		if not is_instance_valid(booth):
+			continue
+		# The booth pivot carries its 90-degree rotation. +Z is the operator
+		# side (below the decks in the default isometric view).
+		var anchor := Node3D.new()
+		anchor.name = "PerformingDJ"
+		booth.add_child(anchor)
+		anchor.position = Vector3(0.0, 0.0, 1.48)
+		anchor.rotation.y = PI
+		var variants: Dictionary = {}
+		for motion in ["idle", "standing", "handdsup"]:
+			if not dj_character_variants.has(motion):
+				continue
+			var visual := _guest_animated_model(dj_character_variants[motion], anchor)
+			if visual != null:
+				variants[motion] = visual
+		if variants.is_empty():
+			anchor.queue_free()
+			continue
+		var performer := {"anchor": anchor, "variants": variants}
+		dj_performers.append(performer)
+		_show_dj_motion(performer, "idle" if variants.has("idle") else str(variants.keys()[0]))
+
+
+func _animate_dj_performers(step: float) -> void:
+	if dj_performers.is_empty():
+		return
+	dj_animation_clock += step
+	var phase := fmod(dj_animation_clock, 18.0)
+	for performer in dj_performers:
+		var variants: Dictionary = performer["variants"]
+		var motion := "handdsup" if phase > 14.0 else ("standing" if phase > 9.0 else "idle")
+		if not variants.has(motion):
+			motion = "idle" if variants.has("idle") else str(variants.keys()[0])
+		_show_dj_motion(performer, motion)
+
+
 func _guest_animated_model(packed: PackedScene, parent: Node3D) -> Node3D:
 	var imported := packed.instantiate() as Node3D
 	if imported == null:
@@ -932,6 +1007,7 @@ func _process(delta: float) -> void:
 	if not night_active or night_paused:
 		return
 	var step := delta * night_speed
+	_animate_dj_performers(step)
 	night_elapsed += step
 	if night_elapsed >= NIGHT_DURATION:
 		_end_night()
@@ -1431,6 +1507,8 @@ func _start_night() -> void:
 	_refresh_poster_text()
 	_refresh_club_sign()
 	_set_night_lighting(true)
+	dj_animation_clock = 0.0
+	_spawn_dj_performers()
 	_play_dj_music()
 	night_report_panel.show()
 	_clear_guests()
@@ -1458,6 +1536,7 @@ func _end_night() -> void:
 	_refresh_poster_text()
 	_refresh_club_sign()
 	_set_night_lighting(false)
+	_clear_dj_performers()
 	_stop_dj_music()
 	var costs := _night_total_expenses()
 	cash -= night_operating_cost + night_supply_cost
@@ -2209,6 +2288,7 @@ func _new_club() -> void:
 		return
 	_cancel_move()
 	_clear_guests()
+	_clear_dj_performers()
 	_clear_dance_tiles()
 	# Remove the sample layout, including perimeter posters. Keep the floor,
 	# existing perimeter walls, and the two-cell entrance.
