@@ -102,7 +102,7 @@ var night_mood_total := 0.0
 var night_mood_samples := 0
 var night_mood_last := 100.0
 var mood_update_clock := 0.0
-const NIGHT_DURATION := 180.0
+const NIGHT_DURATION := 240.0  # Four in-game hours; one game hour = 60 simulation seconds.
 var ticket_price := 15
 var drink_price := 7
 var ticket_value_label: Label
@@ -1568,7 +1568,7 @@ func _start_night() -> void:
 	night_speed_button.disabled = false
 	night_pause_button.text = "PAUSE"
 	night_speed_button.text = "1× SPEED"
-	night_time_label.text = "TIME LEFT  3:00  |  €0 TICKETS  €0 BAR"
+	night_time_label.text = "TIME LEFT  4:00  |  €0 TICKETS  €0 BAR"
 
 func _end_night() -> void:
 	if not night_active:
@@ -2755,8 +2755,8 @@ func _build_overlay() -> void:
 	night_speed_button.disabled = true
 	UIStyle.decorate_button(night_speed_button)
 	night_speed_button.pressed.connect(func() -> void:
-		night_speed = 2.0 if night_speed == 1.0 else 1.0
-		night_speed_button.text = "2× SPEED" if night_speed == 2.0 else "1× SPEED"
+		night_speed = 2.0 if night_speed == 1.0 else (4.0 if night_speed == 2.0 else 1.0)
+		night_speed_button.text = "%d× SPEED" % int(night_speed)
 	)
 	speed_controls.add_child(night_speed_button)
 	night_report_panel = PanelContainer.new()
