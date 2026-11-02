@@ -44,24 +44,24 @@ for(let i=-7.5;i<=7.5;i++){
 }
 // Replace placeholder rectangles with optimized floor.glb tiles, keeping a fallback.
 const danceTilePositions=[];
-for(let x=-3.5;x<=3.5;x++)for(let z=-2.5;z<=3.5;z++)danceTilePositions.push([x,z]);
+for(let x=-3.5;x<=3.5;x++)for(let z=-5.5;z<=.5;z++)danceTilePositions.push([x,z]);
 const dancePlaceholders=danceTilePositions.map(([x,z])=>block(.98,.05,.98,x,.035,z,danceMat));
 // Tile grid: 1x1 objects sit at half-integers, 2x1 furniture at whole integers.
 const decor=[
  ['dj_stand_upgraded',0,-6.5,2.0,0],
  ['speaker_updated',-3.5,-6.5,.95,0],['speaker_updated',3.5,-6.5,.95,0],
  // Two-tile bars and sofas: exactly one tile from the inner wall, clear of posters.
- ['bar_new',-6.5,-4,2.0,Math.PI/2],['bar_new',6.5,-4,2.0,-Math.PI/2],
- ['sofa_upgraded',-6.5,5,2.0,Math.PI/2],['sofa_upgraded',6.5,5,2.0,-Math.PI/2],
- ['sofa_upgraded',-3,6.5,2.0,Math.PI],['sofa_upgraded',3,6.5,2.0,Math.PI],
+ ['bar_new',-7.25,-4,2.0,Math.PI/2],['bar_new',7.25,-4,2.0,-Math.PI/2],
+ ['sofa_upgraded',-7.25,5,2.0,Math.PI/2],['sofa_upgraded',7.25,5,2.0,-Math.PI/2],
+ ['sofa_upgraded',-3,7.25,2.0,Math.PI],['sofa_upgraded',3,7.25,2.0,Math.PI],
  ['plant_big',-6.5,-6.5,.95,0],['plant_big',6.5,-6.5,.95,0],
  ['plant_big',-6.5,6.5,.95,0],['plant_big',6.5,6.5,.95,0],
  ['plant2',-6.5,.5,.85,0],['plant2',6.5,.5,.85,0],
  ['plant2',-1.5,-6.5,.85,0],['plant2',1.5,-6.5,.85,0],
  // Triple the former size; all lamps remain snapped to individual tiles.
- ['laser_new',-5.5,-4.5,.8625,0],['laser_new',5.5,-4.5,.8625,0],
- ['light',-5.5,-1.5,.8625,0],['light',5.5,-1.5,.8625,0],
- ['discoball',-5.5,3.5,.9375,0],['discoball',5.5,3.5,.9375,0],
+ ['laser_new',-4.5,-4.5,.8625,Math.PI/2],['laser_new',4.5,-4.5,.8625,-Math.PI/2],
+ ['light',-4.5,-1.5,.8625,Math.PI/2],['light',4.5,-1.5,.8625,-Math.PI/2],
+ ['discoball',-4.5,3.5,.9375,0],['discoball',4.5,3.5,.9375,0],
  ['poster',-7.55,-3.2,1.2,Math.PI/2],['poster',-7.55,2.6,1.2,Math.PI/2],
  ['poster',7.55,-2.5,1.2,-Math.PI/2],['poster',2.8,-7.55,1.2,0],
  ['entrance',0,7.8,2.7,0],
@@ -135,8 +135,8 @@ function animateFixtures(t,dt,active){
    fx.lamp.intensity=active?1.7:0;
    fx.lamp.getWorldPosition(beamStart);
    fx.beams.forEach((beam,i)=>{
-    const a=t*(.8+i*.17)+i*1.7+(fx.holder.position.x>0?2:0);
-    beamEnd.set(Math.sin(a)*2.8,.08,Math.cos(a*.86)*2.6);
+    const a=t*(.8+i*.17)+i*1.7;
+    beamEnd.set(Math.sin(a)*2.8,.08,-2.5+Math.cos(a*.86)*2.0);
     const dir=beamEnd.clone().sub(beamStart),len=dir.length();
     beam.position.copy(beamStart).addScaledVector(dir,.5);
     beam.quaternion.setFromUnitVectors(upVector,dir.normalize());
