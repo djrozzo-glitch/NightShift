@@ -156,6 +156,8 @@ var night_report_panel: PanelContainer
 var night_report_heading: Label
 var night_report_details: Label
 const MAX_GUESTS := 48
+const EXPANDED_GUEST_LIMIT := 72
+const OBJECT_UPKEEP := {"sofa": 2, "table": 1, "stool": 1, "plant2": 1, "rail": 1, "poster": 1}
 
 func _milestone_achieved(id: String, profit: int) -> bool:
 	match id:
@@ -450,13 +452,45 @@ func _count_kind(kind: String) -> int:
 			count += 1
 	return count
 
+func _visible_guest_limit() -> int:
+	return EXPANDED_GUEST_LIMIT if expanded else MAX_GUESTS
+
+
 func _club_capacity() -> int:
-	# Dance area is the primary capacity constraint; restrooms limit safe occupancy.
-	return mini(dance_tiles.size() * 3, _count_kind("wc") * 48)
+	return mini(_visible_guest_limit(), dance_tiles.size() * 3, _count_kind("wc") * 48)
+
+
+func _night_furniture_upkeep() -> int:
+	var upkeep := 0
+	for record in placed_objects.values():
+		upkeep += int(OBJECT_UPKEEP.get(str(record["kind"]), 0))
+	return upkeep
+
+
+func _build_economics_hint(kind: String) -> String:
+	var note := ""
+	match kind:
+		"dance_tile":
+			note = "+3 potential capacity, subject to venue and WC limits."
+		"wc":
+			note = "+48 restroom capacity; 4 simultaneous users."
+		"bar":
+			note = "Extra service point; useful when bar queues rise."
+		"speaker":
+			note = "Mood bonus above 2 speakers; capped at +6."
+		"light", "laser", "plant2":
+			note = "Atmosphere bonus with diminishing returns."
+		"sofa":
+			note = "Rest area for tired guests."
+		"poster", "rail", "table", "stool":
+			note = "Layout or decoration; no guaranteed direct income."
+		_:
+			note = "Club infrastructure."
+	return "€%d purchase | €%d/night extra upkeep\n%s\nPayback depends on added net profit." % [_build_price(kind), int(OBJECT_UPKEEP.get(kind, 0)), note]
 
 
 func _night_utilities() -> int:
-	return 10 + _count_kind("speaker") * 2 + _count_kind("light") * 3 + _count_kind("laser") * 5 + _count_kind("bar") * 3 + _count_kind("wc") * 3
+	return 10 + _count_kind("speaker") * 2 + _count_kind("light") * 3 + _count_kind("laser") * 5 + _count_kind("bar") * 3 + _count_kind("wc") * 3 + _night_furniture_upkeep() + (12 if expanded else 0)
 
 
 func _night_staff_cost() -> int:
@@ -476,7 +510,7 @@ func _night_advice() -> String:
 		return "WC QUEUES: add another restroom or clear its approaches."
 	if night_bar_missed >= 3 and _count_kind("bar") < 2:
 		return "BAR BOTTLENECK: add a bar to serve more guests."
-	if night_capacity_peak >= _club_capacity() and _club_capacity() < MAX_GUESTS:
+	if night_capacity_peak >= _club_capacity() and _club_capacity() < _visible_guest_limit():
 		return "CAPACITY LIMIT: expand dance floor / restrooms."
 	if _count_kind("speaker") < 3:
 		return "SOUND: an extra speaker can improve guest mood."
@@ -813,7 +847,7 @@ func _generate_raver_name(character: String) -> String:
 
 
 func _spawn_guest() -> bool:
-	if guests.size() >= MAX_GUESTS or not _walkable(GUEST_ENTRY) or _guest_too_close(_cell_position(GUEST_ENTRY), {}):
+	if guests.size() >= _visible_guest_limit() or not _walkable(GUEST_ENTRY) or _guest_too_close(_cell_position(GUEST_ENTRY), {}):
 		return false
 	var destination := _dance_destination()
 	if destination.x < 0:
@@ -1746,7 +1780,7 @@ func _update_night_stats() -> void:
 		"MOOD  %d%%     GUESTS  %d" % [roundi(mood), guest_count],
 		"CAPACITY  %d     PEAK  %d" % [_club_capacity(), night_capacity_peak],
 		"GUESTS LEFT  %d     UNHAPPY  %d" % [night_guests_left, night_unhappy_departures],
-		"VISIBLE GUEST LIMIT  %d" % MAX_GUESTS,
+		"VISIBLE GUEST LIMIT  %d" % _visible_guest_limit(),
 		"DANCE TILES  %d     BARS  %d" % [dance_tiles.size(), _count_kind("bar")],
 		"DRINKS SOLD  %d     MISSED  %d" % [night_drinks_sold, night_bar_missed],
 		"WC VISITS  %d     WC WAITS  %d" % [night_wc_visits, night_wc_waits],
@@ -1791,7 +1825,7 @@ func _refresh_build_catalog() -> void:
 		var label := str(BUILD_NAMES.get(kind, kind.capitalize()))
 		var price := _build_price(kind)
 		button.text = "🔒 %s  ·  LVL %d" % [label, required_level] if locked else "%s   €%d" % [label, price]
-		button.tooltip_text = "Unlocks at level %d" % required_level if locked else "%s · €%d" % [label, price]
+		button.tooltip_text = "Unlocks at level %d\n%s" % [required_level, _build_economics_hint(kind)] if locked else _build_economics_hint(kind)
 		button.disabled = locked
 
 
