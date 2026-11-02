@@ -74,6 +74,14 @@ const PERK_OPTIONS := [
 ]
 var last_rep_change := 0
 var last_xp_gain := 0
+var completed_milestones: Array[String] = []
+var profitable_night_streak := 0
+const CLUB_MILESTONES := [
+	{"id": "first_profit", "name": "FIRST PROFIT", "reward": 150},
+	{"id": "full_house", "name": "PACKED BASEMENT", "reward": 200},
+	{"id": "drinks_30", "name": "BAR IS BOOMING", "reward": 150},
+	{"id": "profit_streak", "name": "THREE GOOD NIGHTS", "reward": 250}
+]
 var economy_label: Label
 var notice_label: Label
 var readiness_label: Label
@@ -141,6 +149,42 @@ var night_report_panel: PanelContainer
 var night_report_heading: Label
 var night_report_details: Label
 const MAX_GUESTS := 48
+
+func _milestone_achieved(id: String, profit: int) -> bool:
+	match id:
+		"first_profit":
+			return profit > 0
+		"full_house":
+			return night_capacity_peak >= 40
+		"drinks_30":
+			return night_drinks_sold >= 30
+		"profit_streak":
+			return profitable_night_streak >= 3
+	return false
+
+
+func _award_night_milestones(profit: int) -> String:
+	profitable_night_streak = profitable_night_streak + 1 if profit > 0 else 0
+	var awards: Array[String] = []
+	for milestone in CLUB_MILESTONES:
+		var id := str(milestone["id"])
+		if completed_milestones.has(id) or not _milestone_achieved(id, profit):
+			continue
+		completed_milestones.append(id)
+		var reward := int(milestone["reward"])
+		cash += reward
+		_award_xp(35)
+		awards.append("%s +€%d +35 XP" % [str(milestone["name"]), reward])
+	return "  |  ".join(awards)
+
+
+func _dj_crowd_bonus() -> float:
+	if dj_picker == null or dj_picker.selected < 0:
+		return 1.0
+	var fee := int(DJ_ROSTER[dj_picker.selected]["fee"])
+	# More established acts draw a crowd, but do not guarantee profit.
+	return 1.0 + clampf(float(fee - 100) / 300.0 * 0.30, 0.0, 0.30)
+
 
 func _xp_needed(level: int) -> int:
 	return 210 + (level - 1) * 85 + (level - 1) * (level - 1) * 10
@@ -1094,7 +1138,7 @@ func _process(delta: float) -> void:
 			bar_service_clocks[record_id] = float(bar_service_clocks.get(record_id, 5.0)) + step
 	_update_service_queues()
 	night_capacity_peak = maxi(night_capacity_peak, guests.size())
-	if guest_spawn_clock >= clampf((4.0 + float(ticket_price - 5) * 0.16 - float(club_level - 1) * 0.12 - float(reputation - 50) * 0.018) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 1.8, 6.0) and guests.size() < _club_capacity():
+	if guest_spawn_clock >= clampf((4.0 + float(ticket_price - 5) * 0.16 - float(club_level - 1) * 0.12 - float(reputation - 50) * 0.018) / (_dj_crowd_bonus() * (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0))), 1.8, 6.0) and guests.size() < _club_capacity():
 		if _spawn_guest():
 			guest_spawn_clock = 0.0
 		else:
@@ -1657,6 +1701,7 @@ func _end_night() -> void:
 	reputation = clampi(reputation + last_rep_change, 0, 100)
 	last_xp_gain = maxi(10, roundi(float(guest_count) * 2.0 + float(night_drinks_sold) * 1.2 + average_mood * 0.22 + (12.0 if profit > 0 else 0.0)))
 	var levels_gained := _award_xp(last_xp_gain)
+	var milestone_awards := _award_night_milestones(profit)
 	_clear_guests()
 	_refresh_economy()
 	night_pause_button.disabled = true
@@ -1668,6 +1713,8 @@ func _end_night() -> void:
 	drink_slider.editable = true
 	_refresh_readiness()
 	_notify("Night %d ended  |  %d guests visited  |  Profit %s€%d  |  XP +%d  |  REP %+d%s" % [night_number, guest_count, "+" if profit >= 0 else "-", absi(profit), last_xp_gain, last_rep_change, "  |  LEVEL UP!" if levels_gained > 0 else ""])
+	if not milestone_awards.is_empty():
+		_notify("MILESTONES  |  " + milestone_awards)
 
 func _update_night_stats() -> void:
 	if night_report_details == null:
@@ -1705,6 +1752,10 @@ func _update_night_stats() -> void:
 		lines.append("NIGHT XP +%d    REP %+d" % [last_xp_gain, last_rep_change])
 		lines.append("")
 		lines.append(_night_advice())
+		lines.append("")
+		lines.append("CLUB MILESTONES  %d/%d" % [completed_milestones.size(), CLUB_MILESTONES.size()])
+		for milestone in CLUB_MILESTONES:
+			lines.append("%s  %s  +€%d" % ["✓" if completed_milestones.has(str(milestone["id"])) else "○", str(milestone["name"]), int(milestone["reward"])])
 	night_report_details.text = "\n".join(lines)
 
 func _refresh_prices() -> void:
@@ -2290,6 +2341,7 @@ func _save_club() -> void:
 		"version": 2, "club_name": club_name, "cash": cash, "reputation": reputation,
 		"level": club_level, "xp": club_xp, "total_xp": total_xp,
 		"perk_points": perk_points, "perks": unlocked_perks,
+		"milestones": completed_milestones, "profit_streak": profitable_night_streak,
 		"night_number": night_number, "ticket_price": ticket_price, "drink_price": drink_price, "objects": furniture,
 		"dance_tiles": tile_data, "free_dance_tiles": free_dance_tiles
 	}
@@ -2366,6 +2418,10 @@ func _load_club() -> void:
 	club_xp = maxi(0, int(data.get("xp", 0)))
 	total_xp = maxi(0, int(data.get("total_xp", 0)))
 	perk_points = maxi(0, int(data.get("perk_points", 0)))
+	completed_milestones.clear()
+	for milestone_id in data.get("milestones", []):
+		completed_milestones.append(str(milestone_id))
+	profitable_night_streak = maxi(0, int(data.get("profit_streak", 0)))
 	unlocked_perks.clear()
 	for perk in data.get("perks", []):
 		unlocked_perks.append(str(perk))
@@ -2433,6 +2489,8 @@ func _new_club() -> void:
 	total_xp = 0
 	perk_points = 0
 	unlocked_perks.clear()
+	completed_milestones.clear()
+	profitable_night_streak = 0
 	night_number = 0
 	guest_count = 0
 	night_ticket_income = 0
