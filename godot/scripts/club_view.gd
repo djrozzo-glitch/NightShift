@@ -926,6 +926,20 @@ func _play_sit(guest: Dictionary, backwards: bool) -> float:
 		player.seek(0.0, true)
 	return animation.length
 
+func _face_service_object(guest: Dictionary) -> void:
+	var object_id := int(guest.get("service_object", -1))
+	if not placed_objects.has(object_id):
+		return
+	var target_node := placed_objects[object_id]["node"] as Node3D
+	var person := guest["node"] as Node3D
+	if not is_instance_valid(target_node) or not is_instance_valid(person):
+		return
+	var toward := target_node.global_position - person.global_position
+	toward.y = 0.0
+	if toward.length_squared() > 0.001:
+		person.rotation.y = atan2(toward.x, toward.z)
+
+
 func _guest_arrived(guest: Dictionary) -> void:
 	var state: String = guest["state"]
 	if state == "walk_exit":
@@ -934,11 +948,13 @@ func _guest_arrived(guest: Dictionary) -> void:
 	if state == "walk_bar":
 		guest["state"] = "ordering"
 		guest["wait"] = randf_range(2.0, 4.0)
+		_face_service_object(guest)
 	elif state == "walk_wc":
 		guest["state"] = "using_wc"
 		guest["wait"] = 1.0
 		guest["wc_need"] = 0.0
 		guest["visual"].visible = false
+		_face_service_object(guest)
 		night_wc_visits += 1
 	elif state == "walk_sofa":
 		guest["state"] = "resting"
