@@ -34,6 +34,7 @@ var build_turn := 0
 var preview_root: Node3D
 var build_panel: PanelContainer
 var catalog_buttons: Dictionary = {}
+var catalog_info_label: Label
 var build_toggle: Button
 var help_label: Label
 var erase_mode := false
@@ -192,7 +193,7 @@ func _dj_crowd_bonus() -> float:
 		return 1.0
 	var fee := int(DJ_ROSTER[dj_picker.selected]["fee"])
 	# More established acts draw a crowd, but do not guarantee profit.
-	return 1.0 + clampf(float(fee - 100) / 300.0 * 0.30, 0.0, 0.30)
+	return 1.0 + clampf(float(fee - 100) / 300.0 * 0.30, 0.0, 0.30) + _club_prestige() * 0.012
 
 
 func _xp_needed(level: int) -> int:
@@ -467,26 +468,50 @@ func _night_furniture_upkeep() -> int:
 	return upkeep
 
 
+# All decorative objects contribute to club identity; effects diminish as
+# more copies are placed. Essential objects have their own functional roles.
+func _club_prestige() -> float:
+	var score := 0.0
+	for kind in ["poster", "rail", "table", "stool", "plant2", "light", "laser"]:
+		var count := _count_kind(kind)
+		var value := 0.0
+		match kind:
+			"poster": value = 1.2
+			"rail": value = 0.6
+			"table": value = 0.8
+			"stool": value = 0.5
+			"plant2": value = 0.9
+			"light": value = 0.8
+			"laser": value = 1.0
+		score += value * (1.0 if count >= 1 else 0.0)
+		score += value * 0.35 * float(maxi(0, mini(count - 1, 2)))
+	return minf(8.0, score)
+
+
 func _build_economics_hint(kind: String) -> String:
 	var note := ""
 	match kind:
-		"dance_tile":
-			note = "+3 potential capacity, subject to venue and WC limits."
-		"wc":
-			note = "+48 restroom capacity; 4 simultaneous users."
-		"bar":
-			note = "Extra service point; useful when bar queues rise."
-		"speaker":
-			note = "Mood bonus above 2 speakers; capped at +6."
-		"light", "laser", "plant2":
-			note = "Atmosphere bonus with diminishing returns."
-		"sofa":
-			note = "Rest area for tired guests."
-		"poster", "rail", "table", "stool":
-			note = "Layout or decoration; no guaranteed direct income."
-		_:
-			note = "Club infrastructure."
-	return "€%d purchase | €%d/night extra upkeep\n%s\nPayback depends on added net profit." % [_build_price(kind), int(OBJECT_UPKEEP.get(kind, 0)), note]
+		"dance_tile": note = "+3 guest capacity (up to venue / WC limit); more ticket sales."
+		"wc": note = "+48 sanitation capacity, 4 simultaneous users; fewer WC waits."
+		"bar": note = "More drink service capacity and sales; extra staff costs."
+		"speaker": note = "Sound quality: +2 guest mood per speaker above two (max +6)."
+		"dj": note = "Required to open; enables DJ bookings and ticket revenue."
+		"light": note = "Atmosphere: +2 mood (shared +8 cap); +0.8 prestige."
+		"laser": note = "Atmosphere: +3 mood (shared +8 cap); +1 prestige."
+		"plant2": note = "Atmosphere: +0.5 mood (shared +8 cap); +0.9 prestige."
+		"sofa": note = "Rest: guests recover energy; fewer unhappy departures."
+		"table": note = "Comfort: +0.7 mood (shared +4 cap); +0.8 prestige."
+		"stool": note = "Comfort: +0.7 mood (shared +4 cap); +0.5 prestige."
+		"poster": note = "DJ name display; +1.2 prestige."
+		"rail": note = "Crowd routing / layout; +0.6 prestige."
+		_: note = "Club infrastructure."
+	return "PRICE €%d   |   EXTRA UPKEEP €%d/NIGHT\n%s\nPrestige improves mood, reputation and guest demand (capped)." % [_build_price(kind), int(OBJECT_UPKEEP.get(kind, 0)), note]
+
+
+func _show_catalog_info(kind: String) -> void:
+	if catalog_info_label != null:
+		catalog_info_label.text = _build_economics_hint(kind)
+
 
 
 func _night_utilities() -> int:
@@ -1088,7 +1113,8 @@ func _guest_mood(guest: Dictionary) -> float:
 	var sound_bonus := minf(6.0, float(maxi(0, _count_kind("speaker") - 2)) * 2.0)
 	var atmosphere_bonus := minf(8.0, float(_count_kind("light")) * 2.0 + float(_count_kind("laser")) * 3.0 + float(_count_kind("plant2")) * 0.5)
 	var comfort_bonus := minf(4.0, float(_count_kind("table") + _count_kind("stool")) * 0.7)
-	return clampf(86.0 + dancing_bonus + sound_bonus + atmosphere_bonus + comfort_bonus - thirst_penalty - fatigue_penalty - waiting_penalty - service_penalty - wc_penalty, 0.0, 100.0)
+	var prestige_mood := _club_prestige() * 0.35
+	return clampf(86.0 + dancing_bonus + sound_bonus + atmosphere_bonus + comfort_bonus + prestige_mood - thirst_penalty - fatigue_penalty - waiting_penalty - service_penalty - wc_penalty, 0.0, 100.0)
 
 
 func _average_guest_mood() -> float:
@@ -1746,7 +1772,7 @@ func _end_night() -> void:
 	var service_score := float(night_drinks_sold) / float(maxi(1, guest_count))
 	var average_mood := night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last
 	var price_pressure := maxf(0.0, float(ticket_price - 20)) * 0.14 + maxf(0.0, float(drink_price - 10)) * 0.18
-	var reputation_delta := roundi((turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure - float(night_unhappy_departures) * 0.5)
+	var reputation_delta := roundi(_club_prestige() * 0.15 + (turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure - float(night_unhappy_departures) * 0.5)
 	last_rep_change = clampi(reputation_delta, -7, 7)
 	reputation = clampi(reputation + last_rep_change, 0, 100)
 	last_xp_gain = maxi(10, roundi(float(guest_count) * 2.0 + float(night_drinks_sold) * 1.2 + average_mood * 0.22 + (12.0 if profit > 0 else 0.0)))
@@ -1825,7 +1851,7 @@ func _refresh_build_catalog() -> void:
 		var label := str(BUILD_NAMES.get(kind, kind.capitalize()))
 		var price := _build_price(kind)
 		button.text = "🔒 %s  ·  LVL %d" % [label, required_level] if locked else "%s   €%d" % [label, price]
-		button.tooltip_text = "Unlocks at level %d\n%s" % [required_level, _build_economics_hint(kind)] if locked else _build_economics_hint(kind)
+		button.tooltip_text = ""
 		button.disabled = locked
 
 
@@ -2796,14 +2822,19 @@ func _build_overlay() -> void:
 	UIStyle.decorate_panel(build_panel)
 	theme_root.add_child(build_panel)
 	build_panel.add_to_group("nightshift_ui_blocker")
+	var catalog_layout := VBoxContainer.new()
+	catalog_layout.add_theme_constant_override("separation", 8)
+	build_panel.add_child(catalog_layout)
 	var choices := GridContainer.new()
 	choices.columns = 2
-	build_panel.add_child(choices)
+	catalog_layout.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(142, 34)
 		UIStyle.decorate_button(button)
 		button.pressed.connect(_choose_kind.bind(kind))
+		button.mouse_entered.connect(_show_catalog_info.bind(kind))
+		button.focus_entered.connect(_show_catalog_info.bind(kind))
 		choices.add_child(button)
 		catalog_buttons[kind] = button
 	_refresh_build_catalog()
@@ -2812,6 +2843,14 @@ func _build_overlay() -> void:
 	UIStyle.decorate_button(erase_button)
 	erase_button.pressed.connect(_enable_erase)
 	choices.add_child(erase_button)
+	catalog_info_label = Label.new()
+	catalog_info_label.custom_minimum_size = Vector2(300, 84)
+	catalog_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	catalog_info_label.add_theme_font_size_override("font_size", 12)
+	catalog_info_label.add_theme_color_override("font_color", Color("#d7c8dc"))
+	catalog_info_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	catalog_layout.add_child(catalog_info_label)
+	_show_catalog_info("dance_tile")
 	var progression_toggle := Button.new()
 	progression_toggle.text = "★ PROGRESSION"
 	progression_toggle.position = Vector2(20, 272)
