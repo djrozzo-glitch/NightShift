@@ -124,6 +124,9 @@ var night_dj_fee := 0
 var night_drinks_sold := 0
 var night_bar_missed := 0
 var night_bar_clock := 0.0
+var bar_service_clocks: Dictionary = {}
+var night_bar_queue_peak := 0
+var night_wc_queue_peak := 0
 var night_wc_visits := 0
 var night_wc_waits := 0
 var night_operating_cost := 0
@@ -761,12 +764,42 @@ func _spawn_guest() -> void:
 	_refresh_economy()
 	_refresh_readiness()
 
+func _service_queue_size(kind: String, object_id: int) -> int:
+	var count := 0
+	for other in guests:
+		if int(other.get("service_object", -1)) != object_id:
+			continue
+		var state := str(other.get("state", ""))
+		if kind == "bar" and state in ["walk_bar", "ordering"]:
+			count += 1
+		elif kind == "wc" and state in ["walk_wc", "using_wc"]:
+			count += 1
+	return count
+
+
+func _update_service_queues() -> void:
+	var bar_peak := 0
+	var wc_peak := 0
+	for record_id in placed_objects:
+		var kind := str(placed_objects[record_id]["kind"])
+		if kind == "bar":
+			bar_peak = maxi(bar_peak, _service_queue_size("bar", int(record_id)))
+		elif kind == "wc":
+			wc_peak = maxi(wc_peak, _service_queue_size("wc", int(record_id)))
+	night_bar_queue_peak = maxi(night_bar_queue_peak, bar_peak)
+	night_wc_queue_peak = maxi(night_wc_queue_peak, wc_peak)
+
+
 func _service_destination(kind: String, start: Vector2i, guest: Dictionary) -> Dictionary:
 	var best := Vector2i(-1, -1)
 	var best_object := -1
 	var best_length := 999999
 	for object_id in placed_objects:
 		var record: Dictionary = placed_objects[object_id]
+		if str(record["kind"]) != kind:
+			continue
+		if kind == "bar" and _service_queue_size("bar", int(object_id)) >= 5:
+			continue
 		if kind == "wc":
 			var reservations := 0
 			for other in guests:
@@ -782,8 +815,6 @@ func _service_destination(kind: String, start: Vector2i, guest: Dictionary) -> D
 					break
 			if reserved:
 				continue
-		if str(record["kind"]) != kind:
-			continue
 		for furniture_cell in record["cells"]:
 			for direction in WALK_DIRS:
 				var candidate: Vector2i = furniture_cell + direction
@@ -919,7 +950,7 @@ func _guest_arrived(guest: Dictionary) -> void:
 func _guest_mood(guest: Dictionary) -> float:
 	var thirst_penalty := maxf(0.0, float(guest["thirst"]) - 0.35) * 65.0
 	var fatigue_penalty := maxf(0.0, 0.55 - float(guest["energy"])) * 65.0
-	var waiting_penalty := minf(22.0, float(guest.get("blocked_time", 0.0)) * 1.4)
+	var waiting_penalty := minf(22.0, float(guest.get("blocked_time", 0.0)) * 1.4 + float(guest.get("bar_waited", 0.0)) * 0.8)
 	var service_penalty := 0.0
 	if float(guest["thirst"]) > 0.65 and _count_kind("bar") == 0:
 		service_penalty += 22.0
@@ -1025,6 +1056,10 @@ func _process(delta: float) -> void:
 		_update_night_stats()
 	guest_spawn_clock += step
 	night_bar_clock += step
+	for record_id in placed_objects:
+		if str(placed_objects[record_id]["kind"]) == "bar":
+			bar_service_clocks[record_id] = float(bar_service_clocks.get(record_id, 5.0)) + step
+	_update_service_queues()
 	night_capacity_peak = maxi(night_capacity_peak, guests.size())
 	if guest_spawn_clock >= clampf((7.0 + maxf(0.0, float(ticket_price - 12)) * 0.13 - float(club_level - 1) * 0.16 - float(reputation - 50) * 0.027) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < _club_capacity():
 		guest_spawn_clock = 0.0
@@ -1062,9 +1097,10 @@ func _process(delta: float) -> void:
 						guest["wait"] = 5.0
 				elif state == "ordering":
 					var wants_to_buy := float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price
-					var service_interval := 5.0 / float(maxi(1, _count_kind("bar")))
-					if wants_to_buy and night_bar_clock >= service_interval:
-						night_bar_clock = 0.0
+					var bar_id := int(guest.get("service_object", -1))
+					var service_interval := 5.0
+					if wants_to_buy and bar_id >= 0 and float(bar_service_clocks.get(bar_id, 0.0)) >= service_interval:
+						bar_service_clocks[bar_id] = 0.0
 						night_drinks_sold += 1
 						night_supply_cost += 2
 						var sale := roundi(float(drink_price) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0)))
@@ -1094,6 +1130,8 @@ func _process(delta: float) -> void:
 						continue
 					if wants_wc:
 						night_wc_waits += 1
+						guest["wait"] = 2.0
+						continue
 					var wants_drink := float(guest["thirst"]) > (0.48 + maxf(0.0, float(drink_price - 7)) * 0.018) and int(guest["wallet"]) >= drink_price
 					var wants_rest := float(guest["energy"]) < 0.45
 					var activity := "bar" if wants_drink else "sofa" if wants_rest else ("bar" if randf() < 0.3 and int(guest["wallet"]) >= drink_price else "sofa")
@@ -1494,6 +1532,9 @@ func _start_night() -> void:
 	night_drinks_sold = 0
 	night_bar_missed = 0
 	night_bar_clock = 0.0
+	bar_service_clocks.clear()
+	night_bar_queue_peak = 0
+	night_wc_queue_peak = 0
 	night_wc_visits = 0
 	night_wc_waits = 0
 	night_supply_cost = 0
@@ -1579,6 +1620,7 @@ func _update_night_stats() -> void:
 		"DANCE TILES  %d     BARS  %d" % [dance_tiles.size(), _count_kind("bar")],
 		"DRINKS SOLD  %d     MISSED  %d" % [night_drinks_sold, night_bar_missed],
 		"WC VISITS  %d     WC WAITS  %d" % [night_wc_visits, night_wc_waits],
+		"BAR QUEUE PEAK  %d     WC QUEUE PEAK  %d" % [night_bar_queue_peak, night_wc_queue_peak],
 		"",
 		"TICKETS                 +€%d" % night_ticket_income,
 		"BAR SALES              +€%d" % night_drink_income,
