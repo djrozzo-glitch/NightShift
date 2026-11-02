@@ -28,7 +28,7 @@ var free_dance_tiles := 0
 var hover_cell := Vector2i(-1, -1)
 var hover_mesh: MeshInstance3D
 var status_label: Label
-const BUILD_TYPES := ["dance_tile", "speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser"]
+const BUILD_TYPES := ["dance_tile", "speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser", "rail"]
 var selected_kind := "speaker"
 var build_turn := 0
 var preview_root: Node3D
@@ -50,7 +50,7 @@ var object_at_cell: Dictionary = {}
 var next_object_id := 1
 var action_history: Array[Dictionary] = []
 # Prototype economy: prices and starting balance will be balanced later.
-const BUILD_PRICES := {"dance_tile": 70, "speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450}
+const BUILD_PRICES := {"dance_tile": 70, "speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450, "rail": 180}
 const STARTING_CAPITAL := 6000
 var cash := STARTING_CAPITAL
 var reputation := 55
@@ -68,7 +68,7 @@ var expansion_details: Label
 var management_panel: PanelContainer
 const SAVE_PATH := "user://nightshift_club.json"
 const LEVEL_NAMES := ["Illegal Basement", "Word of Mouth", "Local Favorite", "Afterhours", "Underground Institution", "Citywide Buzz", "Cult Following", "Scene Leader", "International Attention", "Legendary Venue"]
-const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "laser": 2, "sofa": 3, "table": 4}
+const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "laser": 2, "sofa": 3, "table": 4, "rail": 4}
 const BUILD_NAMES := {"dance_tile": "Dance Tile", "dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}
 const PERK_OPTIONS := [
 	{"id": "connections", "name": "Local Connections", "effect": "-5% DJ fees", "branch": "MUSIC"},
@@ -247,7 +247,7 @@ func _make_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> Mes
 	parent.add_child(item)
 	return item
 
-const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light", "laser", "plant2", "table", "stool", "wc", "entrance", "floor"]
+const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light", "laser", "plant2", "table", "stool", "wc", "entrance", "floor", "rail"]
 var models: Dictionary = {}
 var club_name := "ABLETON GYM"
 var club_name_edit: LineEdit
