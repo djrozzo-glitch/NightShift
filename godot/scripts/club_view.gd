@@ -1482,6 +1482,22 @@ func _process_guest_exit(delta: float) -> void:
 		exit_cleanup_active = false
 
 
+func _set_guest_pause_visuals(paused: bool) -> void:
+	for guest in guests:
+		if not bool(guest.get("imported", false)):
+			continue
+		var motions: Dictionary = guest["motions"]
+		if paused:
+			var still := "idle" if motions.has("idle") else str(guest.get("motion", "walk"))
+			for motion_name in motions:
+				(motions[motion_name] as Node3D).visible = motion_name == still
+		else:
+			# Restore the actual motion without waiting for its state to change.
+			var active := str(guest.get("motion", "idle"))
+			for motion_name in motions:
+				(motions[motion_name] as Node3D).visible = motion_name == active
+
+
 func _process(delta: float) -> void:
 	_process_guest_exit(delta)
 	if night_active:
@@ -3576,6 +3592,7 @@ func _build_overlay() -> void:
 	UIStyle.decorate_button(night_pause_button)
 	night_pause_button.pressed.connect(func() -> void:
 		night_paused = not night_paused
+		_set_guest_pause_visuals(night_paused)
 		night_pause_button.text = "RESUME" if night_paused else "PAUSE"
 	)
 	speed_controls.add_child(night_pause_button)
