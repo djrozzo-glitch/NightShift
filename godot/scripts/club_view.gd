@@ -4,6 +4,11 @@ const UIStyle = preload("res://scripts/ui_style.gd")
 ## Controls: left-drag rotate, shift+left-drag pan, wheel zoom, R reset.
 
 const SIZE := 16
+const EXPANDED_WIDTH := 22
+const EXPANSION_PRICE := 5000
+var grid_width := SIZE
+var expanded := false
+var expansion_button: Button
 const TILE := 1.0
 const MIN_ZOOM := 5.0
 const MAX_ZOOM := 27.0
@@ -292,7 +297,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 	if kind in ["wall", "poster"]:
 		if x == 0:
 			pivot_node.position.x += 0.48
-		elif x == SIZE - 1:
+		elif x == SIZE - 1 or x == grid_width - 1:
 			pivot_node.position.x -= 0.48
 		if y == 0:
 			pivot_node.position.z += 0.48
@@ -501,7 +506,7 @@ func _refresh_readiness() -> void:
 		start_night_button.disabled = not night_active and not issues.is_empty()
 
 func _walkable(cell: Vector2i) -> bool:
-	return cell.x > 0 and cell.x < SIZE - 1 and cell.y > 0 and cell.y < SIZE - 1 and not occupied.has(cell)
+	return cell.x > 0 and cell.x < grid_width - 1 and cell.y > 0 and cell.y < SIZE - 1 and not occupied.has(cell)
 
 func _path_to(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
@@ -1948,7 +1953,7 @@ func _can_place(x: int, y: int, kind: String = "speaker", turn: int = 0) -> bool
 	for cell in _footprint(x, y, kind, turn):
 		if kind == "dance_tile" and dance_tiles.has(cell):
 			return false
-		if cell.x <= 0 or cell.y <= 0 or cell.x >= SIZE - 1 or cell.y >= SIZE - 1 or occupied.has(cell):
+		if cell.x <= 0 or cell.y <= 0 or cell.x >= grid_width - 1 or cell.y >= SIZE - 1 or occupied.has(cell):
 			return false
 	return true
 
@@ -1968,7 +1973,7 @@ func _refresh_preview() -> void:
 	for child in preview_root.get_children():
 		preview_root.remove_child(child)
 		child.queue_free()
-	if (not build_mode and not object_dragging) or erase_mode or (not build_kind_selected and not object_dragging) or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= SIZE or hover_cell.y >= SIZE:
+	if (not build_mode and not object_dragging) or erase_mode or (not build_kind_selected and not object_dragging) or hover_cell.x < 0 or hover_cell.y < 0 or hover_cell.x >= grid_width or hover_cell.y >= SIZE:
 		return
 	var preview_kind := "dance_tile" if moving_dance_tile.x >= 0 else (str(placed_objects[moving_object_id]["kind"]) if placed_objects.has(moving_object_id) else selected_kind)
 	var preview_turn := moving_turn if moving_object_id >= 0 else build_turn
@@ -2000,7 +2005,7 @@ func _update_hover(screen_pos: Vector2) -> void:
 	var hit := origin + direction * distance
 	var x := roundi(hit.x + 7.5)
 	var y := roundi(hit.z + 7.5)
-	if x < 0 or y < 0 or x >= SIZE or y >= SIZE:
+	if x < 0 or y < 0 or x >= grid_width or y >= SIZE:
 		hover_mesh.visible = false
 		preview_root.visible = false
 		hover_cell = Vector2i(-1, -1)
@@ -2054,7 +2059,7 @@ func _rotate_moving_object() -> void:
 func _can_move_to(x: int, y: int) -> bool:
 	if moving_dance_tile.x >= 0:
 		var target := Vector2i(x, y)
-		return x > 0 and y > 0 and x < SIZE - 1 and y < SIZE - 1 and not occupied.has(target) and (not dance_tiles.has(target) or target == moving_dance_tile)
+		return x > 0 and y > 0 and x < grid_width - 1 and y < SIZE - 1 and not occupied.has(target) and (not dance_tiles.has(target) or target == moving_dance_tile)
 	if not placed_objects.has(moving_object_id):
 		return false
 	var record: Dictionary = placed_objects[moving_object_id]
@@ -2304,6 +2309,48 @@ func _buy_perk(id: String) -> void:
 	_notify("PERK UNLOCKED: %s" % PERK_OPTIONS[option_index]["name"])
 
 
+func _can_expand_club() -> bool:
+	return not expanded and not night_active and cash >= EXPANSION_PRICE and reputation >= 65 and club_level >= 4
+
+
+func _apply_east_wing() -> void:
+	if expanded:
+		return
+	expanded = true
+	grid_width = EXPANDED_WIDTH
+	# Extend the existing venue to the east, keeping the entrance, camera,
+	# current furniture and all saved grid coordinates intact.
+	for y in range(SIZE):
+		for x in range(SIZE, EXPANDED_WIDTH):
+			_make_box(club, Vector3(x - 7.5, -0.055, y - 7.5), Vector3(0.99, 0.10, 0.99),
+				Color("#272735") if (x + y) % 2 == 0 else Color("#343342"))
+			floor_heights[Vector2i(x, y)] = -0.005
+	# Three-cell passage through the original eastern perimeter.
+	for y in range(6, 9):
+		var old_wall := club.get_node_or_null("wall_15_%d" % y)
+		if old_wall != null:
+			old_wall.queue_free()
+	# Enclose the new wing without disturbing the original club walls.
+	for x in range(SIZE, EXPANDED_WIDTH):
+		_model(club, "wall", x, 0)
+		_model(club, "wall", x, SIZE - 1)
+	for y in range(1, SIZE - 1):
+		_model(club, "wall", EXPANDED_WIDTH - 1, y, 1)
+	_refresh_preview()
+	_refresh_readiness()
+
+
+func _buy_expansion() -> void:
+	if not _can_expand_club():
+		_notify("Requires level 4, reputation 65 and €5000")
+		return
+	cash -= EXPANSION_PRICE
+	_apply_east_wing()
+	_refresh_economy()
+	_refresh_progression()
+	_notify("EAST WING OPEN!  Six new columns of club space.")
+
+
 func _refresh_progression() -> void:
 	if progression_details == null:
 		return
@@ -2321,7 +2368,11 @@ func _refresh_progression() -> void:
 		perk_buttons[i].add_theme_stylebox_override("disabled", UIStyle.perk_style(owned))
 		perk_buttons[i].disabled = owned or perk_points <= 0
 	if expansion_details != null:
-		expansion_details.text = "NEXT BIG GOAL  ·  EXPAND 16×16 → 22×22\n€%d / €15,000   ·   REP %d/70   ·   LVL %d/5\n%s" % [cash, reputation, club_level, "Requirements met — expansion coming next" if cash >= 15000 and reputation >= 70 and club_level >= 5 else "Build your club to unlock expansion"]
+		expansion_details.text = "EAST WING  ·  16×16 → 22×16\nCOST €%d  ·  REP %d/65  ·  LVL %d/4\n%s" % [EXPANSION_PRICE, reputation, club_level, "Expanded! Build in the new wing." if expanded else ("Ready to purchase" if _can_expand_club() else "Earn money and reputation to unlock")]
+	if expansion_button != null:
+		expansion_button.visible = not expanded
+		expansion_button.disabled = not _can_expand_club()
+		expansion_button.text = "BUY EAST WING  ·  €%d" % EXPANSION_PRICE
 
 
 func _save_club() -> void:
@@ -2338,7 +2389,7 @@ func _save_club() -> void:
 	for cell in dance_tiles:
 		tile_data.append({"x": cell.x, "y": cell.y, "paid": bool(dance_tiles[cell].get("paid", false))})
 	var data := {
-		"version": 2, "club_name": club_name, "cash": cash, "reputation": reputation,
+		"version": 3, "expanded": expanded, "club_name": club_name, "cash": cash, "reputation": reputation,
 		"level": club_level, "xp": club_xp, "total_xp": total_xp,
 		"perk_points": perk_points, "perks": unlocked_perks,
 		"milestones": completed_milestones, "profit_streak": profitable_night_streak,
@@ -2384,10 +2435,12 @@ func _load_club() -> void:
 			return
 		var x := int(entry.get("x", -1))
 		var y := int(entry.get("y", -1))
-		if x < 0 or x >= SIZE or y < 0 or y >= SIZE:
+		if x < 0 or x >= grid_width or y < 0 or y >= SIZE:
 			_notify("Save contains an invalid object position")
 			return
 	_clear_guests()
+	if bool(data.get("expanded", false)) and not expanded:
+		_apply_east_wing()
 	for id in placed_objects.keys().duplicate():
 		_remove_object(int(id))
 	_clear_dance_tiles()
@@ -2397,7 +2450,7 @@ func _load_club() -> void:
 	free_dance_tiles = 0
 	for tile in data.get("dance_tiles", []):
 		var cell := Vector2i(int(tile.get("x", -1)), int(tile.get("y", -1)))
-		if cell.x > 0 and cell.x < SIZE - 1 and cell.y > 0 and cell.y < SIZE - 1:
+		if cell.x > 0 and cell.x < grid_width - 1 and cell.y > 0 and cell.y < SIZE - 1:
 			_add_dance_tile(cell, bool(tile.get("paid", false)))
 	for entry in data["objects"]:
 		var kind := str(entry["kind"])
@@ -2465,11 +2518,20 @@ func _new_club() -> void:
 	for id in placed_objects.keys().duplicate():
 		_remove_object(int(id))
 	for cell in poster_positions:
-		_model(club, "wall", cell.x, cell.y, 1 if cell.x == 0 or cell.x == SIZE - 1 else 0)
+		_model(club, "wall", cell.x, cell.y, 1 if cell.x == 0 or cell.x == grid_width - 1 else 0)
 	occupied.clear()
 	object_at_cell.clear()
 	action_history.clear()
 	free_dance_tiles = 0
+	# Reset the optional east wing when starting over.
+	if expanded:
+		for child in club.get_children():
+			if child is Node3D and (child.position.x > 7.9 or child.name.begins_with("wall_21_")):
+				child.queue_free()
+		expanded = false
+		grid_width = SIZE
+		for y in range(6, 9):
+			_model(club, "wall", 15, y, 1)
 	poster_labels.clear()
 	poster_led_materials.clear()
 	poster_led_accents.clear()
@@ -2747,6 +2809,10 @@ func _build_overlay() -> void:
 	UIStyle.decorate_label(expansion_details, 12, true)
 	expansion_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	goal_panel.add_child(expansion_details)
+	expansion_button = Button.new()
+	UIStyle.decorate_button(expansion_button)
+	expansion_button.pressed.connect(_buy_expansion)
+	goal_panel.add_child(expansion_button)
 	_refresh_progression()
 	var night_panel := PanelContainer.new()
 	night_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
