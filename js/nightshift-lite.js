@@ -34,7 +34,6 @@ function block(w,h,d,x,y,z,material,parent=stage){const o=new THREE.Mesh(new THR
 // Fixed NightShift venue: clear front opening, modelled wall modules, lounge and equipment.
 block(16,.2,16,0,-.15,0,concrete);
 for(let x=-7.5;x<=7.5;x++)for(let z=-7.5;z<=7.5;z++){
- if(Math.abs(x)<4.5&&z>-3&&z<4)continue;
  block(1,.012,1,x,-.035,z,(Math.round(x+z)&1)?concrete:dark);
 }
 const wallPieces=[];
@@ -63,20 +62,22 @@ const decor=[
  ['discoball',-4.5,3.5,.9375,0],['discoball',4.5,3.5,.9375,0],
  // Wall posters: two symmetrical on the DJ wall; the side posters are grid aligned.
  ['poster',-5.5,-7.55,.95,0],['poster',5.5,-7.55,.95,0],
- ['poster',-7.55,-1.5,.95,Math.PI/2],['poster',-7.55,3.5,.95,Math.PI/2],
- ['poster',7.55,1.5,.95,-Math.PI/2],
+ ['poster',-7.55,-1.5,.95,Math.PI/2],['poster',-7.55,2.5,.95,Math.PI/2],
+ ['poster',7.55,-1.5,.95,-Math.PI/2],['poster',7.55,2.5,.95,-Math.PI/2],
  // Entrance is centered on the two open front-wall grid cells.
  ['entrance',0,7.8,2,0],
- // Four drinks tables next to sofas, no bar stools.
- ['table',-5.5,5.5,.8,0],['table',5.5,5.5,.8,0],
- ['table',-5.5,7.0,.8,0],['table',5.5,7.0,.8,0]
+ // Two side tables flanking the armrests of every two-cell sofa.
+ ['table',-6.5,3.5,.72,0],['table',-6.5,6.5,.72,0],
+ ['table',6.5,3.5,.72,0],['table',6.5,6.5,.72,0],
+ ['table',-4.5,6.5,.72,0],['table',-1.5,6.5,.72,0],
+ ['table',1.5,6.5,.72,0],['table',4.5,6.5,.72,0]
 ];
 const loadedModels=new Map();
-// Drinks on the four side tables: simple lightweight glassware.
+// Drinks on all eight sofa armrest tables: simple lightweight glassware.
 const drinkGlass=new THREE.CylinderGeometry(.065,.045,.16,8);
 const drinkMat=new THREE.MeshStandardMaterial({color:0x9cc8d8,transparent:true,opacity:.68,roughness:.2,metalness:.1});
 const drinkLiquid=new THREE.MeshStandardMaterial({color:0xd46a84,roughness:.35});
-for(const [x,z] of [[-5.5,5.5],[5.5,5.5],[-5.5,7],[5.5,7]]){
+for(const [x,z] of [[-6.5,3.5],[-6.5,6.5],[6.5,3.5],[6.5,6.5],[-4.5,6.5],[-1.5,6.5],[1.5,6.5],[4.5,6.5]]){
  const cup=new THREE.Mesh(drinkGlass,drinkMat);
  cup.position.set(x,.64,z);stage.add(cup);
  const drink=new THREE.Mesh(new THREE.CylinderGeometry(.038,.038,.065,8),drinkLiquid);
