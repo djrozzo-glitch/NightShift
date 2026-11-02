@@ -33,9 +33,9 @@ block(3,.035,3,0,.02,-3.8,danceMat);
 for(let x=-3.5;x<=3.5;x++)for(let z=-2.5;z<=3.5;z++)block(.95,.025,.95,x,.02,z,danceMat);
 const decor=[
 ['dj_stand_upgraded',0,-5.1,2.6],['speaker_updated',-2.9,-5.4,1.6],['speaker_updated',2.9,-5.4,1.6],
-['bar_new',5.9,2.4,2.4],['sofa_upgraded',-5.4,3.1,2.4],
+['bar_new',5.1,2.7,2.4],['wc_new',5.8,-4.5,2.0],['sofa_upgraded',-5.4,3.1,2.4],
 ['plant_big',-6,-5.6,1.6],['plant2',6,-5.2,1.25],
-['laser_new',-4.8,-3.7,1.2],['light',4.8,-3.7,1.2],
+['laser_new',-4.8,-3.7,1.2],['laser_new',4.8,-3.7,1.2],['light',4.4,-5.8,1.2],
 ['discoball',0,4.5,2.0],['poster',-6.9,-2,1.7],
 ['table',-5,1.1,1.1],['stool',4.6,3.2,.8]
 ];
@@ -47,12 +47,62 @@ const mid=new THREE.Vector3();box.getCenter(mid);
 root.position.x-=mid.x;root.position.z-=mid.z;root.position.y-=box.min.y;
 }
 let ready3d=false;
+const fixtures=[];
+function addFixture(holder,obj,name){
+ obj.updateMatrixWorld(true);
+ const bounds=new THREE.Box3().setFromObject(obj);
+ const top=Math.max(.4,bounds.max.y-holder.position.y);
+ if(name==='discoball'){
+  const points=[];
+  const circle=new THREE.CircleGeometry(.105,8);
+  for(let i=0;i<40;i++){
+   const material=new THREE.MeshBasicMaterial({color:[0xbdb3ff,0xffbddf,0xbceeff,0xffffff][i%4],transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
+   const dot=new THREE.Mesh(circle,material);dot.rotation.x=-Math.PI/2;dot.position.y=.05;stage.add(dot);points.push(dot);
+  }
+  const glow=new THREE.PointLight(0xcbb9ff,0,8,2);glow.position.y=top-.06;holder.add(glow);
+  fixtures.push({name,holder,obj,points,glow,top});
+ }else if(name==='laser_new'||name==='light'){
+  const colors=name==='laser_new'?[0x31ff64,0x287cff,0xff334d]:[0xc15dff,0x87abff];
+  const beams=colors.map(color=>{
+   const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.015,.055,1,6,1,true),new THREE.MeshBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));
+   stage.add(mesh);return mesh;
+  });
+  const lamp=new THREE.PointLight(colors[0],0,4,2);lamp.position.y=top-.1;holder.add(lamp);
+  fixtures.push({name,holder,top,beams,lamp});
+ }
+}
+const beamStart=new THREE.Vector3(),beamEnd=new THREE.Vector3(),upVector=new THREE.Vector3(0,1,0);
+function animateFixtures(t,dt,active){
+ for(const fx of fixtures){
+  if(fx.name==='discoball'){
+   if(active)fx.obj.rotation.y+=dt*.55;
+   fx.glow.intensity=active?1.5+Math.sin(t*6)*.4:0;
+   fx.points.forEach((p,i)=>{
+    const angle=t*.42+i*Math.PI*2/40,radius=2.4+i%5*.59;
+    p.position.set(fx.holder.position.x+Math.cos(angle)*radius,.055,fx.holder.position.z+Math.sin(angle)*radius);
+    p.material.opacity=active?.25+.35*(.5+.5*Math.sin(t*2+i)):0;
+   });
+  }else{
+   fx.lamp.intensity=active?1.7:0;
+   fx.lamp.getWorldPosition(beamStart);
+   fx.beams.forEach((beam,i)=>{
+    const a=t*(.8+i*.17)+i*1.7+(fx.holder.position.x>0?2:0);
+    beamEnd.set(Math.sin(a)*2.8,.08,Math.cos(a*.86)*2.6);
+    const dir=beamEnd.clone().sub(beamStart),len=dir.length();
+    beam.position.copy(beamStart).addScaledVector(dir,.5);
+    beam.quaternion.setFromUnitVectors(upVector,dir.normalize());
+    beam.scale.set(1,len,1);
+    beam.material.opacity=active?(fx.name==='laser_new'?.35:.10):0;
+   });
+  }
+ }
+}
 Promise.all(decor.map(async([name,x,z,size])=>{
  const gltf=await loadGLB('godot/assets/models/'+name+'.glb');
  if(!gltf)return;
  const holder=new THREE.Group(),obj=gltf.scene;
  fitModel(obj,size);holder.position.set(x,.04,z);holder.add(obj);stage.add(holder);
- if(name==='discoball')window.discoball=holder;
+ if(['discoball','laser_new','light'].includes(name))addFixture(holder,obj,name);
 })).then(()=>{ready3d=true;$('loading').textContent='Клуб готов.'});
 const beams=[new THREE.PointLight(0xdd39ff,0,13,2),new THREE.PointLight(0x377dff,0,12,2)];
 beams[0].position.set(-4,3,-3);beams[1].position.set(4,3,-4);beams.forEach(l=>scene.add(l));
@@ -65,7 +115,7 @@ function csvRows(s){const rows=[];let row=[],field='',quote=false;for(let i=0;i<
 function updateFee(){const fee=fees[$('dj').value];$('fee').textContent=Number.isFinite(fee)?'€'+new Intl.NumberFormat('nl-NL',{maximumFractionDigits:2}).format(fee):'—';}
 async function loadSheet(){const url=$('sheet').value.trim();if(!url){$('sheetStatus').textContent='Вставь CSV-ссылку.';return}if(!/^https:\/\/(docs\.google\.com|drive\.google\.com)\//.test(url)){$('sheetStatus').textContent='Используй опубликованную HTTPS-ссылку Google Sheets.';return}
 $('sheetStatus').textContent='Загружаю…';try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const rows=csvRows((await r.text()).replace(/^\uFEFF/,''));const header=rows.shift().map(x=>x.trim().toLowerCase());const idCol=header.indexOf('id'),feeCol=header.indexOf('fee');if(idCol<0||feeCol<0)throw Error('Нужны колонки id и fee');const next={};for(const row of rows){const id=(row[idCol]||'').trim().toLowerCase(),raw=(row[feeCol]||'').trim().replace(/[€\s]/g,'').replace(',','.');const value=Number(raw);if(Object.hasOwn(nameToLabel,id)&&raw&&Number.isFinite(value)&&value>=0)next[id]=value}if(!Object.keys(next).length)throw Error('Нет распознанных DJ/цен');fees=next;localStorage.setItem('nightshift-lite-sheet',url);$('sheetStatus').textContent='Загружено гонораров: '+Object.keys(fees).length;updateFee()}catch(e){$('sheetStatus').textContent='Ошибка загрузки: '+e.message+'. Проверь публикацию CSV и доступ CORS.'}}
-$('loadSheet').onclick=loadSheet;const stored=localStorage.getItem('nightshift-lite-sheet');if(stored){$('sheet').value=stored;loadSheet();}
+$('loadSheet').onclick=loadSheet;const defaultSheet='https://docs.google.com/spreadsheets/d/1vfeH9qxnX1HcEv_BhwrJGI2qjWHQyDVENAFAzgDaqQ8/gviz/tq?tqx=out:csv';const stored=localStorage.getItem('nightshift-lite-sheet');$('sheet').value=stored||defaultSheet;loadSheet();
 const variants=['baggy_m','fashion_f','jungle_f','raver_f','raver_m'];
 const actorAssets={};
 let loaded=0;
@@ -99,7 +149,7 @@ let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.mi
 hemi.intensity+=((running?.4:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.15:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(running?0x050410:0x090b16),.02);
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
-if(window.discoball)window.discoball.rotation.y+=dt*.4;
+animateFixtures(t,dt,running);
 if(running){partyTime+=dt;guestClock+=dt;if(guestClock>1.65&&guests.length<20){guestClock=0;addGuest();}
 animAccum+=dt;
 for(const p of guests){if(p.state==='walk'){const dx=p.x-p.group.position.x,dz=p.z-p.group.position.z,dist=Math.hypot(dx,dz);if(dist<.16){actorState(p,'dance');p.group.rotation.y=Math.random()*Math.PI*2;}else{const step=Math.min(p.speed*dt,dist);p.group.position.x+=dx/dist*step;p.group.position.z+=dz/dist*step;p.group.rotation.y=Math.atan2(dx,dz);}}}
