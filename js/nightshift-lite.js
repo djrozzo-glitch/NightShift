@@ -22,6 +22,28 @@ controls.minDistance=11;controls.maxDistance=39;controls.update();
 const hemi=new THREE.HemisphereLight(0xded7ff,0x191424,2.3);scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xffdfba,2);sun.position.set(-10,16,8);scene.add(sun);
 const stage=new THREE.Group();scene.add(stage);
+// Lightweight stage haze: layered transparent planes approximate drifting smoke
+// without expensive particles or post-processing.
+const hazeGroup=new THREE.Group();scene.add(hazeGroup);
+const hazeTexture=(()=>{
+ const canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;
+ const ctx=canvas.getContext('2d');
+ const gradient=ctx.createRadialGradient(64,64,4,64,64,64);
+ gradient.addColorStop(0,'rgba(202,168,255,0.20)');
+ gradient.addColorStop(.45,'rgba(130,110,205,0.09)');
+ gradient.addColorStop(1,'rgba(82,62,125,0)');
+ ctx.fillStyle=gradient;ctx.fillRect(0,0,128,128);
+ return new THREE.CanvasTexture(canvas);
+})();
+const hazeLayers=[];
+for(let i=0;i<8;i++){
+ const material=new THREE.MeshBasicMaterial({map:hazeTexture,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending});
+ const mesh=new THREE.Mesh(new THREE.PlaneGeometry(6+Math.random()*5,3+Math.random()*3),material);
+ mesh.rotation.x=-Math.PI/2;
+ mesh.position.set(-5+Math.random()*10,.24+Math.random()*.6,-5+Math.random()*10);
+ hazeGroup.add(mesh);hazeLayers.push({mesh,offset:i*1.4});
+}
+
 const loader=new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
 const loadGLB=path=>new Promise(resolve=>loader.load(path,resolve,undefined,err=>{console.warn('Optional GLB not loaded',path,err);resolve(null)}));
@@ -133,7 +155,7 @@ function addFixture(holder,obj,name){
    const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.015,.055,1,6,1,true),new THREE.MeshBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));
    stage.add(mesh);return mesh;
   });
-  const lamp=new THREE.PointLight(colors[0],0,4,2);lamp.position.y=top-.1;holder.add(lamp);
+  const lamp=new THREE.PointLight(colors[0],0,6,2);lamp.position.y=top-.1;holder.add(lamp);
   fixtures.push({name,holder,top,beams,lamp});
  }
 }
@@ -149,7 +171,7 @@ function animateFixtures(t,dt,active){
     p.material.opacity=active?.25+.35*(.5+.5*Math.sin(t*2+i)):0;
    });
   }else{
-   fx.lamp.intensity=active?1.7:0;
+   fx.lamp.intensity=active?2.6+Math.sin(t*3.2+fx.holder.position.x)*.55:0;
    fx.lamp.getWorldPosition(beamStart);
    fx.beams.forEach((beam,i)=>{
     const a=t*(.8+i*.17)+i*1.7;
@@ -158,7 +180,7 @@ function animateFixtures(t,dt,active){
     beam.position.copy(beamStart).addScaledVector(dir,.5);
     beam.quaternion.setFromUnitVectors(upVector,dir.normalize());
     beam.scale.set(1,len,1);
-    beam.material.opacity=active?(fx.name==='laser_new'?.35:.10):0;
+    beam.material.opacity=active?(fx.name==='laser_new'?.35:.18)*(0.82+.18*Math.sin(t*4.5+i)):0;
    });
   }
  }
@@ -381,6 +403,14 @@ else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
 hemi.intensity+=((running?.4:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.15:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(running?0x050410:0x090b16),.02);
+scene.fog.color.copy(scene.background);
+scene.fog.density+=( (running?.041:.024)-scene.fog.density)*.016;
+for(const layer of hazeLayers){
+ const m=layer.mesh;m.material.opacity+=( (running?.20:0)-m.material.opacity)*.025;
+ m.position.x+=Math.sin(t*.17+layer.offset)*dt*.11;
+ m.position.z+=Math.cos(t*.13+layer.offset)*dt*.09;
+ m.rotation.z=Math.sin(t*.09+layer.offset)*.12;
+}
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
 animateFixtures(t,dt,running);
 if(running){
