@@ -359,7 +359,7 @@ func _load_models() -> void:
 			push_warning("NightShift: %s unavailable, falling back to old %s model" % [path, kind])
 			path = "res://assets/models/%s.glb" % kind
 		if ResourceLoader.exists(path):
-			var packed := load(path) as PackedScene
+			var packed := ResourceLoader.load(path, "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
 			if packed != null:
 				models[kind] = packed
 			else:
@@ -371,9 +371,12 @@ func _load_models() -> void:
 	# An optional visual variant; keep the gameplay ID as "sofa".
 	var upgraded_path := "res://assets/models/sofa_upgraded.glb"
 	if ResourceLoader.exists(upgraded_path):
-		var upgraded_scene := load(upgraded_path) as PackedScene
+		var upgraded_scene := ResourceLoader.load(upgraded_path, "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
 		if upgraded_scene != null:
 			models["sofa_upgraded"] = upgraded_scene
+	else:
+		push_warning("NightShift: upgraded sofa missing: %s" % upgraded_path)
+	print("NIGHTSHIFT MODELS | laser_new=%s | sofa_upgraded=%s" % [str(models.has("laser") and str((models["laser"] as PackedScene).resource_path).contains("laser_new")), str(models.has("sofa_upgraded"))])
 
 const TWO_CELL := ["dj", "bar", "sofa", "wc", "entrance"]
 
@@ -560,11 +563,13 @@ func _refresh_upgraded_sofas() -> void:
 		if str(record["kind"]) != "sofa":
 			continue
 		var old_node := record["node"] as Node3D
+		# Remove the previous visual immediately to avoid duplicate names and overlap.
+		if is_instance_valid(old_node):
+			club.remove_child(old_node)
+			old_node.queue_free()
 		var new_node := _model(club, "sofa", int(record["x"]), int(record["y"]), int(record["turn"]))
 		record["node"] = new_node
 		placed_objects[object_id] = record
-		if is_instance_valid(old_node):
-			old_node.queue_free()
 
 
 func _buy_equipment_upgrade(id: String) -> void:
