@@ -4,6 +4,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {clone as cloneSkeleton} from 'three/addons/utils/SkeletonUtils.js';
 
 const $=id=>document.getElementById(id);
+console.info('NIGHTSHIFT LITE BUILD 04: fixed venue assets');
 const mount=$('scene'), scene=new THREE.Scene();
 scene.background=new THREE.Color('#090b16'); scene.fog=new THREE.FogExp2('#0c0b17',.024);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
