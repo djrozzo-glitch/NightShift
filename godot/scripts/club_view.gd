@@ -745,15 +745,15 @@ func _generate_raver_name(character: String) -> String:
 	return str(first_names.pick_random()) + " " + str(RAVER_LAST_NAMES.pick_random())
 
 
-func _spawn_guest() -> void:
+func _spawn_guest() -> bool:
 	if guests.size() >= MAX_GUESTS or not _walkable(GUEST_ENTRY) or _guest_too_close(_cell_position(GUEST_ENTRY), {}):
-		return
+		return false
 	var destination := _dance_destination()
 	if destination.x < 0:
-		return
+		return false
 	var path := _path_to(GUEST_ENTRY, destination)
 	if path.is_empty():
-		return
+		return false
 	var person := Node3D.new()
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
@@ -765,6 +765,7 @@ func _spawn_guest() -> void:
 	_update_night_stats()
 	_refresh_economy()
 	_refresh_readiness()
+	return true
 
 func _service_queue_size(kind: String, object_id: int) -> int:
 	var count := 0
@@ -1066,9 +1067,12 @@ func _process(delta: float) -> void:
 			bar_service_clocks[record_id] = float(bar_service_clocks.get(record_id, 5.0)) + step
 	_update_service_queues()
 	night_capacity_peak = maxi(night_capacity_peak, guests.size())
-	if guest_spawn_clock >= clampf((7.0 + maxf(0.0, float(ticket_price - 12)) * 0.13 - float(club_level - 1) * 0.16 - float(reputation - 50) * 0.027) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 2.4, 7.0) and guests.size() < _club_capacity():
-		guest_spawn_clock = 0.0
-		_spawn_guest()
+	if guest_spawn_clock >= clampf((4.0 + float(ticket_price - 5) * 0.16 - float(club_level - 1) * 0.12 - float(reputation - 50) * 0.018) / (1.0 + (0.08 if unlocked_perks.has("lineups") else 0.0) + (0.05 if unlocked_perks.has("word") else 0.0) + (0.10 if unlocked_perks.has("regulars") else 0.0)), 1.8, 6.0) and guests.size() < _club_capacity():
+		if _spawn_guest():
+			guest_spawn_clock = 0.0
+		else:
+			# Keep the arrival ready if the entrance is briefly blocked.
+			guest_spawn_clock = 2.0
 	for guest in guests:
 		# Guest needs evolve during the night and influence where they go.
 		guest["time_inside"] = float(guest.get("time_inside", 0.0)) + step
