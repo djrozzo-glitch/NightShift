@@ -1447,6 +1447,9 @@ func _transition_club_lighting(to_night: bool, duration: float = 3.5) -> void:
 	for glow in dance_lights:
 		if is_instance_valid(glow):
 			lighting_fade_tween.tween_property(glow, "light_energy", 1.2 if to_night else 0.0, duration)
+	for ray in discoball_lights:
+		if is_instance_valid(ray):
+			lighting_fade_tween.tween_property(ray, "light_energy", 1.8 if to_night else 0.0, duration)
 	for beam in beam_meshes:
 		if is_instance_valid(beam):
 			beam.visible = to_night and beam.get_node_or_null("LaserHalo") != null
@@ -1811,6 +1814,25 @@ void fragment() {
 
 
 func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
+	if kind == "discoball":
+		if not is_instance_valid(node) or node.has_node("DiscoBallLights"):
+			return
+		var rig := Node3D.new()
+		rig.name = "DiscoBallLights"
+		node.add_child(rig)
+		var height := maxf(1.5, _visual_bounds(node).end.y)
+		rig.position.y = height
+		for ray_index in range(4):
+			var ray := SpotLight3D.new()
+			ray.name = "MirrorRay%d" % ray_index
+			ray.spot_range = 9.0
+			ray.spot_angle = 12.0
+			ray.shadow_enabled = false
+			ray.light_color = DISCO_COLORS[ray_index]
+			ray.light_energy = 0.0
+			rig.add_child(ray)
+			discoball_lights.append(ray)
+		return
 	if kind not in ["light", "laser"] or not is_instance_valid(node):
 		return
 	if node.has_node("ClubSpot"):
@@ -1971,6 +1993,9 @@ func _set_night_lighting(enabled: bool) -> void:
 	for glow in dance_lights:
 		if is_instance_valid(glow):
 			glow.light_energy = 1.2 if enabled else 0.0
+	for ray in discoball_lights:
+		if is_instance_valid(ray):
+			ray.light_energy = 1.8 if enabled else 0.0
 	if enabled:
 		_debug_fixture_lights()
 
@@ -1994,6 +2019,16 @@ func _animate_stage_lights(delta: float) -> void:
 			var direction := fixture.global_basis * local_direction
 			spot.look_at(spot.global_position + direction, Vector3.UP)
 		spot.light_energy = (2.5 + 4.0 * synced_beat) if synced_beat >= 0.0 else 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
+	# Mirror ball: four narrow, rotating spots sweep the floor in circles.
+	# Keep their energy controlled by the day/night fade.
+	for index in range(discoball_lights.size()):
+		var ray := discoball_lights[index]
+		if not is_instance_valid(ray):
+			continue
+		var angle := lighting_clock * 0.42 + float(index % 4) * TAU / 4.0
+		var distance := 2.5 + 1.3 * sin(lighting_clock * 0.3 + float(index))
+		var target := ray.global_position + Vector3(cos(angle) * distance, -maxf(2.0, ray.global_position.y + 0.5), sin(angle) * distance)
+		ray.look_at(target, Vector3.UP)
 	# Independent color changes and a restrained rhythmic flash for moving heads.
 	for index in range(disco_spots.size()):
 		var disco := disco_spots[index]
@@ -2370,6 +2405,11 @@ func _remove_object(id: int) -> Dictionary:
 		object_at_cell.erase(cell)
 	var node := record["node"] as Node3D
 	if is_instance_valid(node):
+		var mirror_rig := node.get_node_or_null("DiscoBallLights") as Node3D
+		if mirror_rig != null:
+			for ray in mirror_rig.get_children():
+				if ray is SpotLight3D:
+					discoball_lights.erase(ray)
 		var attached_spot := node.get_node_or_null("ClubSpot") as SpotLight3D
 		if attached_spot != null:
 			stage_lights.erase(attached_spot)
@@ -3165,6 +3205,7 @@ func _new_club() -> void:
 	poster_led_lights.clear()
 	stage_lights.clear()
 	disco_spots.clear()
+	discoball_lights.clear()
 	laser_spots.clear()
 	beam_meshes.clear()
 	laser_beams.clear()
