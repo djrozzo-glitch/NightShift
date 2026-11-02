@@ -8,7 +8,7 @@ console.info('NIGHTSHIFT LITE BUILD 04: fixed venue assets');
 const mount=$('scene'), scene=new THREE.Scene();
 scene.background=new THREE.Color('#090b16'); scene.fog=new THREE.FogExp2('#0c0b17',.024);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.4));
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.0));
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.shadowMap.enabled=false;
 renderer.setSize(mount.clientWidth,mount.clientHeight);
@@ -185,33 +185,55 @@ $('loadSheet').onclick=loadSheet;const defaultSheet='https://docs.google.com/spr
 const variants=['baggy_m','fashion_f','jungle_f','raver_f','raver_m'];
 const actorAssets={};
 let loaded=0;
-const actorPromise=Promise.all(variants.flatMap((name,i)=>['idle','walk','dance'].map(async state=>{
+let actorPromise=null;
+function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatMap((name,i)=>['walk','dance'].map(async state=>{
  const g=await loadGLB('assets/characters/'+name+'_'+state+'.glb');
  if(!actorAssets[i])actorAssets[i]={};
  if(g)actorAssets[i][state]=g; loaded++;
-}))).then(()=>{$('loading').textContent='Гости и анимации загружены.';return true});
+}))).then(()=>{return true});}
 let opened=false,running=false,guestClock=0,partyTime=0;const guests=[];const clock=new THREE.Clock();
-function actorState(p,state){if(p.state===state)return;
-if(p.mesh){p.group.remove(p.mesh);if(p.mixer)p.mixer.stopAllAction();}
-const asset=actorAssets[p.variant]?.[state]||actorAssets[p.variant]?.dance||actorAssets[p.variant]?.idle;
-p.state=state;p.mixer=null;
-if(!asset){p.mesh=new THREE.Mesh(new THREE.CapsuleGeometry(.22,.72,3,5),mat(0x965bd1));p.mesh.position.y=.55;p.group.add(p.mesh);return}
-const model=cloneSkeleton(asset.scene);fitModel(model,.65);
-model.scale.multiplyScalar(1.45);p.group.add(model);p.mesh=model;
-if(asset.animations.length){p.mixer=new THREE.AnimationMixer(model);const a=p.mixer.clipAction(asset.animations[0]);a.play();a.time=Math.random()*Math.max(a.getClip().duration,.1);}
+function actorState(p,state){
+ if(p.state===state)return;
+ if(p.mesh)p.mesh.visible=false;
+ if(p.mixer)p.mixer.stopAllAction();
+ p.cache ||= {};
+ let item=p.cache[state];
+ if(!item){
+  const asset=actorAssets[p.variant]?.[state]||actorAssets[p.variant]?.dance||actorAssets[p.variant]?.walk;
+  if(!asset){const mesh=new THREE.Mesh(guestFallbackGeometry,guestFallbackMaterial);mesh.position.y=.55;p.group.add(mesh);item={mesh,mixer:null};}
+  else{
+   const mesh=cloneSkeleton(asset.scene);fitModel(mesh,.65);mesh.scale.multiplyScalar(1.45);p.group.add(mesh);
+   const mixer=asset.animations.length?new THREE.AnimationMixer(mesh):null;
+   if(mixer)mixer.clipAction(asset.animations[0]).play();
+   item={mesh,mixer};
+  }
+  p.cache[state]=item;
+ }
+ p.mesh=item.mesh;p.mesh.visible=true;p.mixer=item.mixer;p.state=state;
+ if(p.mixer){const action=p.mixer._actions?.[0];if(action){action.reset().play();action.time=Math.random()*Math.max(action.getClip().duration,.1);}}
 }
+const guestFallbackGeometry=new THREE.CapsuleGeometry(.22,.72,3,5);
+const guestFallbackMaterial=mat(0x965bd1);
 function addGuest(){if(!running||guests.length>=20)return;
 const variant=Math.floor(Math.random()*variants.length);
 const x=-3.35+Math.random()*6.7,z=-2.25+Math.random()*5.7;
 const group=new THREE.Group();group.position.set(0,.05,7);stage.add(group);
 const p={group,mesh:null,mixer:null,state:null,variant,x,z,speed:1.1+Math.random()*.5,phase:Math.random()*6.28};actorState(p,'walk');guests.push(p);$('counter').textContent='GUESTS: '+guests.length+' / 20';
 }
-function removeGuests(){for(const p of guests){p.mixer?.stopAllAction();stage.remove(p.group)}guests.length=0;$('counter').textContent='GUESTS: 0 / 20';}
+function removeGuests(){for(const p of guests){for(const state of Object.values(p.cache||{}))state.mixer?.stopAllAction();stage.remove(p.group)}guests.length=0;$('counter').textContent='GUESTS: 0 / 20';}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
-$('play').onclick=async()=>{if(!opened||running)return;running=true;partyTime=0;guestClock=0;removeGuests();$('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;$('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До 20 гостей на танцполе.';await actorPromise;if(running)addGuest();};
+$('play').onclick=async()=>{if(!opened||running)return;running=true;partyTime=0;guestClock=0;removeGuests();$('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;$('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До 20 гостей на танцполе.';await loadGuestsOnDemand();if(running)addGuest();};
 $('end').onclick=()=>{running=false;removeGuests();$('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;$('stageStatus').textContent='Вечеринка закончилась. Выбери следующего DJ.';};
+const monitor=document.createElement('div');
+monitor.style.cssText='position:absolute;right:14px;top:60px;z-index:3;color:#baffd8;background:#080916bd;border:1px solid #365b56;border-radius:6px;padding:6px 9px;font:11px monospace;pointer-events:none';
+mount.appendChild(monitor);
+let fpsCount=0,fpsClock=0;
+function monitorFrame(dt){fpsCount++;fpsClock+=dt;if(fpsClock>=1.5){const fps=Math.round(fpsCount/fpsClock),info=renderer.info;
+ const memory=performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576)+'MB JS':'JS heap n/a';
+ monitor.textContent='FPS '+fps+' | '+memory+' | GEO '+info.memory.geometries+' | TEX '+info.memory.textures+' | GUESTS '+guests.length;
+ fpsClock=0;fpsCount=0;}}
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
-let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;controls.update();const target=running?1:0;for(const mixer of extraMixers)mixer.update(dt);
+let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const target=running?1:0;for(const mixer of extraMixers)mixer.update(dt);
 hemi.intensity+=((running?.4:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.15:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(running?0x050410:0x090b16),.02);
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
