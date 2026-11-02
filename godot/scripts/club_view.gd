@@ -88,7 +88,19 @@ const CLUB_MILESTONES := [
 	{"id": "first_profit", "name": "FIRST PROFIT", "reward": 150},
 	{"id": "full_house", "name": "PACKED BASEMENT", "reward": 200},
 	{"id": "drinks_30", "name": "BAR IS BOOMING", "reward": 150},
-	{"id": "profit_streak", "name": "THREE GOOD NIGHTS", "reward": 250}
+	{"id": "profit_streak", "name": "THREE GOOD NIGHTS", "reward": 250},
+	{"id": "guests_50", "name": "FIFTY RAVERS", "reward": 300},
+	{"id": "profit_500", "name": "BIG NIGHT OUT", "reward": 350},
+	{"id": "drinks_45", "name": "BAR NEVER STOPS", "reward": 300},
+	{"id": "rep_75", "name": "LOCAL LEGEND", "reward": 350},
+	{"id": "guests_65", "name": "FULL HOUSE ENERGY", "reward": 450},
+	{"id": "profit_900", "name": "CASH MACHINE", "reward": 500},
+	{"id": "level_5", "name": "UNDERGROUND ICON", "reward": 500},
+	{"id": "rep_90", "name": "CITYWIDE FAME", "reward": 600},
+	{"id": "drinks_65", "name": "LAST ORDERS", "reward": 550},
+	{"id": "profit_streak_5", "name": "FIVE GREAT NIGHTS", "reward": 700},
+	{"id": "level_8", "name": "SCENE LEADER", "reward": 850},
+	{"id": "profit_1500", "name": "THE BIG LEAGUES", "reward": 1000}
 ]
 var economy_label: Label
 var notice_label: Label
@@ -160,6 +172,17 @@ const MAX_GUESTS := 48
 const EXPANDED_GUEST_LIMIT := 72
 const OBJECT_UPKEEP := {"sofa": 2, "table": 1, "stool": 1, "plant2": 1, "rail": 1, "poster": 1}
 
+func _active_milestones() -> Array[Dictionary]:
+	var active: Array[Dictionary] = []
+	for milestone in CLUB_MILESTONES:
+		if completed_milestones.has(str(milestone["id"])):
+			continue
+		active.append(milestone)
+		if active.size() >= 4:
+			break
+	return active
+
+
 func _milestone_achieved(id: String, profit: int) -> bool:
 	match id:
 		"first_profit":
@@ -170,15 +193,27 @@ func _milestone_achieved(id: String, profit: int) -> bool:
 			return night_drinks_sold >= 30
 		"profit_streak":
 			return profitable_night_streak >= 3
+		"guests_50": return guest_count >= 50
+		"profit_500": return profit >= 500
+		"drinks_45": return night_drinks_sold >= 45
+		"rep_75": return reputation >= 75
+		"guests_65": return guest_count >= 65
+		"profit_900": return profit >= 900
+		"level_5": return club_level >= 5
+		"rep_90": return reputation >= 90
+		"drinks_65": return night_drinks_sold >= 65
+		"profit_streak_5": return profitable_night_streak >= 5
+		"level_8": return club_level >= 8
+		"profit_1500": return profit >= 1500
 	return false
 
 
 func _award_night_milestones(profit: int) -> String:
 	profitable_night_streak = profitable_night_streak + 1 if profit > 0 else 0
 	var awards: Array[String] = []
-	for milestone in CLUB_MILESTONES:
+	for milestone in _active_milestones():
 		var id := str(milestone["id"])
-		if completed_milestones.has(id) or not _milestone_achieved(id, profit):
+		if not _milestone_achieved(id, profit):
 			continue
 		completed_milestones.append(id)
 		var reward := int(milestone["reward"])
@@ -764,22 +799,55 @@ func _spawn_dj_performers() -> void:
 		if variants.is_empty():
 			anchor.queue_free()
 			continue
-		var performer := {"anchor": anchor, "variants": variants}
+		var performer := {"anchor": anchor, "variants": variants, "motion": "idle", "motion_elapsed": 0.0, "idle_remaining": randf_range(6.0, 13.0), "motion_duration": 1.0}
 		dj_performers.append(performer)
 		_show_dj_motion(performer, "idle" if variants.has("idle") else str(variants.keys()[0]))
 
 
-func _animate_dj_performers(step: float) -> void:
-	if dj_performers.is_empty():
+func _dj_motion_duration(visual: Node3D) -> float:
+	for animation_node in visual.find_children("*", "AnimationPlayer", true, false):
+		var player := animation_node as AnimationPlayer
+		if player.current_animation != "":
+			return maxf(0.2, player.current_animation_length)
+	return 3.0
+
+
+func _switch_dj_motion(performer: Dictionary, motion: String) -> void:
+	var variants: Dictionary = performer["variants"]
+	if not variants.has(motion):
 		return
-	dj_animation_clock += step
-	var phase := fmod(dj_animation_clock, 18.0)
+	performer["motion"] = motion
+	performer["motion_elapsed"] = 0.0
+	_show_dj_motion(performer, motion)
+	var visual := variants[motion] as Node3D
+	for animation_node in visual.find_children("*", "AnimationPlayer", true, false):
+		var player := animation_node as AnimationPlayer
+		if player.current_animation != "":
+			player.seek(0.0, true)
+			player.play()
+	performer["motion_duration"] = _dj_motion_duration(visual)
+
+
+func _animate_dj_performers(step: float) -> void:
 	for performer in dj_performers:
-		var variants: Dictionary = performer["variants"]
-		var motion := "handdsup" if phase > 14.0 else ("standing" if phase > 9.0 else "idle")
-		if not variants.has(motion):
-			motion = "idle" if variants.has("idle") else str(variants.keys()[0])
-		_show_dj_motion(performer, motion)
+		var motion := str(performer["motion"])
+		if motion == "idle":
+			performer["idle_remaining"] = float(performer["idle_remaining"]) - step
+			if float(performer["idle_remaining"]) <= 0.0:
+				var variants: Dictionary = performer["variants"]
+				var actions: Array[String] = []
+				for action in ["standing", "handdsup"]:
+					if variants.has(action):
+						actions.append(action)
+				if not actions.is_empty():
+					_switch_dj_motion(performer, actions.pick_random())
+				else:
+					performer["idle_remaining"] = randf_range(6.0, 13.0)
+		else:
+			performer["motion_elapsed"] = float(performer["motion_elapsed"]) + step
+			if float(performer["motion_elapsed"]) >= float(performer["motion_duration"]):
+				_switch_dj_motion(performer, "idle")
+				performer["idle_remaining"] = randf_range(7.0, 16.0)
 
 
 func _guest_animated_model(packed: PackedScene, parent: Node3D) -> Node3D:
@@ -1829,9 +1897,12 @@ func _update_night_stats() -> void:
 		lines.append("")
 		lines.append(_night_advice())
 		lines.append("")
-		lines.append("CLUB MILESTONES  %d/%d" % [completed_milestones.size(), CLUB_MILESTONES.size()])
-		for milestone in CLUB_MILESTONES:
-			lines.append("%s  %s  +€%d" % ["✓" if completed_milestones.has(str(milestone["id"])) else "○", str(milestone["name"]), int(milestone["reward"])])
+		var active_milestones := _active_milestones()
+		lines.append("NEXT MILESTONES  ·  %d/%d COMPLETED" % [completed_milestones.size(), CLUB_MILESTONES.size()])
+		if active_milestones.is_empty():
+			lines.append("✓ ALL MILESTONES COMPLETE")
+		for milestone in active_milestones:
+			lines.append("○  %s  +€%d" % [str(milestone["name"]), int(milestone["reward"])])
 	night_report_details.text = "\n".join(lines)
 
 func _build_price(kind: String) -> int:
