@@ -2503,7 +2503,7 @@ func _can_move_to(x: int, y: int) -> bool:
 		return false
 	var record: Dictionary = placed_objects[moving_object_id]
 	for cell in _footprint(x, y, str(record["kind"]), moving_turn):
-		if cell.x <= 0 or cell.y <= 0 or cell.x >= SIZE - 1 or cell.y >= SIZE - 1:
+		if cell.x <= 0 or cell.y <= 0 or cell.x >= grid_width - 1 or cell.y >= SIZE - 1:
 			return false
 		if occupied.has(cell) and int(object_at_cell.get(cell, -1)) != moving_object_id:
 			return false
@@ -2803,9 +2803,11 @@ func _apply_east_wing() -> void:
 	_relocate_east_posters()
 	_remove_old_east_perimeter()
 	# Enclose the new wing with a single outer perimeter.
-	for x in range(SIZE, EXPANDED_WIDTH):
-		_model(club, "wall", x, 0)
-		_model(club, "wall", x, SIZE - 1)
+	for x in range(SIZE - 1, EXPANDED_WIDTH):
+		if club.get_node_or_null("wall_%d_0" % x) == null:
+			_model(club, "wall", x, 0)
+		if club.get_node_or_null("wall_%d_%d" % [x, SIZE - 1]) == null:
+			_model(club, "wall", x, SIZE - 1)
 	for y in range(1, SIZE - 1):
 		_model(club, "wall", EXPANDED_WIDTH - 1, y, 1)
 	_refresh_preview()
@@ -2960,6 +2962,10 @@ func _load_club() -> void:
 		_attach_fixture_lighting(node, kind)
 	if expanded:
 		_remove_old_east_perimeter()
+		# Repair the two corner joins in clubs expanded before this fix.
+		for edge_y in [0, SIZE - 1]:
+			if club.get_node_or_null("wall_15_%d" % edge_y) == null:
+				_model(club, "wall", 15, edge_y)
 	club_name = str(data.get("club_name", "ABLETON GYM")).strip_edges().substr(0, 28)
 	if club_name.is_empty():
 		club_name = "ABLETON GYM"
