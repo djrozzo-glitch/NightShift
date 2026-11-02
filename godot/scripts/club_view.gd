@@ -799,7 +799,7 @@ func _spawn_dj_performers() -> void:
 		if variants.is_empty():
 			anchor.queue_free()
 			continue
-		var performer := {"anchor": anchor, "variants": variants, "motion": "idle", "motion_elapsed": 0.0, "idle_remaining": randf_range(6.0, 13.0), "motion_duration": 1.0}
+		var performer := {"anchor": anchor, "variants": variants, "motion": "idle", "motion_elapsed": 0.0, "idle_remaining": randf_range(4.0, 8.0), "motion_duration": 1.0, "last_action": ""}
 		dj_performers.append(performer)
 		_show_dj_motion(performer, "idle" if variants.has("idle") else str(variants.keys()[0]))
 
@@ -825,7 +825,12 @@ func _switch_dj_motion(performer: Dictionary, motion: String) -> void:
 		if player.current_animation != "":
 			player.seek(0.0, true)
 			player.play()
-	performer["motion_duration"] = _dj_motion_duration(visual)
+	var clip_length := _dj_motion_duration(visual)
+	# Hands-up is a short gesture: play multiple COMPLETE loops rather
+	# than cutting it off after a single imported animation cycle.
+	performer["motion_duration"] = maxf(4.0, clip_length * 3.0) if motion == "handdsup" else maxf(clip_length, 1.5)
+	if motion != "idle":
+		performer["last_action"] = motion
 
 
 func _animate_dj_performers(step: float) -> void:
@@ -840,7 +845,12 @@ func _animate_dj_performers(step: float) -> void:
 					if variants.has(action):
 						actions.append(action)
 				if not actions.is_empty():
-					_switch_dj_motion(performer, actions.pick_random())
+					# Alternate gestures when both are present so hands-up
+					# is guaranteed to appear regularly.
+					var next_action := str(actions.pick_random())
+					if actions.size() > 1 and next_action == str(performer["last_action"]):
+						next_action = "handdsup" if next_action == "standing" else "standing"
+					_switch_dj_motion(performer, next_action)
 				else:
 					performer["idle_remaining"] = randf_range(6.0, 13.0)
 		else:
@@ -1259,7 +1269,7 @@ func _process(delta: float) -> void:
 	if not night_active or night_paused:
 		return
 	var step := delta * night_speed
-	_animate_dj_performers(step)
+	_animate_dj_performers(delta)
 	night_elapsed += step
 	if night_elapsed >= NIGHT_DURATION:
 		_end_night()
