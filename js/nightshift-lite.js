@@ -257,7 +257,7 @@ const guests=[];const clock=new THREE.Clock();
 const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
 const danceSpot=()=>({x:-3.5+Math.floor(Math.random()*8),z:-5.5+Math.floor(Math.random()*7)});
 const barSpots=[{x:-6.4,z:-4},{x:6.4,z:-4}];
-const sofaSpots=[{x:-5.9,z:5},{x:5.9,z:5},{x:-3,z:7.9},{x:3,z:7.9}];
+const sofaSpots=[{x:-5.9,z:5},{x:5.9,z:5},{x:-3,z:6.65},{x:3,z:6.65}];
 function actorState(p,state){
  if(p.state===state)return;
  if(p.mesh)p.mesh.visible=false;
@@ -285,7 +285,7 @@ function routeGuest(p,activity){
  const destination=activity==='bar'?pick(barSpots):activity==='sofa'?pick(sofaSpots):danceSpot();
  p.x=destination.x+(activity==='dance'?(Math.random()-.5)*.38:0);
  p.z=destination.z+(activity==='dance'?(Math.random()-.5)*.38:0);
- p.sofaBack=activity==='sofa'&&destination.z>7;
+ p.sofaBack=activity==='sofa'&&destination.z>6;
  actorState(p,'walk');
 }
 function addGuest(){
