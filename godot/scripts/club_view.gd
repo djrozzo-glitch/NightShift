@@ -234,6 +234,24 @@ func _award_night_milestones(profit: int) -> String:
 	return "  |  ".join(awards)
 
 
+# Ticket demand is elastic: expensive tickets must earn their premium
+# through venue reputation, equipment and a strong lineup.
+func _fair_ticket_price() -> float:
+	var sound := 2.0 if _upgrade_owned("premium_sound") else 0.0
+	var iconic := 3.0 if _upgrade_owned("iconic_sound") else 0.0
+	return 13.0 + float(club_level - 1) * 2.5 + float(reputation - 55) * 0.12 + _club_prestige() * 0.5 + sound + iconic
+
+
+func _ticket_demand_factor() -> float:
+	var excess := maxf(0.0, float(ticket_price) - _fair_ticket_price())
+	return clampf(exp(-0.047 * excess), 0.06, 1.0)
+
+
+func _drink_demand_factor() -> float:
+	var fair_drink := 7.0 + float(club_level - 1) * 0.8 + float(reputation - 55) * 0.035
+	return clampf(exp(-0.095 * maxf(0.0, float(drink_price) - fair_drink)), 0.12, 1.0)
+
+
 func _dj_crowd_bonus() -> float:
 	if dj_picker == null or dj_picker.selected < 0:
 		return 1.0
@@ -1016,11 +1034,15 @@ func _spawn_guest() -> bool:
 	var path := _path_to(GUEST_ENTRY, destination)
 	if path.is_empty():
 		return false
+	# Do not admit a guest merely because there is free floor space:
+	# high ticket prices reduce the share of interested visitors.
+	if randf() > _ticket_demand_factor():
+		return false
 	var person := Node3D.new()
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(18, 60), "thirst": randf_range(0.25, 0.65), "wc_need": randf_range(0.0, 0.35), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0, "time_inside": 0.0, "leaving": false})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(30, 90), "thirst": randf_range(0.25, 0.65), "wc_need": randf_range(0.0, 0.35), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0, "time_inside": 0.0, "leaving": false})
 	guest_count += 1
 	night_ticket_income += ticket_price
 	cash += ticket_price
@@ -1355,7 +1377,7 @@ func _process(delta: float) -> void:
 			guest_spawn_clock = 0.0
 		else:
 			# Keep the arrival ready if the entrance is briefly blocked.
-			guest_spawn_clock = 2.0
+			guest_spawn_clock = 0.0
 	for guest in guests:
 		# Guest needs evolve during the night and influence where they go.
 		guest["time_inside"] = float(guest.get("time_inside", 0.0)) + step
@@ -1403,7 +1425,7 @@ func _process(delta: float) -> void:
 						guest["dance"] = true
 						guest["wait"] = 5.0
 				elif state == "ordering":
-					var wants_to_buy := float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price
+					var wants_to_buy := float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price and randf() < _drink_demand_factor()
 					var bar_id := int(guest.get("service_object", -1))
 					var service_interval := 3.3 if _upgrade_owned("fast_bar") else 5.0
 					if wants_to_buy and bar_id >= 0 and float(bar_service_clocks.get(bar_id, 0.0)) >= service_interval:
@@ -1439,9 +1461,9 @@ func _process(delta: float) -> void:
 						night_wc_waits += 1
 						guest["wait"] = 2.0
 						continue
-					var wants_drink := float(guest["thirst"]) > (0.48 + maxf(0.0, float(drink_price - 7)) * 0.018) and int(guest["wallet"]) >= drink_price
+					var wants_drink := float(guest["thirst"]) > 0.48 and int(guest["wallet"]) >= drink_price and randf() < _drink_demand_factor()
 					var wants_rest := float(guest["energy"]) < 0.45
-					var activity := "bar" if wants_drink else "sofa" if wants_rest else ("bar" if randf() < 0.3 and int(guest["wallet"]) >= drink_price else "sofa")
+					var activity := "bar" if wants_drink else "sofa" if wants_rest else ("bar" if randf() < 0.3 * _drink_demand_factor() and int(guest["wallet"]) >= drink_price else "sofa")
 					if not _guest_route(guest, activity):
 						if not _guest_route(guest, "sofa" if activity == "bar" else "dance"):
 							guest["wait"] = 8.0
@@ -3013,13 +3035,22 @@ func _build_overlay() -> void:
 	progression_panel = PanelContainer.new()
 	progression_panel.position = Vector2(20, 322)
 	progression_panel.custom_minimum_size = Vector2(344, 0)
+	progression_panel.size = Vector2(344, 420)
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
 	theme_root.add_child(progression_panel)
 	progression_panel.add_to_group("nightshift_ui_blocker")
+	var progression_scroll := ScrollContainer.new()
+	progression_scroll.custom_minimum_size = Vector2(318, 420)
+	progression_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	progression_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	progression_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	progression_panel.add_child(progression_scroll)
 	var progress_content := VBoxContainer.new()
+	progress_content.custom_minimum_size.x = 292
+	progress_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	progress_content.add_theme_constant_override("separation", 12)
-	progression_panel.add_child(progress_content)
+	progression_scroll.add_child(progress_content)
 	var progress_heading := Label.new()
 	progress_heading.text = "CLUB PROGRESSION"
 	UIStyle.decorate_label(progress_heading, 17)
