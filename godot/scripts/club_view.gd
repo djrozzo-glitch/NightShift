@@ -343,6 +343,7 @@ var dance_lights: Array[OmniLight3D] = []
 var beam_meshes: Array[MeshInstance3D] = []
 var disco_spots: Array[SpotLight3D] = []
 var discoball_lights: Array[SpotLight3D] = []
+var discoball_projector_texture: ImageTexture
 const DISCO_COLORS := [Color("#a75bff"), Color("#40c9ff"), Color("#ff4bba"), Color("#ffbc55"), Color("#f3f7ff")]
 var laser_spots: Array[SpotLight3D] = []
 var laser_beams: Array[MeshInstance3D] = []
@@ -1449,7 +1450,7 @@ func _transition_club_lighting(to_night: bool, duration: float = 3.5) -> void:
 			lighting_fade_tween.tween_property(glow, "light_energy", 1.2 if to_night else 0.0, duration)
 	for ray in discoball_lights:
 		if is_instance_valid(ray):
-			lighting_fade_tween.tween_property(ray, "light_energy", 1.8 if to_night else 0.0, duration)
+			lighting_fade_tween.tween_property(ray, "light_energy", 6.0 if to_night else 0.0, duration)
 	for beam in beam_meshes:
 		if is_instance_valid(beam):
 			beam.visible = to_night and beam.get_node_or_null("LaserHalo") != null
@@ -1813,6 +1814,31 @@ void fragment() {
 	return material
 
 
+func _disco_projector_pattern() -> ImageTexture:
+	if discoball_projector_texture != null:
+		return discoball_projector_texture
+	# Procedural light cookie: scattered mirror reflections with soft edges.
+	var size := 128
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color.BLACK)
+	for y in range(size):
+		for x in range(size):
+			var uv := Vector2(float(x) / float(size), float(y) / float(size))
+			var cell := Vector2i(int(floor(uv.x * 9.0)), int(floor(uv.y * 9.0)))
+			var hash_value := posmod(cell.x * 17 + cell.y * 29 + cell.x * cell.y * 7, 13)
+			if hash_value < 3:
+				continue
+			var jitter := Vector2(float(posmod(cell.x * 7 + cell.y * 3, 11)) / 55.0 - 0.1, float(posmod(cell.x * 3 + cell.y * 11, 11)) / 55.0 - 0.1)
+			var center := (Vector2(cell) + Vector2(0.5, 0.5) + jitter) / 9.0
+			var distance := uv.distance_to(center)
+			var radius := 0.012 + float(hash_value % 3) * 0.004
+			var brightness := 1.0 - smoothstep(radius * 0.55, radius, distance)
+			if brightness > 0.0:
+				img.set_pixel(x, y, Color(brightness, brightness, brightness, 1.0))
+	discoball_projector_texture = ImageTexture.create_from_image(img)
+	return discoball_projector_texture
+
+
 func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	if kind == "discoball":
 		if not is_instance_valid(node) or node.has_node("DiscoBallLights"):
@@ -1827,9 +1853,12 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		for ray_index in range(4):
 			var ray := SpotLight3D.new()
 			ray.name = "MirrorRay%d" % ray_index
-			ray.spot_range = 9.0
-			ray.spot_angle = 12.0
-			ray.shadow_enabled = false
+			ray.spot_range = 13.0
+			ray.spot_angle = 39.0
+			ray.spot_angle_attenuation = 0.45
+			# Godot requires shadow mapping for projected light cookies.
+			ray.shadow_enabled = true
+			ray.light_projector = _disco_projector_pattern()
 			ray.light_color = DISCO_COLORS[ray_index]
 			ray.light_energy = 0.0
 			rig.add_child(ray)
@@ -1997,7 +2026,7 @@ func _set_night_lighting(enabled: bool) -> void:
 			glow.light_energy = 1.2 if enabled else 0.0
 	for ray in discoball_lights:
 		if is_instance_valid(ray):
-			ray.light_energy = 1.8 if enabled else 0.0
+			ray.light_energy = 6.0 if enabled else 0.0
 	if enabled:
 		_debug_fixture_lights()
 
@@ -2021,16 +2050,28 @@ func _animate_stage_lights(delta: float) -> void:
 			var direction := fixture.global_basis * local_direction
 			spot.look_at(spot.global_position + direction, Vector3.UP)
 		spot.light_energy = (2.5 + 4.0 * synced_beat) if synced_beat >= 0.0 else 3.0 + 2.0 * (0.5 + 0.5 * sin(lighting_clock * 3.0 + float(index)))
-	# Mirror ball: four narrow, rotating spots sweep the floor in circles.
-	# Keep their energy controlled by the day/night fade.
+	# Rotate the complete floor-standing fixture around its own vertical axis.
+	# Do not rotate the grid pivot: moving/rotating objects must remain editable.
+	for record in placed_objects.values():
+		if str(record["kind"]) != "discoball":
+			continue
+		var fixture := record["node"] as Node3D
+		if not is_instance_valid(fixture):
+			continue
+		for child in fixture.get_children():
+			if child is Node3D and child.name != "DiscoBallLights":
+				(child as Node3D).rotation.y += delta * night_speed * 0.55
+				break
+	# Project moving dots onto the floor and nearby walls.
 	for index in range(discoball_lights.size()):
 		var ray := discoball_lights[index]
 		if not is_instance_valid(ray):
 			continue
 		var angle := lighting_clock * 0.42 + float(index % 4) * TAU / 4.0
-		var distance := 2.5 + 1.3 * sin(lighting_clock * 0.3 + float(index))
+		var distance := 4.0 + 1.3 * sin(lighting_clock * 0.3 + float(index))
 		var target := ray.global_position + Vector3(cos(angle) * distance, -maxf(2.0, ray.global_position.y + 0.5), sin(angle) * distance)
 		ray.look_at(target, Vector3.UP)
+		ray.rotate_object_local(Vector3.FORWARD, lighting_clock * 0.12 + float(index) * 0.3)
 	# Independent color changes and a restrained rhythmic flash for moving heads.
 	for index in range(disco_spots.size()):
 		var disco := disco_spots[index]
