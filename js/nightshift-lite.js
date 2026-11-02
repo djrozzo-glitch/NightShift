@@ -257,7 +257,7 @@ const guests=[];const clock=new THREE.Clock();
 const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
 const danceSpot=()=>({x:-3.5+Math.floor(Math.random()*8),z:-5.5+Math.floor(Math.random()*7)});
 const barSpots=[{x:-6.4,z:-4},{x:6.4,z:-4}];
-const sofaSpots=[{x:-5.9,z:5},{x:5.9,z:5},{x:-3,z:6.65},{x:3,z:6.65}];
+const sofaSpots=[{x:-6.4,z:5},{x:6.4,z:5},{x:-3,z:6.65-1/3},{x:3,z:6.65-1/3}];
 function actorState(p,state){
  if(p.state===state)return;
  if(p.mesh)p.mesh.visible=false;
