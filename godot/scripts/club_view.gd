@@ -168,7 +168,8 @@ const DJ_ROSTER := [
 	{"name": "Vanya Velin", "fee": 400},
 	{"name": "Velvet 37", "fee": 300},
 	{"name": "rozzo", "fee": 350, "bpm": 125.0},
-	{"name": "lowQ", "fee": 250}
+	{"name": "lowQ", "fee": 250},
+	{"name": "Basement Resident", "fee": 100}
 ]
 
 func _ready() -> void:
@@ -407,6 +408,8 @@ func _night_total_expenses() -> int:
 
 
 func _night_advice() -> String:
+	if night_ticket_income + night_drink_income < _night_total_expenses():
+		return "LOSS: try a cheaper resident DJ, adjust ticket price or grow attendance."
 	if night_bar_queue_peak >= 5 and night_bar_missed > 0:
 		return "BAR QUEUES: add a bar or improve access to existing bars."
 	if night_wc_waits >= 5:
@@ -1674,6 +1677,8 @@ func _update_night_stats() -> void:
 	var profit := revenue - expenses
 	var mood := _average_guest_mood() if night_active else (night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last)
 	night_report_heading.text = "NIGHT %d  |  %s" % [night_number, "LIVE STATS" if night_active else "REPORT"]
+	var break_even := maxi(0, expenses - night_drink_income)
+	var tickets_needed := ceili(float(break_even) / float(maxi(1, ticket_price)))
 	var lines: Array[String] = [
 		"MOOD  %d%%     GUESTS  %d" % [roundi(mood), guest_count],
 		"CAPACITY  %d     PEAK  %d" % [_club_capacity(), night_capacity_peak],
@@ -1691,6 +1696,7 @@ func _update_night_stats() -> void:
 		"STAFF + UTILITIES   -€%d" % night_operating_cost,
 		"DRINK SUPPLIES      -€%d" % night_supply_cost,
 		"NET PROFIT            %s€%d" % ["+" if profit >= 0 else "-", absi(profit)],
+		"BREAK-EVEN TICKETS  %d at €%d" % [tickets_needed, ticket_price],
 		"",
 		"LEVEL %d  XP %d/%d" % [club_level, club_xp, _xp_needed(club_level)],
 		"REPUTATION %d/100" % reputation
@@ -2439,6 +2445,9 @@ func _new_club() -> void:
 	drink_price = 7
 	ticket_slider.value = ticket_price
 	drink_slider.value = drink_price
+	if dj_picker != null:
+		dj_picker.select(DJ_ROSTER.size() - 1)
+		_refresh_dj_card()
 	build_mode = false
 	build_kind_selected = false
 	erase_mode = false
