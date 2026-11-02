@@ -621,8 +621,8 @@ func _spawn_dj_performers() -> void:
 		var anchor := Node3D.new()
 		anchor.name = "PerformingDJ"
 		booth.add_child(anchor)
-		anchor.position = Vector3(-1.48, 0.0, 0.0)
-		anchor.rotation.y = -PI * 0.5
+		anchor.position = Vector3(-0.98, 0.0, 0.0)
+		anchor.rotation.y = PI * 0.5
 		var variants: Dictionary = {}
 		for motion in ["idle", "standing", "handdsup"]:
 			if not dj_character_variants.has(motion):
