@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {clone as cloneSkeleton} from 'three/addons/utils/SkeletonUtils.js';
 
@@ -22,53 +23,87 @@ const hemi=new THREE.HemisphereLight(0xded7ff,0x191424,2.3);scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xffdfba,2);sun.position.set(-10,16,8);scene.add(sun);
 const stage=new THREE.Group();scene.add(stage);
 const loader=new GLTFLoader();
+loader.setMeshoptDecoder(MeshoptDecoder);
 const loadGLB=path=>new Promise(resolve=>loader.load(path,resolve,undefined,err=>{console.warn('Optional GLB not loaded',path,err);resolve(null)}));
 // Optimized copies live next to original Godot GLBs. The original remains a safe fallback.
-const loadVenueModel=async name=>{
- // Browser-optimized models are uploaded through GitHub to assets/models/.
- // Preserve compatibility with the previous directory and original Godot assets.
- return (await loadGLB('assets/models/'+name+'_opt.glb'))
-     || (await loadGLB('godot/assets/models/'+name+'_opt.glb'))
-     || (await loadGLB('godot/assets/models/'+name+'.glb'));
-};
+const loadVenueModel=async name=>(await loadGLB('assets/models/'+name+'_opt.glb')) || (await loadGLB('godot/assets/models/'+name+'.glb'));
+// Optimized assets produced by glTF Transform may use EXT_meshopt_compression.
 const mat=(color,roughness=.85)=>new THREE.MeshStandardMaterial({color,roughness});
 const concrete=mat(0x252330),dark=mat(0x302c3c),danceMat=mat(0x503463),edgeMat=mat(0x50455a);
 function block(w,h,d,x,y,z,material,parent=stage){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);o.position.set(x,y,z);parent.add(o);return o;}
 // Fixed NightShift venue: clear front opening, modelled wall modules, lounge and equipment.
 block(16,.2,16,0,-.15,0,concrete);
 for(let x=-7.5;x<=7.5;x++)for(let z=-7.5;z<=7.5;z++){
- if(Math.abs(x)<4.5&&z>-3&&z<4)continue;
  block(1,.012,1,x,-.035,z,(Math.round(x+z)&1)?concrete:dark);
 }
 const wallPieces=[];
 for(let i=-7.5;i<=7.5;i++){
  wallPieces.push([i,-7.9,0],[7.9,i,Math.PI/2],[-7.9,i,Math.PI/2]);
- if(Math.abs(i)>1.5)wallPieces.push([i,7.9,0]);
+ if(Math.abs(i)>.5)wallPieces.push([i,7.9,0]);
 }
-for(let x=-3.5;x<=3.5;x++)for(let z=-2.5;z<=3.5;z++)
- block(.98,.05,.98,x,.035,z,danceMat);
+// Replace placeholder rectangles with optimized floor.glb tiles, keeping a fallback.
+const danceTilePositions=[];
+for(let x=-3.5;x<=3.5;x++)for(let z=-5.5;z<=.5;z++)danceTilePositions.push([x,z]);
+const dancePlaceholders=danceTilePositions.map(([x,z])=>block(.98,.05,.98,x,.035,z,danceMat));
+// Tile grid: 1x1 objects sit at half-integers, 2x1 furniture at whole integers.
 const decor=[
- ['dj_stand_upgraded',0,-5.65,2.6,0],
- ['speaker_updated',-2.6,-5.65,1.65,0],['speaker_updated',2.6,-5.65,1.65,0],
- // Bars and lounge furniture kept against the outer walls.
- ['bar_new',-6.7,-2.0,2.0,Math.PI/2],['bar_new',6.7,-3.7,2.0,-Math.PI/2],
- ['sofa_upgraded',-6.65,3.3,2.0,Math.PI/2],['sofa_upgraded',6.6,2.7,2.0,-Math.PI/2],
- ['sofa_upgraded',-3.8,6.7,1.9,Math.PI],['sofa_upgraded',3.8,6.7,1.9,Math.PI],
- // Both plant sizes, arranged as wall-side accents.
- ['plant_big',-6.55,-5.9,1.25,0],['plant_big',6.5,-5.9,1.25,0],
- ['plant_big',-6.55,5.9,1.25,0],['plant_big',6.5,5.9,1.25,0],
- ['plant2',-6.65,.55,.8,0],['plant2',6.65,.55,.8,0],
- ['plant2',-1.9,-6.75,.8,0],['plant2',1.9,-6.75,.8,0],
- // Four times smaller fixtures, leaving the dance floor unobstructed.
- ['laser_new',-4.8,-4.9,.2875,0],['laser_new',4.8,-4.9,.2875,0],
- ['light',-5.3,-1.2,.2875,0],['light',5.3,-1.2,.2875,0],
- ['discoball',-5.5,2.9,.3125,0],['discoball',5.5,2.9,.3125,0],
- ['poster',-7.55,-3.2,1.2,Math.PI/2],['poster',-7.55,2.6,1.2,Math.PI/2],
- ['poster',7.55,-2.5,1.2,-Math.PI/2],['poster',2.8,-7.55,1.2,0],
- ['entrance',0,7.8,2.7,0],
- ['table',-5.8,4.6,.8,0],['stool',5.8,4.6,.7,0]
+ ['dj_stand_upgraded',0,-6.5,2,0],
+ ['speaker_updated',-3.5,-6.5,.95,0],['speaker_updated',3.5,-6.5,.95,0],
+ ['bar_new',-7.25,-4,2,Math.PI/2],['bar_new',7.25,-4,2,-Math.PI/2],
+ ['sofa_upgraded',-7.25,5,2,Math.PI/2],['sofa_upgraded',7.25,5,2,-Math.PI/2],
+ ['sofa_upgraded',-3,7.25,2,Math.PI],['sofa_upgraded',3,7.25,2,Math.PI],
+ // Large plants in the four corner cells.
+ ['plant_big',-7.5,-7.5,.95,0],['plant_big',7.5,-7.5,.95,0],
+ ['plant_big',-7.5,7.5,.95,0],['plant_big',7.5,7.5,.95,0],
+ ['plant2',-6.5,.5,.85,0],['plant2',6.5,.5,.85,0],
+ ['plant2',-1.5,-6.5,.85,0],['plant2',1.5,-6.5,.85,0],
+ ['laser_new',-4.5,-4.5,.8625,Math.PI/2],['laser_new',4.5,-4.5,.8625,-Math.PI/2],
+ ['light',-4.5,-1.5,.8625,Math.PI/2],['light',4.5,-1.5,.8625,-Math.PI/2],
+ ['discoball',-4.5,3.5,.9375,0],['discoball',4.5,3.5,.9375,0],
+ // Wall posters: two symmetrical on the DJ wall; the side posters are grid aligned.
+ ['poster',-5.5,-7.55,.95,0],['poster',5.5,-7.55,.95,0],
+ ['poster',-7.55,-1.5,.95,Math.PI/2],['poster',-7.55,2.5,.95,Math.PI/2],
+ ['poster',7.55,-1.5,.95,-Math.PI/2],['poster',7.55,2.5,.95,-Math.PI/2],
+ // Entrance is centered on the two open front-wall grid cells.
+ ['entrance',0,7.8,2,0],
+ // Two side tables flanking the armrests of every two-cell sofa.
+ ['table',-6.5,3.5,.72,0],['table',-6.5,6.5,.72,0],
+ ['table',6.5,3.5,.72,0],['table',6.5,6.5,.72,0],
+ ['table',-4.5,6.5,.72,0],['table',-1.5,6.5,.72,0],
+ ['table',1.5,6.5,.72,0],['table',4.5,6.5,.72,0]
 ];
 const loadedModels=new Map();
+// Drinks on all eight sofa armrest tables: simple lightweight glassware.
+const drinkGlass=new THREE.CylinderGeometry(.065,.045,.16,8);
+const drinkMat=new THREE.MeshStandardMaterial({color:0x9cc8d8,transparent:true,opacity:.68,roughness:.2,metalness:.1});
+const drinkLiquid=new THREE.MeshStandardMaterial({color:0xd46a84,roughness:.35});
+for(const [x,z] of [[-6.5,3.5],[-6.5,6.5],[6.5,3.5],[6.5,6.5],[-4.5,6.5],[-1.5,6.5],[1.5,6.5],[4.5,6.5]]){
+ const cup=new THREE.Mesh(drinkGlass,drinkMat);
+ cup.position.set(x,.64,z);stage.add(cup);
+ const drink=new THREE.Mesh(new THREE.CylinderGeometry(.038,.038,.065,8),drinkLiquid);
+ drink.position.set(x,.60,z);stage.add(drink);
+}
+
+loadVenueModel('floor').then(g=>{
+ if(!g)return;
+ const source=g.scene;
+ fitModel(source,.98);
+ dancePlaceholders.forEach(p=>stage.remove(p));
+ for(const [x,z] of danceTilePositions){
+  const tile=source.clone(true);
+  const holder=new THREE.Group();holder.position.set(x,.045,z);holder.add(tile);stage.add(holder);
+ }
+});
+function fitCharacterHeight(root,height=1.65){
+ root.updateMatrixWorld(true);
+ let box=new THREE.Box3().setFromObject(root);
+ if(box.isEmpty())return;
+ root.scale.multiplyScalar(height/Math.max(box.max.y-box.min.y,.001));
+ root.updateMatrixWorld(true);box=new THREE.Box3().setFromObject(root);
+ const center=new THREE.Vector3();box.getCenter(center);
+ root.position.x-=center.x;root.position.z-=center.z;root.position.y-=box.min.y;
+}
+
 function fitModel(root,size){root.updateMatrixWorld(true);let box=new THREE.Box3().setFromObject(root);
 if(box.isEmpty())return;const ext=new THREE.Vector3();box.getSize(ext);
 root.scale.multiplyScalar(size/Math.max(ext.x,ext.z,.001));
@@ -116,8 +151,8 @@ function animateFixtures(t,dt,active){
    fx.lamp.intensity=active?1.7:0;
    fx.lamp.getWorldPosition(beamStart);
    fx.beams.forEach((beam,i)=>{
-    const a=t*(.8+i*.17)+i*1.7+(fx.holder.position.x>0?2:0);
-    beamEnd.set(Math.sin(a)*2.8,.08,Math.cos(a*.86)*2.6);
+    const a=t*(.8+i*.17)+i*1.7;
+    beamEnd.set(Math.sin(a)*2.8,.08,-2.5+Math.cos(a*.86)*2.0);
     const dir=beamEnd.clone().sub(beamStart),len=dir.length();
     beam.position.copy(beamStart).addScaledVector(dir,.5);
     beam.quaternion.setFromUnitVectors(upVector,dir.normalize());
@@ -146,12 +181,12 @@ const peopleExtras=Promise.all([
  loadGLB('assets/characters/raver_m_idle.glb'),
  loadGLB('assets/characters/raver_m_dance.glb')
 ]).then(([bouncer,idle,dance])=>{
- const bouncerRoot=new THREE.Group();bouncerRoot.position.set(1.8,.04,8.35);
- if(bouncer){const actor=bouncer.scene;fitModel(actor,.58);actor.scale.multiplyScalar(1.5);bouncerRoot.add(actor);if(bouncer.animations?.length){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(bouncer.animations[0]).play();extraMixers.push(mixer);}}
+ const bouncerRoot=new THREE.Group();bouncerRoot.position.set(1.5,.04,8.5);
+ if(bouncer){const actor=bouncer.scene;fitCharacterHeight(actor,1.65);bouncerRoot.add(actor);if(bouncer.animations?.length){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(bouncer.animations[0]).play();extraMixers.push(mixer);}}
  stage.add(bouncerRoot);
- const djRoot=new THREE.Group();djRoot.position.set(0,.06,-6.15);djRoot.rotation.y=Math.PI;
+ const djRoot=new THREE.Group();djRoot.position.set(0,.06,-6.5);djRoot.rotation.y=Math.PI;
  stage.add(djRoot);
- if(idle||dance){const actor=cloneSkeleton((idle||dance).scene);fitModel(actor,.55);actor.scale.multiplyScalar(1.4);djRoot.add(actor);
+ if(idle||dance){const actor=cloneSkeleton((idle||dance).scene);fitCharacterHeight(actor,1.65);djRoot.add(actor);
  const clip=(idle||dance).animations?.[0];if(clip){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(clip).play();extraMixers.push(mixer);}}
 });
 const extraMixers=[];
@@ -210,7 +245,7 @@ function actorState(p,state){
   const asset=actorAssets[p.variant]?.[state]||actorAssets[p.variant]?.dance||actorAssets[p.variant]?.walk;
   if(!asset){const mesh=new THREE.Mesh(guestFallbackGeometry,guestFallbackMaterial);mesh.position.y=.55;p.group.add(mesh);item={mesh,mixer:null};}
   else{
-   const mesh=cloneSkeleton(asset.scene);fitModel(mesh,.65);mesh.scale.multiplyScalar(1.45);p.group.add(mesh);
+   const mesh=cloneSkeleton(asset.scene);fitCharacterHeight(mesh,1.65);p.group.add(mesh);
    const mixer=asset.animations.length?new THREE.AnimationMixer(mesh):null;
    if(mixer)mixer.clipAction(asset.animations[0]).play();
    item={mesh,mixer};
