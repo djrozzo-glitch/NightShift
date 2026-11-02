@@ -1410,7 +1410,7 @@ func _process(delta: float) -> void:
 						bar_service_clocks[bar_id] = 0.0
 						night_drinks_sold += 1
 						night_supply_cost += 2
-						var sale := roundi(float(drink_price) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0)))
+						var sale := roundi(float(drink_price) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0) + (0.15 if _upgrade_owned("cocktail_bar") and _count_kind("bar") > 0 else 0.0)))
 						night_drink_income += sale
 						cash += sale
 						guest["wallet"] = int(guest["wallet"]) - drink_price
@@ -1908,7 +1908,7 @@ func _end_night() -> void:
 	var service_score := float(night_drinks_sold) / float(maxi(1, guest_count))
 	var average_mood := night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last
 	var price_pressure := maxf(0.0, float(ticket_price - 20)) * 0.14 + maxf(0.0, float(drink_price - 10)) * 0.18
-	var reputation_delta := roundi(_club_prestige() * 0.15 + (turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure - float(night_unhappy_departures) * 0.5)
+	var reputation_delta := roundi((1.0 if _upgrade_owned("dj_console") and profit > 0 else 0.0) + _club_prestige() * 0.15 + (turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure - float(night_unhappy_departures) * 0.5)
 	last_rep_change = clampi(reputation_delta, -7, 7)
 	reputation = clampi(reputation + last_rep_change, 0, 100)
 	last_xp_gain = maxi(10, roundi(float(guest_count) * 2.0 + float(night_drinks_sold) * 1.2 + average_mood * 0.22 + (12.0 if profit > 0 else 0.0)))
@@ -2693,7 +2693,7 @@ func _load_club() -> void:
 			return
 		var x := int(entry.get("x", -1))
 		var y := int(entry.get("y", -1))
-		if x < 0 or x >= grid_width or y < 0 or y >= SIZE:
+		if x < 0 or x >= (EXPANDED_WIDTH if bool(data.get("expanded", false)) else SIZE) or y < 0 or y >= SIZE:
 			_notify("Save contains an invalid object position")
 			return
 	_clear_guests()
@@ -2737,8 +2737,10 @@ func _load_club() -> void:
 	profitable_night_streak = maxi(0, int(data.get("profit_streak", 0)))
 	owned_upgrades.clear()
 	for upgrade_id in data.get("upgrades", []):
-		if EQUIPMENT_UPGRADES.any(func(u): return str(u["id"]) == str(upgrade_id)):
-			owned_upgrades.append(str(upgrade_id))
+		for available_upgrade in EQUIPMENT_UPGRADES:
+			if str(available_upgrade["id"]) == str(upgrade_id) and not owned_upgrades.has(str(upgrade_id)):
+				owned_upgrades.append(str(upgrade_id))
+				break
 	unlocked_perks.clear()
 	for perk in data.get("perks", []):
 		unlocked_perks.append(str(perk))
@@ -3079,23 +3081,26 @@ func _build_overlay() -> void:
 	goal_style.shadow_size = 0
 	goal_panel.add_theme_stylebox_override("panel", goal_style)
 	progress_content.add_child(goal_panel)
+	var goal_content := VBoxContainer.new()
+	goal_content.add_theme_constant_override("separation", 8)
+	goal_panel.add_child(goal_content)
 	expansion_details = Label.new()
 	UIStyle.decorate_label(expansion_details, 12, true)
 	expansion_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	goal_panel.add_child(expansion_details)
+	goal_content.add_child(expansion_details)
 	expansion_button = Button.new()
 	UIStyle.decorate_button(expansion_button)
 	expansion_button.pressed.connect(_buy_expansion)
-	goal_panel.add_child(expansion_button)
+	goal_content.add_child(expansion_button)
 	var upgrades_title := Label.new()
 	upgrades_title.text = "EQUIPMENT UPGRADES  ·  LVL 4–10"
 	UIStyle.decorate_label(upgrades_title, 14, true)
-	goal_panel.add_child(upgrades_title)
+	goal_content.add_child(upgrades_title)
 	for upgrade in EQUIPMENT_UPGRADES:
 		var upgrade_button := Button.new()
 		UIStyle.decorate_button(upgrade_button)
 		upgrade_button.pressed.connect(_buy_equipment_upgrade.bind(str(upgrade["id"])))
-		goal_panel.add_child(upgrade_button)
+		goal_content.add_child(upgrade_button)
 		upgrade_buttons[str(upgrade["id"])] = upgrade_button
 	_refresh_progression()
 	var night_panel := PanelContainer.new()
