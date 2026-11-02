@@ -55,29 +55,30 @@ const decor=[
  // Large plants in the four corner cells.
  ['plant_big',-7.5,-7.5,.95,0],['plant_big',7.5,-7.5,.95,0],
  ['plant_big',-7.5,7.5,.95,0],['plant_big',7.5,7.5,.95,0],
- ['plant2',-6.5,.5,.85,0],['plant2',6.5,.5,.85,0],
- ['plant2',-1.5,-6.5,.85,0],['plant2',1.5,-6.5,.85,0],
+ ['plant2',-7.5,.5,.85,0],['plant2',7.5,.5,.85,0],
+ ['plant2',-1.5,-7.5,.85,0],['plant2',1.5,-7.5,.85,0],
  ['laser_new',-4.5,-4.5,.8625,Math.PI/2],['laser_new',4.5,-4.5,.8625,-Math.PI/2],
  ['light',-4.5,-1.5,.8625,Math.PI/2],['light',4.5,-1.5,.8625,-Math.PI/2],
  ['discoball',-4.5,3.5,.9375,0],['discoball',4.5,3.5,.9375,0],
  // Wall posters: two symmetrical on the DJ wall; the side posters are grid aligned.
  ['poster',-5.5,-7.55,.95,0],['poster',5.5,-7.55,.95,0],
+ ['poster',-2.5,-7.55,.95,0],['poster',2.5,-7.55,.95,0],
  ['poster',-7.55,-1.5,.95,Math.PI/2],['poster',-7.55,2.5,.95,Math.PI/2],
  ['poster',7.55,-1.5,.95,-Math.PI/2],['poster',7.55,2.5,.95,-Math.PI/2],
  // Entrance is centered on the two open front-wall grid cells.
  ['entrance',0,7.8,2,0],
  // Two side tables flanking the armrests of every two-cell sofa.
- ['table',-6.5,3.5,.72,0],['table',-6.5,6.5,.72,0],
- ['table',6.5,3.5,.72,0],['table',6.5,6.5,.72,0],
- ['table',-4.5,6.5,.72,0],['table',-1.5,6.5,.72,0],
- ['table',1.5,6.5,.72,0],['table',4.5,6.5,.72,0]
+ ['table',-7.5,3.5,.72,0],['table',-7.5,6.5,.72,0],
+ ['table',7.5,3.5,.72,0],['table',7.5,6.5,.72,0],
+ ['table',-4.5,7.5,.72,0],['table',-1.5,7.5,.72,0],
+ ['table',1.5,7.5,.72,0],['table',4.5,7.5,.72,0]
 ];
 const loadedModels=new Map();
 // Drinks on all eight sofa armrest tables: simple lightweight glassware.
 const drinkGlass=new THREE.CylinderGeometry(.065,.045,.16,8);
 const drinkMat=new THREE.MeshStandardMaterial({color:0x9cc8d8,transparent:true,opacity:.68,roughness:.2,metalness:.1});
 const drinkLiquid=new THREE.MeshStandardMaterial({color:0xd46a84,roughness:.35});
-for(const [x,z] of [[-6.5,3.5],[-6.5,6.5],[6.5,3.5],[6.5,6.5],[-4.5,6.5],[-1.5,6.5],[1.5,6.5],[4.5,6.5]]){
+for(const [x,z] of [[-7.5,3.5],[-7.5,6.5],[7.5,3.5],[7.5,6.5],[-4.5,7.5],[-1.5,7.5],[1.5,7.5],[4.5,7.5]]){
  const cup=new THREE.Mesh(drinkGlass,drinkMat);
  cup.position.set(x,.64,z);stage.add(cup);
  const drink=new THREE.Mesh(new THREE.CylinderGeometry(.038,.038,.065,8),drinkLiquid);
@@ -176,18 +177,24 @@ const wallLoad=loadVenueModel('wall').then(g=>{
   holder.position.set(x,.02,z);holder.rotation.y=rotation;holder.add(obj);stage.add(holder);
  }
 });
+const djActors={};
 const peopleExtras=Promise.all([
  loadGLB('assets/characters/bouncer.glb'),
- loadGLB('assets/characters/raver_m_idle.glb'),
- loadGLB('assets/characters/raver_m_dance.glb')
-]).then(([bouncer,idle,dance])=>{
+ loadGLB('assets/characters/deejay_idle.glb'),
+ loadGLB('assets/characters/deejay_handdsup.glb'),
+ loadGLB('assets/characters/deejay_standing.glb')
+]).then(([bouncer,idle,handsup,standing])=>{
  const bouncerRoot=new THREE.Group();bouncerRoot.position.set(1.5,.04,8.5);
  if(bouncer){const actor=bouncer.scene;fitCharacterHeight(actor,1.65);bouncerRoot.add(actor);if(bouncer.animations?.length){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(bouncer.animations[0]).play();extraMixers.push(mixer);}}
  stage.add(bouncerRoot);
- const djRoot=new THREE.Group();djRoot.position.set(0,.06,-6.5);djRoot.rotation.y=Math.PI;
+ const djRoot=new THREE.Group();djRoot.position.set(0,.06,-7.5);djRoot.rotation.y=0;
  stage.add(djRoot);
- if(idle||dance){const actor=cloneSkeleton((idle||dance).scene);fitCharacterHeight(actor,1.65);djRoot.add(actor);
- const clip=(idle||dance).animations?.[0];if(clip){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(clip).play();extraMixers.push(mixer);}}
+ for(const [state,asset] of [['idle',idle||standing],['party',handsup||standing||idle]]){
+  if(!asset)continue;
+  const actor=cloneSkeleton(asset.scene);fitCharacterHeight(actor,1.65);
+  actor.visible=state==='idle';djRoot.add(actor);djActors[state]=actor;
+  if(asset.animations?.length){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(asset.animations[0]).play();extraMixers.push(mixer);}
+ }
 });
 const extraMixers=[];
 function makeTextPanel(text,w,h,{fontSize=68,background='#130c22',foreground='#e5c6ff'}={}){
@@ -276,7 +283,10 @@ function monitorFrame(dt){fpsCount++;fpsClock+=dt;if(fpsClock>=1.5){const fps=Ma
  monitor.textContent='FPS '+fps+' | '+memory+' | GEO '+info.memory.geometries+' | TEX '+info.memory.textures+' | GUESTS '+guests.length;
  fpsClock=0;fpsCount=0;}}
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
-let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const target=running?1:0;for(const mixer of extraMixers)mixer.update(dt);
+let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const target=running?1:0;
+if(djActors.idle)djActors.idle.visible=!running;
+if(djActors.party)djActors.party.visible=running;
+for(const mixer of extraMixers)mixer.update(dt);
 hemi.intensity+=((running?.4:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.15:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(running?0x050410:0x090b16),.02);
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
