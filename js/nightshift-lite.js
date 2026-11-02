@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {clone as cloneSkeleton} from 'three/addons/utils/SkeletonUtils.js';
 
@@ -22,9 +23,11 @@ const hemi=new THREE.HemisphereLight(0xded7ff,0x191424,2.3);scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xffdfba,2);sun.position.set(-10,16,8);scene.add(sun);
 const stage=new THREE.Group();scene.add(stage);
 const loader=new GLTFLoader();
+loader.setMeshoptDecoder(MeshoptDecoder);
 const loadGLB=path=>new Promise(resolve=>loader.load(path,resolve,undefined,err=>{console.warn('Optional GLB not loaded',path,err);resolve(null)}));
 // Optimized copies live next to original Godot GLBs. The original remains a safe fallback.
-const loadVenueModel=name=>loadGLB('assets/models/'+name+'_opt.glb');
+const loadVenueModel=async name=>(await loadGLB('assets/models/'+name+'_opt.glb')) || (await loadGLB('godot/assets/models/'+name+'.glb'));
+// Optimized assets produced by glTF Transform may use EXT_meshopt_compression.
 const mat=(color,roughness=.85)=>new THREE.MeshStandardMaterial({color,roughness});
 const concrete=mat(0x252330),dark=mat(0x302c3c),danceMat=mat(0x503463),edgeMat=mat(0x50455a);
 function block(w,h,d,x,y,z,material,parent=stage){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);o.position.set(x,y,z);parent.add(o);return o;}
