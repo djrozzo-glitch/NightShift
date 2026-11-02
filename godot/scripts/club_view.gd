@@ -132,6 +132,8 @@ var night_wc_waits := 0
 var night_operating_cost := 0
 var night_supply_cost := 0
 var night_capacity_peak := 0
+var night_guests_left := 0
+var night_unhappy_departures := 0
 var night_time_label: Label
 var night_speed_button: Button
 var night_pause_button: Button
@@ -756,7 +758,7 @@ func _spawn_guest() -> void:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(18, 60), "thirst": randf_range(0.25, 0.65), "wc_need": randf_range(0.0, 0.35), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(18, 60), "thirst": randf_range(0.25, 0.65), "wc_need": randf_range(0.0, 0.35), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0, "time_inside": 0.0, "leaving": false})
 	guest_count += 1
 	night_ticket_income += ticket_price
 	cash += ticket_price
@@ -917,6 +919,9 @@ func _play_sit(guest: Dictionary, backwards: bool) -> float:
 
 func _guest_arrived(guest: Dictionary) -> void:
 	var state: String = guest["state"]
+	if state == "walk_exit":
+		guest["leaving"] = true
+		return
 	if state == "walk_bar":
 		guest["state"] = "ordering"
 		guest["wait"] = randf_range(2.0, 4.0)
@@ -1066,6 +1071,21 @@ func _process(delta: float) -> void:
 		_spawn_guest()
 	for guest in guests:
 		# Guest needs evolve during the night and influence where they go.
+		guest["time_inside"] = float(guest.get("time_inside", 0.0)) + step
+		if str(guest.get("state", "")) != "walk_exit" and not bool(guest.get("leaving", false)):
+			var exhausted := float(guest["energy"]) < 0.16
+			var unhappy := float(guest.get("mood", 85.0)) < 35.0 and float(guest["time_inside"]) > 30.0
+			var finished := float(guest["time_inside"]) > 110.0 + float(guest["energy"]) * 60.0
+			if exhausted or unhappy or finished:
+				var exit_path := _path_to(guest["cell"], GUEST_ENTRY)
+				if not exit_path.is_empty():
+					guest["path"] = exit_path
+					guest["destination"] = GUEST_ENTRY
+					guest["service_object"] = -1
+					guest["state"] = "walk_exit"
+					guest["dance"] = false
+					if unhappy:
+						night_unhappy_departures += 1
 		guest["thirst"] = minf(1.0, float(guest["thirst"]) + step * (0.0025 if bool(guest["dance"]) else 0.001))
 		guest["energy"] = maxf(0.0, float(guest["energy"]) - step * (0.0018 if bool(guest["dance"]) else 0.0005))
 		guest["wc_need"] = minf(1.0, float(guest.get("wc_need", 0.0)) + step * 0.002 + (step * 0.0005 if bool(guest["dance"]) else 0.0))
@@ -1208,6 +1228,17 @@ func _process(delta: float) -> void:
 			guest["blocked_time"] = 0.0
 			person.position = next_position
 			person.rotation.y = atan2(direction.x, direction.z)
+
+	# Remove guests only after iteration so service reservations and paths remain stable.
+	for index in range(guests.size() - 1, -1, -1):
+		if bool(guests[index].get("leaving", false)):
+			var departing: Node3D = guests[index]["node"]
+			if selected_guest_node == departing:
+				selected_guest_node = null
+			if is_instance_valid(departing):
+				departing.queue_free()
+			guests.remove_at(index)
+			night_guests_left += 1
 
 func _clear_guests() -> void:
 	selected_guest_node = null
@@ -1540,6 +1571,8 @@ func _start_night() -> void:
 	night_supply_cost = 0
 	night_operating_cost = _night_staff_cost() + _night_utilities()
 	night_capacity_peak = 0
+	night_guests_left = 0
+	night_unhappy_departures = 0
 	if night_report_panel != null:
 		night_report_panel.show()
 	_update_night_stats()
@@ -1588,7 +1621,7 @@ func _end_night() -> void:
 	var service_score := float(night_drinks_sold) / float(maxi(1, guest_count))
 	var average_mood := night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last
 	var price_pressure := maxf(0.0, float(ticket_price - 20)) * 0.14 + maxf(0.0, float(drink_price - 10)) * 0.18
-	var reputation_delta := roundi((turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure)
+	var reputation_delta := roundi((turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure - float(night_unhappy_departures) * 0.5)
 	last_rep_change = clampi(reputation_delta, -7, 7)
 	reputation = clampi(reputation + last_rep_change, 0, 100)
 	last_xp_gain = maxi(10, roundi(float(guest_count) * 2.0 + float(night_drinks_sold) * 1.2 + average_mood * 0.22 + (12.0 if profit > 0 else 0.0)))
@@ -1616,6 +1649,7 @@ func _update_night_stats() -> void:
 	var lines: Array[String] = [
 		"MOOD  %d%%     GUESTS  %d" % [roundi(mood), guest_count],
 		"CAPACITY  %d     PEAK  %d" % [_club_capacity(), night_capacity_peak],
+		"GUESTS LEFT  %d     UNHAPPY  %d" % [night_guests_left, night_unhappy_departures],
 		"VISIBLE GUEST LIMIT  %d" % MAX_GUESTS,
 		"DANCE TILES  %d     BARS  %d" % [dance_tiles.size(), _count_kind("bar")],
 		"DRINKS SOLD  %d     MISSED  %d" % [night_drinks_sold, night_bar_missed],
