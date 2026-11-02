@@ -28,7 +28,7 @@ var free_dance_tiles := 0
 var hover_cell := Vector2i(-1, -1)
 var hover_mesh: MeshInstance3D
 var status_label: Label
-const BUILD_TYPES := ["dance_tile", "speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser", "rail", "poster"]
+const BUILD_TYPES := ["dance_tile", "speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser", "rail", "poster", "discoball"]
 var selected_kind := "speaker"
 var build_turn := 0
 var preview_root: Node3D
@@ -51,7 +51,7 @@ var object_at_cell: Dictionary = {}
 var next_object_id := 1
 var action_history: Array[Dictionary] = []
 # Prototype economy: prices and starting balance will be balanced later.
-const BUILD_PRICES := {"dance_tile": 70, "speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450, "rail": 180, "poster": 220}
+const BUILD_PRICES := {"dance_tile": 70, "speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450, "rail": 180, "poster": 220, "discoball": 1600}
 const STARTING_CAPITAL := 6000
 var cash := STARTING_CAPITAL
 var reputation := 55
@@ -72,14 +72,14 @@ const EQUIPMENT_UPGRADES := [
 	{"id": "lounge", "name": "Lounge Comfort", "level": 5, "price": 1100, "upkeep": 8, "requires": "sofa", "effect": "+2 mood with sofas", "target": "8–12 nights"},
 	{"id": "wc_plus", "name": "Restroom Upgrade", "level": 6, "price": 1400, "upkeep": 10, "requires": "wc", "effect": "+24 sanitation capacity per WC", "target": "6–12 nights"},
 	{"id": "premium_sound", "name": "Premium Sound", "level": 7, "price": 3200, "upkeep": 20, "requires": "speaker", "effect": "+3 mood; +4% arrivals", "target": "8–14 nights"},
-	{"id": "dj_console", "name": "Advanced DJ Console", "level": 9, "price": 6000, "upkeep": 30, "requires": "dj", "effect": "+8% arrivals; +1 reputation on good nights", "target": "10–16 nights"},
+	{"id": "dj_console", "name": "Pure Vinyl", "level": 9, "price": 6000, "upkeep": 30, "requires": "dj", "effect": "+8% arrivals; +1 reputation on good nights", "target": "10–16 nights"},
 	{"id": "iconic_sound", "name": "Iconic Sound", "level": 10, "price": 10000, "upkeep": 45, "requires": "speaker", "effect": "+4 mood; +8% arrivals", "target": "12–20 nights"}
 ]
 var management_panel: PanelContainer
 const SAVE_PATH := "user://nightshift_club.json"
 const LEVEL_NAMES := ["Illegal Basement", "Word of Mouth", "Local Favorite", "Afterhours", "Underground Institution", "Citywide Buzz", "Cult Following", "Scene Leader", "International Attention", "Legendary Venue"]
-const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "laser": 2, "sofa": 3, "table": 4, "rail": 4}
-const BUILD_NAMES := {"dance_tile": "Dance Tile", "dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light", "poster": "DJ Poster"}
+const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "laser": 2, "sofa": 3, "table": 4, "rail": 4, "discoball": 6}
+const BUILD_NAMES := {"dance_tile": "Dance Tile", "dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light", "poster": "DJ Poster", "discoball": "Disco Ball"}
 const PERK_OPTIONS := [
 	{"id": "connections", "name": "Local Connections", "effect": "-5% DJ fees", "branch": "MUSIC"},
 	{"id": "resident", "name": "Resident Deal", "effect": "-10% DJ fees", "branch": "MUSIC"},
@@ -187,7 +187,7 @@ var night_report_heading: Label
 var night_report_details: Label
 const MAX_GUESTS := 48
 const EXPANDED_GUEST_LIMIT := 72
-const OBJECT_UPKEEP := {"sofa": 2, "table": 1, "stool": 1, "plant2": 1, "rail": 1, "poster": 1}
+const OBJECT_UPKEEP := {"sofa": 2, "table": 1, "stool": 1, "plant2": 1, "rail": 1, "poster": 1, "discoball": 12}
 
 func _active_milestones() -> Array[Dictionary]:
 	var active: Array[Dictionary] = []
@@ -322,7 +322,7 @@ func _make_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> Mes
 	parent.add_child(item)
 	return item
 
-const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light", "laser", "plant2", "table", "stool", "wc", "entrance", "floor", "rail"]
+const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light", "laser", "plant2", "table", "stool", "wc", "entrance", "floor", "rail", "discoball"]
 var models: Dictionary = {}
 var club_name := "ABLETON GYM"
 var club_name_edit: LineEdit
@@ -342,6 +342,7 @@ var music_beat_clock := 0.0
 var dance_lights: Array[OmniLight3D] = []
 var beam_meshes: Array[MeshInstance3D] = []
 var disco_spots: Array[SpotLight3D] = []
+var discoball_lights: Array[SpotLight3D] = []
 const DISCO_COLORS := [Color("#a75bff"), Color("#40c9ff"), Color("#ff4bba"), Color("#ffbc55"), Color("#f3f7ff")]
 var laser_spots: Array[SpotLight3D] = []
 var laser_beams: Array[MeshInstance3D] = []
@@ -369,11 +370,15 @@ func _load_models() -> void:
 			missing_models.append(kind)
 			push_warning("NightShift: missing %s" % path)
 	# An optional visual variant; keep the gameplay ID as "sofa".
-	var upgraded_path := "res://assets/models/sofa_upgraded.glb"
-	if ResourceLoader.exists(upgraded_path):
-		var upgraded_scene := ResourceLoader.load(upgraded_path, "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
-		if upgraded_scene != null:
-			models["sofa_upgraded"] = upgraded_scene
+	var upgrade_assets := {"sofa_upgraded": "sofa_upgraded", "wc_upgraded": "wc_upgraded", "speaker_updated": "speaker_updated", "dj_stand_updated": "dj_stand_updated"}
+	for variant in upgrade_assets:
+		var variant_path := "res://assets/models/%s.glb" % str(upgrade_assets[variant])
+		if ResourceLoader.exists(variant_path):
+			var scene := ResourceLoader.load(variant_path, "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
+			if scene != null:
+				models[variant] = scene
+		else:
+			push_warning("NightShift: optional upgrade model missing: %s" % variant_path)
 	else:
 		push_warning("NightShift: upgraded sofa missing: %s" % upgraded_path)
 	print("NIGHTSHIFT MODELS | laser_new=%s | sofa_upgraded=%s" % [str(models.has("laser") and str((models["laser"] as PackedScene).resource_path).contains("laser_new")), str(models.has("sofa_upgraded"))])
@@ -427,7 +432,15 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 			_attach_entrance_sign(pivot_node)
 		return pivot_node
 
-	var visual_kind := "sofa_upgraded" if kind == "sofa" and _upgrade_owned("lounge") and models.has("sofa_upgraded") else kind
+	var visual_kind := kind
+	if kind == "sofa" and _upgrade_owned("lounge") and models.has("sofa_upgraded"):
+		visual_kind = "sofa_upgraded"
+	elif kind == "wc" and _upgrade_owned("wc_plus") and models.has("wc_upgraded"):
+		visual_kind = "wc_upgraded"
+	elif kind == "speaker" and _upgrade_owned("premium_sound") and models.has("speaker_updated"):
+		visual_kind = "speaker_updated"
+	elif kind == "dj" and _upgrade_owned("dj_console") and models.has("dj_stand_updated"):
+		visual_kind = "dj_stand_updated"
 	var visual := (models[visual_kind] as PackedScene).instantiate() as Node3D
 	pivot_node.add_child(visual)
 	var bounds := _visual_bounds(visual)
@@ -451,7 +464,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 	elif kind == "stool" or kind == "table":
 		target_x = 0.53
 		target_z = 0.53
-	elif kind == "light" or kind == "laser":
+	elif kind == "light" or kind == "laser" or kind == "discoball":
 		target_x = 0.60
 		target_z = 0.60
 	elif kind == "plant2":
@@ -555,6 +568,21 @@ func _upgrade_upkeep() -> int:
 	return total
 
 
+func _refresh_equipment_visuals(kind: String) -> void:
+	# Preserve gameplay object IDs and grid occupancy while swapping GLBs.
+	for object_id in placed_objects.keys():
+		var record: Dictionary = placed_objects[object_id]
+		if str(record["kind"]) != kind:
+			continue
+		var old_node := record["node"] as Node3D
+		if is_instance_valid(old_node):
+			club.remove_child(old_node)
+			old_node.queue_free()
+		var new_node := _model(club, kind, int(record["x"]), int(record["y"]), int(record["turn"]))
+		record["node"] = new_node
+		placed_objects[object_id] = record
+
+
 func _refresh_upgraded_sofas() -> void:
 	# Rebuild only sofa visuals. Preserve IDs, footprints, orientation,
 	# payment records and all simulation references.
@@ -586,7 +614,13 @@ func _buy_equipment_upgrade(id: String) -> void:
 		cash -= price
 		owned_upgrades.append(id)
 		if id == "lounge":
-			_refresh_upgraded_sofas()
+			_refresh_equipment_visuals("sofa")
+		elif id == "wc_plus":
+			_refresh_equipment_visuals("wc")
+		elif id == "premium_sound":
+			_refresh_equipment_visuals("speaker")
+		elif id == "dj_console":
+			_refresh_equipment_visuals("dj")
 		_refresh_economy()
 		_notify("%s installed for €%d" % [str(upgrade["name"]), price])
 		return
@@ -626,7 +660,7 @@ func _night_furniture_upkeep() -> int:
 # more copies are placed. Essential objects have their own functional roles.
 func _club_prestige() -> float:
 	var score := 0.0
-	for kind in ["poster", "rail", "table", "stool", "plant2", "light", "laser"]:
+	for kind in ["poster", "rail", "table", "stool", "plant2", "light", "laser", "discoball"]:
 		var count := _count_kind(kind)
 		var value := 0.0
 		match kind:
@@ -637,6 +671,7 @@ func _club_prestige() -> float:
 			"plant2": value = 0.9
 			"light": value = 0.8
 			"laser": value = 1.0
+			"discoball": value = 1.5
 		score += value * (1.0 if count >= 1 else 0.0)
 		score += value * 0.35 * float(maxi(0, mini(count - 1, 2)))
 	return minf(8.0, score)
@@ -652,6 +687,7 @@ func _build_economics_hint(kind: String) -> String:
 		"dj": note = "Required to open; enables DJ bookings and ticket revenue."
 		"light": note = "Atmosphere: +2 mood (shared +8 cap); +0.8 prestige."
 		"laser": note = "Atmosphere: +3 mood (shared +8 cap); +1 prestige."
+		"discoball": note = "Rotating light reflections; atmosphere and +1.5 prestige. €12/night upkeep."
 		"plant2": note = "Atmosphere: +0.5 mood (shared +8 cap); +0.9 prestige."
 		"sofa": note = "Rest: guests recover energy; fewer unhappy departures."
 		"table": note = "Comfort: +0.7 mood (shared +4 cap); +0.8 prestige."
@@ -3054,8 +3090,10 @@ func _load_club() -> void:
 			if str(available_upgrade["id"]) == str(upgrade_id) and not owned_upgrades.has(str(upgrade_id)):
 				owned_upgrades.append(str(upgrade_id))
 				break
-	if _upgrade_owned("lounge"):
-		_refresh_upgraded_sofas()
+	for upgrade_kind in ["sofa", "wc", "speaker", "dj"]:
+		var upgrade_id := {"sofa": "lounge", "wc": "wc_plus", "speaker": "premium_sound", "dj": "dj_console"}[upgrade_kind]
+		if _upgrade_owned(upgrade_id):
+			_refresh_equipment_visuals(upgrade_kind)
 	unlocked_perks.clear()
 	for perk in data.get("perks", []):
 		unlocked_perks.append(str(perk))
