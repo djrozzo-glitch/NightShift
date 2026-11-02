@@ -2528,14 +2528,8 @@ func _new_club() -> void:
 	_clear_dance_tiles()
 	# Remove the sample layout, including perimeter posters. Keep the floor,
 	# existing perimeter walls, and the two-cell entrance.
-	var poster_positions: Array[Vector2i] = []
-	for record in placed_objects.values():
-		if str(record["kind"]) == "poster":
-			poster_positions.append(Vector2i(int(record["x"]), int(record["y"])))
 	for id in placed_objects.keys().duplicate():
 		_remove_object(int(id))
-	for cell in poster_positions:
-		_model(club, "wall", cell.x, cell.y, 1 if cell.x == 0 or cell.x == grid_width - 1 else 0)
 	occupied.clear()
 	object_at_cell.clear()
 	action_history.clear()
@@ -2543,6 +2537,16 @@ func _new_club() -> void:
 	# Reset the optional east wing when starting over.
 	if expanded:
 		_remove_east_wing()
+	# The sample club uses posters INSTEAD of walls. Restore a complete
+	# perimeter for a new club, leaving only the two-cell entrance open.
+	for y in range(SIZE):
+		for x in range(SIZE):
+			if x != 0 and x != SIZE - 1 and y != 0 and y != SIZE - 1:
+				continue
+			if y == SIZE - 1 and x in [7, 8]:
+				continue
+			if club.get_node_or_null("wall_%d_%d" % [x, y]) == null:
+				_model(club, "wall", x, y, 1 if x == 0 or x == SIZE - 1 else 0)
 	poster_labels.clear()
 	poster_led_materials.clear()
 	poster_led_accents.clear()
