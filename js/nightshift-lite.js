@@ -40,7 +40,7 @@ for(let x=-7.5;x<=7.5;x++)for(let z=-7.5;z<=7.5;z++){
 const wallPieces=[];
 for(let i=-7.5;i<=7.5;i++){
  wallPieces.push([i,-7.9,0],[7.9,i,Math.PI/2],[-7.9,i,Math.PI/2]);
- if(Math.abs(i)>1.5)wallPieces.push([i,7.9,0]);
+ if(Math.abs(i)>.5)wallPieces.push([i,7.9,0]);
 }
 // Replace placeholder rectangles with optimized floor.glb tiles, keeping a fallback.
 const danceTilePositions=[];
@@ -48,26 +48,41 @@ for(let x=-3.5;x<=3.5;x++)for(let z=-5.5;z<=.5;z++)danceTilePositions.push([x,z]
 const dancePlaceholders=danceTilePositions.map(([x,z])=>block(.98,.05,.98,x,.035,z,danceMat));
 // Tile grid: 1x1 objects sit at half-integers, 2x1 furniture at whole integers.
 const decor=[
- ['dj_stand_upgraded',0,-6.5,2.0,0],
+ ['dj_stand_upgraded',0,-6.5,2,0],
  ['speaker_updated',-3.5,-6.5,.95,0],['speaker_updated',3.5,-6.5,.95,0],
- // Two-tile bars and sofas: exactly one tile from the inner wall, clear of posters.
- ['bar_new',-7.25,-4,2.0,Math.PI/2],['bar_new',7.25,-4,2.0,-Math.PI/2],
- ['sofa_upgraded',-7.25,5,2.0,Math.PI/2],['sofa_upgraded',7.25,5,2.0,-Math.PI/2],
- ['sofa_upgraded',-3,7.25,2.0,Math.PI],['sofa_upgraded',3,7.25,2.0,Math.PI],
- ['plant_big',-6.5,-6.5,.95,0],['plant_big',6.5,-6.5,.95,0],
- ['plant_big',-6.5,6.5,.95,0],['plant_big',6.5,6.5,.95,0],
+ ['bar_new',-7.25,-4,2,Math.PI/2],['bar_new',7.25,-4,2,-Math.PI/2],
+ ['sofa_upgraded',-7.25,5,2,Math.PI/2],['sofa_upgraded',7.25,5,2,-Math.PI/2],
+ ['sofa_upgraded',-3,7.25,2,Math.PI],['sofa_upgraded',3,7.25,2,Math.PI],
+ // Large plants in the four corner cells.
+ ['plant_big',-7.5,-7.5,.95,0],['plant_big',7.5,-7.5,.95,0],
+ ['plant_big',-7.5,7.5,.95,0],['plant_big',7.5,7.5,.95,0],
  ['plant2',-6.5,.5,.85,0],['plant2',6.5,.5,.85,0],
  ['plant2',-1.5,-6.5,.85,0],['plant2',1.5,-6.5,.85,0],
- // Triple the former size; all lamps remain snapped to individual tiles.
  ['laser_new',-4.5,-4.5,.8625,Math.PI/2],['laser_new',4.5,-4.5,.8625,-Math.PI/2],
  ['light',-4.5,-1.5,.8625,Math.PI/2],['light',4.5,-1.5,.8625,-Math.PI/2],
  ['discoball',-4.5,3.5,.9375,0],['discoball',4.5,3.5,.9375,0],
- ['poster',-7.55,-3.2,1.2,Math.PI/2],['poster',-7.55,2.6,1.2,Math.PI/2],
- ['poster',7.55,-2.5,1.2,-Math.PI/2],['poster',2.8,-7.55,1.2,0],
- ['entrance',0,7.8,2.7,0],
- ['table',-4.5,4.5,.8,0],['stool',4.5,4.5,.7,0]
+ // Wall posters: two symmetrical on the DJ wall; the side posters are grid aligned.
+ ['poster',-5.5,-7.55,.95,0],['poster',5.5,-7.55,.95,0],
+ ['poster',-7.55,-1.5,.95,Math.PI/2],['poster',-7.55,3.5,.95,Math.PI/2],
+ ['poster',7.55,1.5,.95,-Math.PI/2],
+ // Entrance is centered on the two open front-wall grid cells.
+ ['entrance',0,7.8,2,0],
+ // Four drinks tables next to sofas, no bar stools.
+ ['table',-5.5,5.5,.8,0],['table',5.5,5.5,.8,0],
+ ['table',-5.5,7.0,.8,0],['table',5.5,7.0,.8,0]
 ];
 const loadedModels=new Map();
+// Drinks on the four side tables: simple lightweight glassware.
+const drinkGlass=new THREE.CylinderGeometry(.065,.045,.16,8);
+const drinkMat=new THREE.MeshStandardMaterial({color:0x9cc8d8,transparent:true,opacity:.68,roughness:.2,metalness:.1});
+const drinkLiquid=new THREE.MeshStandardMaterial({color:0xd46a84,roughness:.35});
+for(const [x,z] of [[-5.5,5.5],[5.5,5.5],[-5.5,7],[5.5,7]]){
+ const cup=new THREE.Mesh(drinkGlass,drinkMat);
+ cup.position.set(x,.64,z);stage.add(cup);
+ const drink=new THREE.Mesh(new THREE.CylinderGeometry(.038,.038,.065,8),drinkLiquid);
+ drink.position.set(x,.60,z);stage.add(drink);
+}
+
 loadVenueModel('floor').then(g=>{
  if(!g)return;
  const source=g.scene;
