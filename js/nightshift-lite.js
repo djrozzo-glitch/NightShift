@@ -256,8 +256,8 @@ let opened=false,running=false,guestClock=0,partyTime=0;
 const guests=[];const clock=new THREE.Clock();
 const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
 const danceSpot=()=>({x:-3.5+Math.floor(Math.random()*8),z:-5.5+Math.floor(Math.random()*7)});
-const barSpots=[{x:-5.9,z:-4},{x:5.9,z:-4}];
-const sofaSpots=[{x:-5.9,z:5},{x:5.9,z:5},{x:-3,z:5.9},{x:3,z:5.9}];
+const barSpots=[{x:-6.4,z:-4},{x:6.4,z:-4}];
+const sofaSpots=[{x:-5.9,z:5},{x:5.9,z:5},{x:-3,z:7.9},{x:3,z:7.9}];
 function actorState(p,state){
  if(p.state===state)return;
  if(p.mesh)p.mesh.visible=false;
@@ -283,8 +283,9 @@ const guestFallbackMaterial=mat(0x965bd1);
 function routeGuest(p,activity){
  p.activity=activity;p.wait=0;
  const destination=activity==='bar'?pick(barSpots):activity==='sofa'?pick(sofaSpots):danceSpot();
- p.x=destination.x+(Math.random()-.5)*.38;
- p.z=destination.z+(Math.random()-.5)*.38;
+ p.x=destination.x+(activity==='dance'?(Math.random()-.5)*.38:0);
+ p.z=destination.z+(activity==='dance'?(Math.random()-.5)*.38:0);
+ p.sofaBack=activity==='sofa'&&destination.z>7;
  actorState(p,'walk');
 }
 function addGuest(){
@@ -309,6 +310,16 @@ function animateDJ(){
  }
  for(const [state,actor] of Object.entries(djActors))actor.visible=state===djPose;
 }
+function sitAction(p,reverse=false){
+ const item=p.cache?.sit,action=item?.mixer?._actions?.[0];
+ if(!action)return 0;
+ const duration=Math.max(.25,action.getClip().duration);
+ action.enabled=true;action.paused=false;action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;
+ action.reset();action.time=reverse?duration:0;
+ action.timeScale=reverse?-1:1;
+ action.play();
+ return duration;
+}
 function updateGuest(p,dt){
  p.thirst=Math.min(1,p.thirst+dt*(p.state==='dance'?.008:.003));
  p.energy=Math.max(0,p.energy-dt*(p.state==='dance'?.004:.001));
@@ -316,9 +327,15 @@ function updateGuest(p,dt){
   const dx=p.x-p.group.position.x,dz=p.z-p.group.position.z,dist=Math.hypot(dx,dz);
   if(dist<.13){
    if(p.activity==='dance'){actorState(p,'dance');p.wait=7+Math.random()*12;}
-   else{actorState(p,p.activity==='bar'?'drink':'sit');p.wait=p.activity==='bar'?3+Math.random()*4:6+Math.random()*8;}
-   p.group.rotation.y=p.activity==='bar'?(p.group.position.x<0?-Math.PI/2:Math.PI/2):
-    p.activity==='sofa'?(Math.abs(p.group.position.x)>5.5?(p.group.position.x<0?Math.PI/2:-Math.PI/2):0):p.group.rotation.y;
+   else if(p.activity==='bar'){actorState(p,'drink');p.wait=3+Math.random()*4;}
+   else{
+    // Sofa model faces the room; rear-wall sofas need the opposite orientation.
+    p.group.rotation.y=p.sofaBack?Math.PI:(p.group.position.x<0?Math.PI/2:-Math.PI/2);
+    actorState(p,'sit');
+    p.wait=sitAction(p);
+    p.state='sit_down';
+   }
+   if(p.activity==='bar')p.group.rotation.y=p.group.position.x<0?-Math.PI/2:Math.PI/2;
   }else{
    const step=Math.min(p.speed*dt,dist);
    p.group.position.x+=dx/dist*step;p.group.position.z+=dz/dist*step;p.group.rotation.y=Math.atan2(dx,dz);
@@ -327,17 +344,28 @@ function updateGuest(p,dt){
  }
  p.wait-=dt;
  if(p.wait>0)return;
- if(p.state==='drink'||p.state==='sit'){
-  if(p.activity==='bar'){p.thirst=Math.max(0,p.thirst-.75);p.energy=Math.min(1,p.energy+.04);}
-  else p.energy=Math.min(1,p.energy+.55);
+ if(p.state==='sit_down'){
+  p.state='resting';p.wait=3+Math.random()*2;
+  if(p.mixer?._actions?.[0])p.mixer._actions[0].paused=true;
+  return;
+ }
+ if(p.state==='resting'){
+  p.state='sit_up';p.wait=sitAction(p,true);
+  return;
+ }
+ if(p.state==='sit_up'){
+  p.energy=Math.min(1,p.energy+.55);p.visits++;routeGuest(p,'dance');return;
+ }
+ if(p.state==='drink'){
+  p.thirst=Math.max(0,p.thirst-.75);p.energy=Math.min(1,p.energy+.04);
   p.visits++;routeGuest(p,'dance');return;
  }
- // Godot-inspired choice: drink when thirsty, rest when tired, otherwise keep dancing.
  if(p.thirst>.48)routeGuest(p,'bar');
  else if(p.energy<.38)routeGuest(p,'sofa');
  else if(Math.random()<.18)routeGuest(p,Math.random()<.5?'bar':'sofa');
  else routeGuest(p,'dance');
 }
+
 const monitor=document.createElement('div');
 monitor.style.cssText='position:absolute;right:14px;top:60px;z-index:3;color:#baffd8;background:#080916bd;border:1px solid #365b56;border-radius:6px;padding:6px 9px;font:11px monospace;pointer-events:none';
 mount.appendChild(monitor);
