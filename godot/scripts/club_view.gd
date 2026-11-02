@@ -33,6 +33,7 @@ var selected_kind := "speaker"
 var build_turn := 0
 var preview_root: Node3D
 var build_panel: PanelContainer
+var catalog_buttons: Dictionary = {}
 var build_toggle: Button
 var help_label: Label
 var erase_mode := false
@@ -68,6 +69,7 @@ var management_panel: PanelContainer
 const SAVE_PATH := "user://nightshift_club.json"
 const LEVEL_NAMES := ["Illegal Basement", "Word of Mouth", "Local Favorite", "Afterhours", "Underground Institution", "Citywide Buzz", "Cult Following", "Scene Leader", "International Attention", "Legendary Venue"]
 const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "laser": 2, "sofa": 3, "table": 4}
+const BUILD_NAMES := {"dance_tile": "Dance Tile", "dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}
 const PERK_OPTIONS := [
 	{"id": "connections", "name": "Local Connections", "effect": "-5% DJ fees", "branch": "MUSIC"},
 	{"id": "resident", "name": "Resident Deal", "effect": "-10% DJ fees", "branch": "MUSIC"},
@@ -1763,7 +1765,29 @@ func _update_night_stats() -> void:
 			lines.append("%s  %s  +€%d" % ["✓" if completed_milestones.has(str(milestone["id"])) else "○", str(milestone["name"]), int(milestone["reward"])])
 	night_report_details.text = "\n".join(lines)
 
+func _build_price(kind: String) -> int:
+	var base := int(BUILD_PRICES.get(kind, 0))
+	# Essentials retain their affordable price. Later unlocks cost more
+	# because they are premium additions, not because the player leveled up.
+	return base
+
+
+func _refresh_build_catalog() -> void:
+	for kind in catalog_buttons:
+		var button := catalog_buttons[kind] as Button
+		if not is_instance_valid(button):
+			continue
+		var required_level := int(LEVEL_UNLOCKS.get(kind, 1))
+		var locked := club_level < required_level
+		var label := str(BUILD_NAMES.get(kind, kind.capitalize()))
+		var price := _build_price(kind)
+		button.text = "🔒 %s  ·  LVL %d" % [label, required_level] if locked else "%s   €%d" % [label, price]
+		button.tooltip_text = "Unlocks at level %d" % required_level if locked else "%s · €%d" % [label, price]
+		button.disabled = locked
+
+
 func _refresh_prices() -> void:
+	_refresh_build_catalog()
 	if ticket_value_label != null:
 		ticket_value_label.text = "€%d" % ticket_price
 	if drink_value_label != null:
@@ -2139,7 +2163,7 @@ func _place_selected() -> void:
 	if night_active:
 		_notify("Finish the night before building")
 		return
-	var cost := int(BUILD_PRICES.get(selected_kind, 0))
+	var cost := _build_price(selected_kind)
 	if cash < cost:
 		_notify("Not enough cash  |  Need €%d" % cost)
 		return
@@ -2367,6 +2391,7 @@ func _buy_expansion() -> void:
 
 
 func _refresh_progression() -> void:
+	_refresh_build_catalog()
 	if progression_details == null:
 		return
 	var level_name: String = LEVEL_NAMES[mini(club_level - 1, LEVEL_NAMES.size() - 1)]
@@ -2724,14 +2749,12 @@ func _build_overlay() -> void:
 	build_panel.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
-		var required_level := int(LEVEL_UNLOCKS.get(kind, 1))
-		var locked := club_level < required_level
-		button.text = "🔒 %s  ·  LVL %d" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), required_level] if locked else "%s   €%d" % [{"dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}.get(kind, kind.capitalize()), int(BUILD_PRICES.get(kind, 0))]
-		button.tooltip_text = "Unlocks at club level %d. Play nights to earn XP." % required_level if locked else "Place %s for €%d" % [kind, int(BUILD_PRICES.get(kind, 0))]
 		button.custom_minimum_size = Vector2(142, 34)
 		UIStyle.decorate_button(button)
 		button.pressed.connect(_choose_kind.bind(kind))
 		choices.add_child(button)
+		catalog_buttons[kind] = button
+	_refresh_build_catalog()
 	var erase_button := Button.new()
 	erase_button.text = "ERASE  [X]"
 	UIStyle.decorate_button(erase_button)
