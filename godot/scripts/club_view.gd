@@ -407,6 +407,10 @@ func _night_total_expenses() -> int:
 
 
 func _night_advice() -> String:
+	if night_bar_queue_peak >= 5 and night_bar_missed > 0:
+		return "BAR QUEUES: add a bar or improve access to existing bars."
+	if night_wc_waits >= 5:
+		return "WC QUEUES: add another restroom or clear its approaches."
 	if night_bar_missed >= 3 and _count_kind("bar") < 2:
 		return "BAR BOTTLENECK: add a bar to serve more guests."
 	if night_capacity_peak >= _club_capacity() and _club_capacity() < MAX_GUESTS:
@@ -796,20 +800,16 @@ func _update_service_queues() -> void:
 func _service_destination(kind: String, start: Vector2i, guest: Dictionary) -> Dictionary:
 	var best := Vector2i(-1, -1)
 	var best_object := -1
-	var best_length := 999999
+	var best_score := INF
 	for object_id in placed_objects:
 		var record: Dictionary = placed_objects[object_id]
 		if str(record["kind"]) != kind:
 			continue
-		if kind == "bar" and _service_queue_size("bar", int(object_id)) >= 5:
+		var queue_size := _service_queue_size(kind, int(object_id))
+		if kind == "bar" and queue_size >= 5:
 			continue
-		if kind == "wc":
-			var reservations := 0
-			for other in guests:
-				if other != guest and int(other.get("service_object", -1)) == int(object_id) and str(other.get("state", "")) in ["walk_wc", "using_wc"]:
-					reservations += 1
-			if reservations >= 4:
-				continue
+		if kind == "wc" and queue_size >= 4:
+			continue
 		if kind == "sofa":
 			var reserved := false
 			for other in guests:
@@ -826,10 +826,18 @@ func _service_destination(kind: String, start: Vector2i, guest: Dictionary) -> D
 				var path := _path_to(start, candidate)
 				if candidate != start and path.is_empty():
 					continue
-				if path.size() < best_length:
+				# A short walk matters, but a crowded service point is slower.
+				# Different adjacent cells form natural waiting positions.
+				var queue_penalty := 0.0
+				if kind == "bar":
+					queue_penalty = float(queue_size) * 5.0
+				elif kind == "wc":
+					queue_penalty = float(queue_size) * 3.0
+				var score := float(path.size()) + queue_penalty
+				if score < best_score:
 					best = candidate
 					best_object = int(object_id)
-					best_length = path.size()
+					best_score = score
 	return {"cell": best, "object": best_object}
 
 func _guest_route(guest: Dictionary, kind: String) -> bool:
@@ -1683,7 +1691,7 @@ func _refresh_prices() -> void:
 	if drink_value_label != null:
 		drink_value_label.text = "€%d" % drink_price
 	if night_time_label != null and not night_active:
-		night_time_label.text = "3-MINUTE NIGHT  |  TICKETS €%d  |  DRINKS €%d" % [ticket_price, drink_price]
+		night_time_label.text = "4-HOUR NIGHT  |  TICKETS €%d  |  DRINKS €%d" % [ticket_price, drink_price]
 
 
 func _refresh_dj_card() -> void:
