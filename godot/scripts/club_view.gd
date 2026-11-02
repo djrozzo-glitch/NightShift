@@ -350,8 +350,16 @@ var laser_beams: Array[MeshInstance3D] = []
 const LASER_COLORS := [Color("#31ff64"), Color("#287cff"), Color("#ffffff"), Color("#ff334d")]
 
 func _load_models() -> void:
+	# Keep the logical object kinds ("bar" and "wc") unchanged: existing
+	# saves, prices, footprints, service queues and upgrades use these IDs.
+	# Only their visual GLB assets are replaced.
+	var visual_asset_names := {"bar": "bar_new", "wc": "wc_new"}
 	for kind in MODEL_TYPES:
-		var path := "res://assets/models/%s.glb" % kind
+		var asset_name: String = str(visual_asset_names.get(kind, kind))
+		var path := "res://assets/models/%s.glb" % asset_name
+		if not ResourceLoader.exists(path) and asset_name != kind:
+			push_warning("NightShift: %s unavailable, falling back to old %s model" % [path, kind])
+			path = "res://assets/models/%s.glb" % kind
 		if ResourceLoader.exists(path):
 			var packed := load(path) as PackedScene
 			if packed != null:
