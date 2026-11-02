@@ -2340,6 +2340,21 @@ func _apply_east_wing() -> void:
 	_refresh_readiness()
 
 
+func _remove_east_wing() -> void:
+	if not expanded:
+		return
+	for child in club.get_children():
+		if child is Node3D and (child.position.x > 7.9 or child.name.begins_with("wall_21_")):
+			child.queue_free()
+	for cell in floor_heights.keys():
+		if cell.x >= SIZE:
+			floor_heights.erase(cell)
+	expanded = false
+	grid_width = SIZE
+	for y in range(6, 9):
+		_model(club, "wall", 15, y, 1)
+
+
 func _buy_expansion() -> void:
 	if not _can_expand_club():
 		_notify("Requires level 4, reputation 65 and €5000")
@@ -2441,6 +2456,8 @@ func _load_club() -> void:
 	_clear_guests()
 	if bool(data.get("expanded", false)) and not expanded:
 		_apply_east_wing()
+	elif not bool(data.get("expanded", false)) and expanded:
+		_remove_east_wing()
 	for id in placed_objects.keys().duplicate():
 		_remove_object(int(id))
 	_clear_dance_tiles()
@@ -2525,13 +2542,7 @@ func _new_club() -> void:
 	free_dance_tiles = 0
 	# Reset the optional east wing when starting over.
 	if expanded:
-		for child in club.get_children():
-			if child is Node3D and (child.position.x > 7.9 or child.name.begins_with("wall_21_")):
-				child.queue_free()
-		expanded = false
-		grid_width = SIZE
-		for y in range(6, 9):
-			_model(club, "wall", 15, y, 1)
+		_remove_east_wing()
 	poster_labels.clear()
 	poster_led_materials.clear()
 	poster_led_accents.clear()
