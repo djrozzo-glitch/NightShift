@@ -2780,8 +2780,10 @@ func _relocate_east_posters() -> void:
 
 
 func _remove_old_east_perimeter() -> void:
-	# No partition remains at x=15 after expanding, including old posters.
-	for y in range(SIZE):
+	# Remove only the former EAST SIDE (interior rows).
+	# The north/south corner wall segments at (15, 0) and (15, 15)
+	# are part of the continuous outer perimeter and must remain.
+	for y in range(1, SIZE - 1):
 		var old_wall := club.get_node_or_null("wall_15_%d" % y)
 		if old_wall != null:
 			old_wall.queue_free()
