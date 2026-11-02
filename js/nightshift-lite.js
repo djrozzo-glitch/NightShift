@@ -24,13 +24,7 @@ const stage=new THREE.Group();scene.add(stage);
 const loader=new GLTFLoader();
 const loadGLB=path=>new Promise(resolve=>loader.load(path,resolve,undefined,err=>{console.warn('Optional GLB not loaded',path,err);resolve(null)}));
 // Optimized copies live next to original Godot GLBs. The original remains a safe fallback.
-const loadVenueModel=async name=>{
- // Browser-optimized models are uploaded through GitHub to assets/models/.
- // Preserve compatibility with the previous directory and original Godot assets.
- return (await loadGLB('assets/models/'+name+'_opt.glb'))
-     || (await loadGLB('godot/assets/models/'+name+'_opt.glb'))
-     || (await loadGLB('godot/assets/models/'+name+'.glb'));
-};
+const loadVenueModel=name=>loadGLB('assets/models/'+name+'_opt.glb');
 const mat=(color,roughness=.85)=>new THREE.MeshStandardMaterial({color,roughness});
 const concrete=mat(0x252330),dark=mat(0x302c3c),danceMat=mat(0x503463),edgeMat=mat(0x50455a);
 function block(w,h,d,x,y,z,material,parent=stage){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);o.position.set(x,y,z);parent.add(o);return o;}
