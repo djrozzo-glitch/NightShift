@@ -398,7 +398,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 		# Face the artwork into the room on each perimeter side.
 		if x == 0:
 			pivot_node.rotation.y = PI * 0.5
-		elif x == SIZE - 1:
+		elif x == grid_width - 1:
 			pivot_node.rotation.y = -PI * 0.5
 		elif y == SIZE - 1:
 			pivot_node.rotation.y = PI
@@ -2752,6 +2752,41 @@ func _can_expand_club() -> bool:
 	return not expanded and not night_active and cash >= EXPANSION_PRICE and reputation >= 65 and club_level >= 4
 
 
+func _relocate_east_posters() -> void:
+	# Move only wall-mounted posters; all furniture stays exactly where it was.
+	for id in placed_objects.keys():
+		var record: Dictionary = placed_objects[id]
+		if str(record["kind"]) != "poster" or int(record["x"]) != SIZE - 1:
+			continue
+		var y := int(record["y"])
+		var old_node := record["node"] as Node3D
+		var old_cell := Vector2i(SIZE - 1, y)
+		var new_cell := Vector2i(grid_width - 1, y)
+		occupied.erase(old_cell)
+		object_at_cell.erase(old_cell)
+		if is_instance_valid(old_node):
+			var label := old_node.find_child("DJPosterText", true, false) as Label3D
+			if label != null:
+				poster_labels.erase(label)
+			old_node.queue_free()
+		var new_node := _model(club, "poster", new_cell.x, new_cell.y)
+		record["node"] = new_node
+		record["x"] = new_cell.x
+		record["turn"] = 0
+		record["cells"] = _footprint(new_cell.x, new_cell.y, "poster", 0)
+		placed_objects[id] = record
+		occupied[new_cell] = true
+		object_at_cell[new_cell] = id
+
+
+func _remove_old_east_perimeter() -> void:
+	# No partition remains at x=15 after expanding, including old posters.
+	for y in range(SIZE):
+		var old_wall := club.get_node_or_null("wall_15_%d" % y)
+		if old_wall != null:
+			old_wall.queue_free()
+
+
 func _apply_east_wing() -> void:
 	if expanded:
 		return
@@ -2764,12 +2799,10 @@ func _apply_east_wing() -> void:
 			_make_box(club, Vector3(x - 7.5, -0.055, y - 7.5), Vector3(0.99, 0.10, 0.99),
 				Color("#272735") if (x + y) % 2 == 0 else Color("#343342"))
 			floor_heights[Vector2i(x, y)] = -0.005
-	# Three-cell passage through the original eastern perimeter.
-	for y in range(6, 9):
-		var old_wall := club.get_node_or_null("wall_15_%d" % y)
-		if old_wall != null:
-			old_wall.queue_free()
-	# Enclose the new wing without disturbing the original club walls.
+	# Open the entire east side; posters move to the new outside wall.
+	_relocate_east_posters()
+	_remove_old_east_perimeter()
+	# Enclose the new wing with a single outer perimeter.
 	for x in range(SIZE, EXPANDED_WIDTH):
 		_model(club, "wall", x, 0)
 		_model(club, "wall", x, SIZE - 1)
@@ -2790,8 +2823,11 @@ func _remove_east_wing() -> void:
 			floor_heights.erase(cell)
 	expanded = false
 	grid_width = SIZE
-	for y in range(6, 9):
-		_model(club, "wall", 15, y, 1)
+	for y in range(SIZE):
+		if y == 0 or y == SIZE - 1:
+			continue
+		if club.get_node_or_null("wall_15_%d" % y) == null:
+			_model(club, "wall", 15, y, 1)
 
 
 func _buy_expansion() -> void:
@@ -2915,11 +2951,15 @@ func _load_club() -> void:
 		var kind := str(entry["kind"])
 		var x := int(entry["x"])
 		var y := int(entry["y"])
+		if expanded and kind == "poster" and x == SIZE - 1:
+			x = grid_width - 1
 		var turn := int(entry.get("turn", 0))
 		var node := _model(club, kind, x, y, turn)
 		var id := _register_object(node, kind, x, y, turn)
 		placed_objects[id]["paid"] = bool(entry.get("paid", false))
 		_attach_fixture_lighting(node, kind)
+	if expanded:
+		_remove_old_east_perimeter()
 	club_name = str(data.get("club_name", "ABLETON GYM")).strip_edges().substr(0, 28)
 	if club_name.is_empty():
 		club_name = "ABLETON GYM"
