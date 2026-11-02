@@ -370,7 +370,7 @@ func _load_models() -> void:
 			missing_models.append(kind)
 			push_warning("NightShift: missing %s" % path)
 	# An optional visual variant; keep the gameplay ID as "sofa".
-	var upgrade_assets := {"sofa_upgraded": "sofa_upgraded", "wc_upgraded": "wc_upgraded", "speaker_updated": "speaker_updated", "dj_stand_updated": "dj_stand_updated"}
+	var upgrade_assets := {"sofa_upgraded": "sofa_upgraded", "wc_upgraded": "wc_upgraded", "speaker_updated": "speaker_updated", "dj_stand_upgraded": "dj_stand_upgraded"}
 	for variant in upgrade_assets:
 		var variant_path := "res://assets/models/%s.glb" % str(upgrade_assets[variant])
 		if ResourceLoader.exists(variant_path):
@@ -439,8 +439,8 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 		visual_kind = "wc_upgraded"
 	elif kind == "speaker" and _upgrade_owned("premium_sound") and models.has("speaker_updated"):
 		visual_kind = "speaker_updated"
-	elif kind == "dj" and _upgrade_owned("dj_console") and models.has("dj_stand_updated"):
-		visual_kind = "dj_stand_updated"
+	elif kind == "dj" and _upgrade_owned("dj_console") and models.has("dj_stand_upgraded"):
+		visual_kind = "dj_stand_upgraded"
 	var visual := (models[visual_kind] as PackedScene).instantiate() as Node3D
 	pivot_node.add_child(visual)
 	var bounds := _visual_bounds(visual)
