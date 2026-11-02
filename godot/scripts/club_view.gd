@@ -176,6 +176,10 @@ var night_unhappy_departures := 0
 var night_time_label: Label
 var night_speed_button: Button
 var night_pause_button: Button
+var night_history: Array[Dictionary] = []
+var analytics_summary: Label
+var analytics_history: Label
+var analytics_insight: Label
 var night_report_panel: PanelContainer
 var night_report_heading: Label
 var night_report_details: Label
@@ -1936,6 +1940,7 @@ func _end_night() -> void:
 	last_xp_gain = maxi(10, roundi(float(guest_count) * 2.0 + float(night_drinks_sold) * 1.2 + average_mood * 0.22 + (12.0 if profit > 0 else 0.0)))
 	var levels_gained := _award_xp(last_xp_gain)
 	var milestone_awards := _award_night_milestones(profit)
+	_record_night_analytics(profit, average_mood)
 	_clear_guests()
 	_refresh_economy()
 	night_pause_button.disabled = true
@@ -1949,6 +1954,67 @@ func _end_night() -> void:
 	_notify("Night %d ended  |  %d guests visited  |  Profit %s€%d  |  XP +%d  |  REP %+d%s" % [night_number, guest_count, "+" if profit >= 0 else "-", absi(profit), last_xp_gain, last_rep_change, "  |  LEVEL UP!" if levels_gained > 0 else ""])
 	if not milestone_awards.is_empty():
 		_notify("MILESTONES  |  " + milestone_awards)
+
+func _record_night_analytics(profit: int, mood: float) -> void:
+	var snapshot: Dictionary = {
+		"night": night_number, "profit": profit, "guests": guest_count,
+		"mood": roundi(mood), "reputation": reputation,
+		"tickets": night_ticket_income, "drinks": night_drink_income,
+		"drinks_sold": night_drinks_sold, "missed": night_bar_missed,
+		"bar_queue": night_bar_queue_peak, "wc_queue": night_wc_queue_peak,
+		"unhappy": night_unhappy_departures, "ticket_price": ticket_price,
+		"drink_price": drink_price, "upkeep": _upgrade_upkeep() + _night_furniture_upkeep()
+	}
+	night_history.append(snapshot)
+	if night_history.size() > 20:
+		night_history.pop_front()
+	_refresh_club_analytics()
+
+
+func _analytics_recommendation() -> String:
+	if night_history.is_empty():
+		return "Run a night to receive data-based management advice."
+	var last: Dictionary = night_history.back()
+	if int(last.get("profit", 0)) < 0:
+		return "Loss-making night: review DJ fee and ticket demand before buying equipment."
+	if int(last.get("missed", 0)) >= 3 or int(last.get("bar_queue", 0)) >= 5:
+		return "Bar bottleneck: consider Fast Bar or an additional bar."
+	if int(last.get("wc_queue", 0)) >= 5:
+		return "Restroom queues: add another WC or upgrade sanitation."
+	if int(last.get("unhappy", 0)) >= 3 or int(last.get("mood", 100)) < 70:
+		return "Guest satisfaction is low: improve comfort, sound and queues."
+	if int(last.get("guests", 0)) < 20 and int(last.get("ticket_price", 0)) > roundi(_fair_ticket_price()):
+		return "Low turnout at a premium ticket price: test a cheaper ticket."
+	if int(last.get("guests", 0)) >= _club_capacity() and _club_capacity() > 0:
+		return "Club is reaching capacity: expand dancefloor and sanitation."
+	return "Healthy operation. Compare ticket prices and invest where queues emerge."
+
+
+func _refresh_club_analytics() -> void:
+	if analytics_summary == null:
+		return
+	if night_history.is_empty():
+		analytics_summary.text = "No completed nights recorded yet."
+		analytics_history.text = ""
+		analytics_insight.text = _analytics_recommendation()
+		return
+	var total_profit := 0
+	var total_guests := 0
+	var total_mood := 0
+	for record in night_history:
+		total_profit += int(record.get("profit", 0))
+		total_guests += int(record.get("guests", 0))
+		total_mood += int(record.get("mood", 0))
+	var count := night_history.size()
+	analytics_summary.text = "LAST %d NIGHTS\nNET PROFIT  %s€%d\nAVG GUESTS  %.1f  |  AVG MOOD  %d%%" % [count, "+" if total_profit >= 0 else "-", absi(total_profit), float(total_guests) / float(count), roundi(float(total_mood) / float(count))]
+	var lines: Array[String] = []
+	for index in range(night_history.size() - 1, maxi(-1, night_history.size() - 9), -1):
+		var entry: Dictionary = night_history[index]
+		var net := int(entry.get("profit", 0))
+		lines.append("N%02d  %s€%d  |  %d guests  |  %d%% mood" % [int(entry.get("night", 0)), "+" if net >= 0 else "-", absi(net), int(entry.get("guests", 0)), int(entry.get("mood", 0))])
+	analytics_history.text = "\n".join(lines)
+	analytics_insight.text = "MANAGER INSIGHT\n" + _analytics_recommendation()
+
 
 func _update_night_stats() -> void:
 	if night_report_details == null:
@@ -2669,7 +2735,7 @@ func _save_club() -> void:
 	for cell in dance_tiles:
 		tile_data.append({"x": cell.x, "y": cell.y, "paid": bool(dance_tiles[cell].get("paid", false))})
 	var data := {
-		"version": 4, "upgrades": owned_upgrades, "expanded": expanded, "club_name": club_name, "cash": cash, "reputation": reputation,
+		"version": 5, "night_history": night_history, "upgrades": owned_upgrades, "expanded": expanded, "club_name": club_name, "cash": cash, "reputation": reputation,
 		"level": club_level, "xp": club_xp, "total_xp": total_xp,
 		"perk_points": perk_points, "perks": unlocked_perks,
 		"milestones": completed_milestones, "profit_streak": profitable_night_streak,
@@ -2767,6 +2833,15 @@ func _load_club() -> void:
 	for perk in data.get("perks", []):
 		unlocked_perks.append(str(perk))
 	night_number = maxi(0, int(data.get("night_number", 0)))
+	night_history.clear()
+	var stored_history: Variant = data.get("night_history", [])
+	if stored_history is Array:
+		for record in stored_history:
+			if record is Dictionary:
+				night_history.append(record)
+				if night_history.size() > 20:
+					night_history.pop_front()
+	_refresh_club_analytics()
 	ticket_price = clampi(int(data.get("ticket_price", 20)), 5, 80)
 	drink_price = clampi(int(data.get("drink_price", 8)), 2, 35)
 	if ticket_slider != null:
@@ -2841,6 +2916,8 @@ func _new_club() -> void:
 	completed_milestones.clear()
 	profitable_night_streak = 0
 	night_number = 0
+	night_history.clear()
+	_refresh_club_analytics()
 	guest_count = 0
 	night_ticket_income = 0
 	night_drink_income = 0
@@ -3133,6 +3210,21 @@ func _build_overlay() -> void:
 		upgrade_button.pressed.connect(_buy_equipment_upgrade.bind(str(upgrade["id"])))
 		goal_content.add_child(upgrade_button)
 		upgrade_buttons[str(upgrade["id"])] = upgrade_button
+	var analytics_heading := Label.new()
+	analytics_heading.text = "CLUB ANALYTICS  ·  LAST 20 NIGHTS"
+	UIStyle.decorate_section(analytics_heading)
+	progress_content.add_child(analytics_heading)
+	analytics_summary = Label.new()
+	UIStyle.decorate_label(analytics_summary, 13, true)
+	progress_content.add_child(analytics_summary)
+	analytics_history = Label.new()
+	UIStyle.decorate_label(analytics_history, 12, true)
+	progress_content.add_child(analytics_history)
+	analytics_insight = Label.new()
+	UIStyle.decorate_label(analytics_insight, 12, true)
+	analytics_insight.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	progress_content.add_child(analytics_insight)
+	_refresh_club_analytics()
 	_refresh_progression()
 	var night_panel := PanelContainer.new()
 	night_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
