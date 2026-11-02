@@ -28,7 +28,7 @@ var free_dance_tiles := 0
 var hover_cell := Vector2i(-1, -1)
 var hover_mesh: MeshInstance3D
 var status_label: Label
-const BUILD_TYPES := ["dance_tile", "speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser", "rail", "poster", "discoball"]
+const BUILD_TYPES := ["dance_tile", "speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "plant_big", "light", "laser", "rail", "poster", "discoball"]
 var selected_kind := "speaker"
 var build_turn := 0
 var preview_root: Node3D
@@ -51,7 +51,7 @@ var object_at_cell: Dictionary = {}
 var next_object_id := 1
 var action_history: Array[Dictionary] = []
 # Prototype economy: prices and starting balance will be balanced later.
-const BUILD_PRICES := {"dance_tile": 70, "speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450, "rail": 180, "poster": 220, "discoball": 1600}
+const BUILD_PRICES := {"dance_tile": 70, "speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "plant_big": 350, "light": 250, "laser": 450, "rail": 180, "poster": 220, "discoball": 1600}
 const STARTING_CAPITAL := 6000
 var cash := STARTING_CAPITAL
 var reputation := 55
@@ -69,17 +69,17 @@ var expansion_details: Label
 var upgrade_buttons: Dictionary = {}
 var owned_upgrades: Array[String] = []
 const EQUIPMENT_UPGRADES := [
-	{"id": "lounge", "name": "Lounge Comfort", "level": 5, "price": 1100, "upkeep": 8, "requires": "sofa", "effect": "+2 mood with sofas", "target": "8–12 nights"},
-	{"id": "wc_plus", "name": "Restroom Upgrade", "level": 6, "price": 1400, "upkeep": 10, "requires": "wc", "effect": "+24 sanitation capacity per WC", "target": "6–12 nights"},
-	{"id": "premium_sound", "name": "Premium Sound", "level": 7, "price": 3200, "upkeep": 20, "requires": "speaker", "effect": "+3 mood; +4% arrivals", "target": "8–14 nights"},
-	{"id": "dj_console", "name": "Pure Vinyl", "level": 9, "price": 6000, "upkeep": 30, "requires": "dj", "effect": "+8% arrivals; +1 reputation on good nights", "target": "10–16 nights"},
-	{"id": "iconic_sound", "name": "Iconic Sound", "level": 10, "price": 10000, "upkeep": 45, "requires": "speaker", "effect": "+4 mood; +8% arrivals", "target": "12–20 nights"}
+	{"id": "lounge", "name": "Lounge Comfort", "level": 5, "price": 950, "upkeep": 8, "requires": "sofa", "effect": "+2 mood with sofas", "target": "8–12 nights"},
+	{"id": "wc_plus", "name": "Restroom Upgrade", "level": 6, "price": 1300, "upkeep": 12, "requires": "wc", "effect": "+24 sanitation capacity per WC", "target": "6–12 nights"},
+	{"id": "premium_sound", "name": "Premium Sound", "level": 7, "price": 2600, "upkeep": 18, "requires": "speaker", "effect": "+3 mood; +4% arrivals", "target": "8–14 nights"},
+	{"id": "dj_console", "name": "Pure Vinyl", "level": 9, "price": 4600, "upkeep": 24, "requires": "dj", "effect": "+8% arrivals; +1 reputation on good nights", "target": "10–16 nights"},
+	{"id": "iconic_sound", "name": "Iconic Sound", "level": 10, "price": 7800, "upkeep": 38, "requires": "speaker", "effect": "+4 mood; +8% arrivals", "target": "12–20 nights"}
 ]
 var management_panel: PanelContainer
 const SAVE_PATH := "user://nightshift_club.json"
 const LEVEL_NAMES := ["Illegal Basement", "Word of Mouth", "Local Favorite", "Afterhours", "Underground Institution", "Citywide Buzz", "Cult Following", "Scene Leader", "International Attention", "Legendary Venue"]
-const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "laser": 2, "sofa": 3, "table": 4, "rail": 4, "discoball": 6}
-const BUILD_NAMES := {"dance_tile": "Dance Tile", "dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light", "poster": "DJ Poster", "discoball": "Disco Ball"}
+const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "plant_big": 7, "laser": 2, "sofa": 3, "table": 4, "rail": 4, "discoball": 6}
+const BUILD_NAMES := {"dance_tile": "Dance Tile", "dj": "DJ Booth", "wc": "Restroom", "plant2": "Small Plant", "plant_big": "Big Plant", "light": "Moving Light", "poster": "DJ Poster", "discoball": "Disco Ball"}
 const PERK_OPTIONS := [
 	{"id": "connections", "name": "Local Connections", "effect": "-5% DJ fees", "branch": "MUSIC"},
 	{"id": "resident", "name": "Resident Deal", "effect": "-10% DJ fees", "branch": "MUSIC"},
@@ -187,7 +187,7 @@ var night_report_heading: Label
 var night_report_details: Label
 const MAX_GUESTS := 48
 const EXPANDED_GUEST_LIMIT := 72
-const OBJECT_UPKEEP := {"sofa": 2, "table": 1, "stool": 1, "plant2": 1, "rail": 1, "poster": 1, "discoball": 12}
+const OBJECT_UPKEEP := {"sofa": 2, "table": 1, "stool": 1, "plant2": 1, "plant_big": 3, "rail": 1, "poster": 1, "discoball": 12}
 
 func _active_milestones() -> Array[Dictionary]:
 	var active: Array[Dictionary] = []
@@ -245,7 +245,7 @@ func _award_night_milestones(profit: int) -> String:
 func _fair_ticket_price() -> float:
 	var sound := 2.0 if _upgrade_owned("premium_sound") else 0.0
 	var iconic := 3.0 if _upgrade_owned("iconic_sound") else 0.0
-	return 13.0 + float(club_level - 1) * 2.5 + float(reputation - 55) * 0.12 + _club_prestige() * 0.5 + sound + iconic
+	return 13.0 + float(club_level - 1) * 2.5 + float(reputation - 55) * 0.12 + _club_prestige() * 0.38 + sound + iconic
 
 
 func _ticket_demand_factor() -> float:
@@ -263,7 +263,7 @@ func _dj_crowd_bonus() -> float:
 		return 1.0
 	var fee := int(DJ_ROSTER[dj_picker.selected]["fee"])
 	# More established acts draw a crowd, but do not guarantee profit.
-	return 1.0 + clampf(float(fee - 100) / 300.0 * 0.30, 0.0, 0.30) + _club_prestige() * 0.012 + (0.04 if _upgrade_owned("premium_sound") else 0.0) + (0.08 if _upgrade_owned("dj_console") else 0.0) + (0.08 if _upgrade_owned("iconic_sound") else 0.0)
+	return 1.0 + clampf(float(fee - 100) / 300.0 * 0.30, 0.0, 0.30) + _club_prestige() * 0.009 + (0.04 if _upgrade_owned("premium_sound") else 0.0) + (0.08 if _upgrade_owned("dj_console") else 0.0) + (0.08 if _upgrade_owned("iconic_sound") else 0.0)
 
 
 func _xp_needed(level: int) -> int:
@@ -322,7 +322,7 @@ func _make_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> Mes
 	parent.add_child(item)
 	return item
 
-const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light", "laser", "plant2", "table", "stool", "wc", "entrance", "floor", "rail", "discoball"]
+const MODEL_TYPES := ["wall", "poster", "dj", "bar", "sofa", "speaker", "light", "laser", "plant2", "plant_big", "table", "stool", "wc", "entrance", "floor", "rail", "discoball"]
 var models: Dictionary = {}
 var club_name := "ABLETON GYM"
 var club_name_edit: LineEdit
@@ -661,7 +661,7 @@ func _night_furniture_upkeep() -> int:
 # more copies are placed. Essential objects have their own functional roles.
 func _club_prestige() -> float:
 	var score := 0.0
-	for kind in ["poster", "rail", "table", "stool", "plant2", "light", "laser", "discoball"]:
+	for kind in ["poster", "rail", "table", "stool", "plant2", "plant_big", "light", "laser", "discoball"]:
 		var count := _count_kind(kind)
 		var value := 0.0
 		match kind:
@@ -669,13 +669,14 @@ func _club_prestige() -> float:
 			"rail": value = 0.6
 			"table": value = 0.8
 			"stool": value = 0.5
-			"plant2": value = 0.9
+			"plant2": value = 0.55
+			"plant_big": value = 1.25
 			"light": value = 0.8
 			"laser": value = 1.0
 			"discoball": value = 1.5
 		score += value * (1.0 if count >= 1 else 0.0)
 		score += value * 0.35 * float(maxi(0, mini(count - 1, 2)))
-	return minf(8.0, score)
+	return minf(10.0, score)
 
 
 func _build_economics_hint(kind: String) -> String:
@@ -688,8 +689,9 @@ func _build_economics_hint(kind: String) -> String:
 		"dj": note = "Required to open; enables DJ bookings and ticket revenue."
 		"light": note = "Atmosphere: +2 mood (shared +8 cap); +0.8 prestige."
 		"laser": note = "Atmosphere: +3 mood (shared +8 cap); +1 prestige."
-		"discoball": note = "Rotating light reflections; atmosphere and +1.5 prestige. €12/night upkeep."
-		"plant2": note = "Atmosphere: +0.5 mood (shared +8 cap); +0.9 prestige."
+		"discoball": note = "Rotating light reflections; +2 atmosphere mood, +1.5 prestige; €12/night upkeep."
+		"plant2": note = "Small Plant: +0.4 atmosphere mood, +0.55 prestige; €1/night upkeep."
+		"plant_big": note = "Big Plant: +1.2 atmosphere mood, +1.25 prestige; €3/night upkeep."
 		"sofa": note = "Rest: guests recover energy; fewer unhappy departures."
 		"table": note = "Comfort: +0.7 mood (shared +4 cap); +0.8 prestige."
 		"stool": note = "Comfort: +0.7 mood (shared +4 cap); +0.5 prestige."
@@ -1349,7 +1351,7 @@ func _guest_mood(guest: Dictionary) -> float:
 	var wc_penalty := maxf(0.0, float(guest.get("wc_need", 0.0)) - 0.75) * 65.0
 	var dancing_bonus := 9.0 if bool(guest["dance"]) else 0.0
 	var sound_bonus := minf(6.0, float(maxi(0, _count_kind("speaker") - 2)) * 2.0) + (3.0 if _upgrade_owned("premium_sound") and _count_kind("speaker") > 0 else 0.0) + (4.0 if _upgrade_owned("iconic_sound") and _count_kind("speaker") > 0 else 0.0)
-	var atmosphere_bonus := minf(8.0, float(_count_kind("light")) * 2.0 + float(_count_kind("laser")) * 3.0 + float(_count_kind("plant2")) * 0.5)
+	var atmosphere_bonus := minf(9.0, float(_count_kind("light")) * 1.5 + float(_count_kind("laser")) * 2.3 + float(_count_kind("discoball")) * 2.0 + float(_count_kind("plant2")) * 0.4 + float(_count_kind("plant_big")) * 1.2)
 	var comfort_bonus := minf(4.0, float(_count_kind("table") + _count_kind("stool")) * 0.7) + (2.0 if _upgrade_owned("lounge") and _count_kind("sofa") > 0 else 0.0)
 	var prestige_mood := _club_prestige() * 0.35
 	return clampf(86.0 + dancing_bonus + sound_bonus + atmosphere_bonus + comfort_bonus + prestige_mood - thirst_penalty - fatigue_penalty - waiting_penalty - service_penalty - wc_penalty, 0.0, 100.0)
