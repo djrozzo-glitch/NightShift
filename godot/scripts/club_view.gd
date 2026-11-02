@@ -508,6 +508,9 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 	visual.position += Vector3(-bounds.get_center().x,
 		base_y - bounds.position.y,
 		offset_z - bounds.get_center().z)
+	if kind == "discoball":
+		# Suspend the mirrored sphere over the crowd rather than on the floor.
+		visual.position.y += 2.35
 	if kind == "floor" and parent == club:
 		floor_heights[Vector2i(x, y)] = _visual_bounds(pivot_node).end.y
 	# Sign geometry must be added AFTER fitting the GLB, or it distorts its bounds.
@@ -3131,7 +3134,7 @@ func _load_club() -> void:
 				owned_upgrades.append(str(upgrade_id))
 				break
 	for upgrade_kind in ["sofa", "wc", "speaker", "dj"]:
-		var upgrade_id := {"sofa": "lounge", "wc": "wc_plus", "speaker": "premium_sound", "dj": "dj_console"}[upgrade_kind]
+		var upgrade_id: String = str({"sofa": "lounge", "wc": "wc_plus", "speaker": "premium_sound", "dj": "dj_console"}[upgrade_kind])
 		if _upgrade_owned(upgrade_id):
 			_refresh_equipment_visuals(upgrade_kind)
 	unlocked_perks.clear()
