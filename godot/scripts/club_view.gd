@@ -371,6 +371,10 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 	var fit_scale: float
 	if kind == "entrance":
 		fit_scale = 1.90 / maxf(native_length, 0.001)
+	elif kind == "wc":
+		# The restroom should occupy the full two-cell footprint.
+		# Unlike other furniture, fit it to the 1.9-cell long side.
+		fit_scale = target_z / maxf(native_length, 0.001)
 	elif kind in TWO_CELL:
 		fit_scale = minf(target_z / maxf(native_length, 0.001),
 			target_x / maxf(native_width, 0.001))
