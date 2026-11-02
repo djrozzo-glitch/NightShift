@@ -69,11 +69,9 @@ var expansion_details: Label
 var upgrade_buttons: Dictionary = {}
 var owned_upgrades: Array[String] = []
 const EQUIPMENT_UPGRADES := [
-	{"id": "fast_bar", "name": "Fast Bar", "level": 4, "price": 650, "upkeep": 12, "requires": "bar", "effect": "Bar service 5.0s → 3.3s", "target": "4–8 nights"},
 	{"id": "lounge", "name": "Lounge Comfort", "level": 5, "price": 1100, "upkeep": 8, "requires": "sofa", "effect": "+2 mood with sofas", "target": "8–12 nights"},
 	{"id": "wc_plus", "name": "Restroom Upgrade", "level": 6, "price": 1400, "upkeep": 10, "requires": "wc", "effect": "+24 sanitation capacity per WC", "target": "6–12 nights"},
 	{"id": "premium_sound", "name": "Premium Sound", "level": 7, "price": 3200, "upkeep": 20, "requires": "speaker", "effect": "+3 mood; +4% arrivals", "target": "8–14 nights"},
-	{"id": "cocktail_bar", "name": "Cocktail Service", "level": 8, "price": 4500, "upkeep": 25, "requires": "bar", "effect": "+15% drink revenue", "target": "7–12 nights"},
 	{"id": "dj_console", "name": "Advanced DJ Console", "level": 9, "price": 6000, "upkeep": 30, "requires": "dj", "effect": "+8% arrivals; +1 reputation on good nights", "target": "10–16 nights"},
 	{"id": "iconic_sound", "name": "Iconic Sound", "level": 10, "price": 10000, "upkeep": 45, "requires": "speaker", "effect": "+4 mood; +8% arrivals", "target": "12–20 nights"}
 ]
@@ -353,7 +351,7 @@ func _load_models() -> void:
 	# Keep the logical object kinds ("bar" and "wc") unchanged: existing
 	# saves, prices, footprints, service queues and upgrades use these IDs.
 	# Only their visual GLB assets are replaced.
-	var visual_asset_names := {"bar": "bar_new", "wc": "wc_new"}
+	var visual_asset_names := {"bar": "bar_new", "wc": "wc_new", "laser": "laser_new"}
 	for kind in MODEL_TYPES:
 		var asset_name: String = str(visual_asset_names.get(kind, kind))
 		var path := "res://assets/models/%s.glb" % asset_name
@@ -370,6 +368,12 @@ func _load_models() -> void:
 		else:
 			missing_models.append(kind)
 			push_warning("NightShift: missing %s" % path)
+	# An optional visual variant; keep the gameplay ID as "sofa".
+	var upgraded_path := "res://assets/models/sofa_upgraded.glb"
+	if ResourceLoader.exists(upgraded_path):
+		var upgraded_scene := load(upgraded_path) as PackedScene
+		if upgraded_scene != null:
+			models["sofa_upgraded"] = upgraded_scene
 
 const TWO_CELL := ["dj", "bar", "sofa", "wc", "entrance"]
 
@@ -420,7 +424,8 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 			_attach_entrance_sign(pivot_node)
 		return pivot_node
 
-	var visual := (models[kind] as PackedScene).instantiate() as Node3D
+	var visual_kind := "sofa_upgraded" if kind == "sofa" and _upgrade_owned("lounge") and models.has("sofa_upgraded") else kind
+	var visual := (models[visual_kind] as PackedScene).instantiate() as Node3D
 	pivot_node.add_child(visual)
 	var bounds := _visual_bounds(visual)
 	var native_width := minf(bounds.size.x, bounds.size.z)
@@ -547,6 +552,21 @@ func _upgrade_upkeep() -> int:
 	return total
 
 
+func _refresh_upgraded_sofas() -> void:
+	# Rebuild only sofa visuals. Preserve IDs, footprints, orientation,
+	# payment records and all simulation references.
+	for object_id in placed_objects.keys():
+		var record: Dictionary = placed_objects[object_id]
+		if str(record["kind"]) != "sofa":
+			continue
+		var old_node := record["node"] as Node3D
+		var new_node := _model(club, "sofa", int(record["x"]), int(record["y"]), int(record["turn"]))
+		record["node"] = new_node
+		placed_objects[object_id] = record
+		if is_instance_valid(old_node):
+			old_node.queue_free()
+
+
 func _buy_equipment_upgrade(id: String) -> void:
 	if night_active:
 		_notify("Buy upgrades between nights")
@@ -560,6 +580,8 @@ func _buy_equipment_upgrade(id: String) -> void:
 			return
 		cash -= price
 		owned_upgrades.append(id)
+		if id == "lounge":
+			_refresh_upgraded_sofas()
 		_refresh_economy()
 		_notify("%s installed for €%d" % [str(upgrade["name"]), price])
 		return
@@ -1740,7 +1762,10 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	var spot := SpotLight3D.new()
 	spot.name = "ClubSpot"
 	# Laser emission begins at the projector lens, not above its housing.
-	spot.position = Vector3(0.0, 0.12, 0.0) if kind == "laser" else Vector3(0.0, 0.77, -0.19)
+	# The new projector lens sits near the upper edge of the housing.
+	# Use its scaled visual bounds so the beam tracks model dimensions.
+	var laser_lens_height := maxf(0.20, _visual_bounds(node).end.y - 0.10)
+	spot.position = Vector3(0.0, laser_lens_height, 0.0) if kind == "laser" else Vector3(0.0, 0.77, -0.19)
 	spot.spot_range = 14.0 if kind == "light" else 11.0
 	spot.spot_angle = 25.0 if kind == "light" else 13.0
 	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
@@ -3008,6 +3033,8 @@ func _load_club() -> void:
 			if str(available_upgrade["id"]) == str(upgrade_id) and not owned_upgrades.has(str(upgrade_id)):
 				owned_upgrades.append(str(upgrade_id))
 				break
+	if _upgrade_owned("lounge"):
+		_refresh_upgraded_sofas()
 	unlocked_perks.clear()
 	for perk in data.get("perks", []):
 		unlocked_perks.append(str(perk))
