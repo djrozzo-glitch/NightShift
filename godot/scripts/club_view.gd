@@ -457,7 +457,7 @@ func _visible_guest_limit() -> int:
 
 
 func _club_capacity() -> int:
-	return mini(_visible_guest_limit(), dance_tiles.size() * 3, _count_kind("wc") * 48)
+	return mini(_visible_guest_limit(), mini(dance_tiles.size() * 3, _count_kind("wc") * 48))
 
 
 func _night_furniture_upkeep() -> int:
