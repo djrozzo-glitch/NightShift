@@ -66,6 +66,17 @@ var rep_bar: ProgressBar
 var progression_details: Label
 var perk_buttons: Array[Button] = []
 var expansion_details: Label
+var upgrade_buttons: Dictionary = {}
+var owned_upgrades: Array[String] = []
+const EQUIPMENT_UPGRADES := [
+	{"id": "fast_bar", "name": "Fast Bar", "level": 4, "price": 650, "upkeep": 12, "requires": "bar", "effect": "Bar service 5.0s → 3.3s", "target": "4–8 nights"},
+	{"id": "lounge", "name": "Lounge Comfort", "level": 5, "price": 1100, "upkeep": 8, "requires": "sofa", "effect": "+2 mood with sofas", "target": "8–12 nights"},
+	{"id": "wc_plus", "name": "Restroom Upgrade", "level": 6, "price": 1400, "upkeep": 10, "requires": "wc", "effect": "+24 sanitation capacity per WC", "target": "6–12 nights"},
+	{"id": "premium_sound", "name": "Premium Sound", "level": 7, "price": 3200, "upkeep": 20, "requires": "speaker", "effect": "+3 mood; +4% arrivals", "target": "8–14 nights"},
+	{"id": "cocktail_bar", "name": "Cocktail Service", "level": 8, "price": 4500, "upkeep": 25, "requires": "bar", "effect": "+15% drink revenue", "target": "7–12 nights"},
+	{"id": "dj_console", "name": "Advanced DJ Console", "level": 9, "price": 6000, "upkeep": 30, "requires": "dj", "effect": "+8% arrivals; +1 reputation on good nights", "target": "10–16 nights"},
+	{"id": "iconic_sound", "name": "Iconic Sound", "level": 10, "price": 10000, "upkeep": 45, "requires": "speaker", "effect": "+4 mood; +8% arrivals", "target": "12–20 nights"}
+]
 var management_panel: PanelContainer
 const SAVE_PATH := "user://nightshift_club.json"
 const LEVEL_NAMES := ["Illegal Basement", "Word of Mouth", "Local Favorite", "Afterhours", "Underground Institution", "Citywide Buzz", "Cult Following", "Scene Leader", "International Attention", "Legendary Venue"]
@@ -228,7 +239,7 @@ func _dj_crowd_bonus() -> float:
 		return 1.0
 	var fee := int(DJ_ROSTER[dj_picker.selected]["fee"])
 	# More established acts draw a crowd, but do not guarantee profit.
-	return 1.0 + clampf(float(fee - 100) / 300.0 * 0.30, 0.0, 0.30) + _club_prestige() * 0.012
+	return 1.0 + clampf(float(fee - 100) / 300.0 * 0.30, 0.0, 0.30) + _club_prestige() * 0.012 + (0.04 if _upgrade_owned("premium_sound") else 0.0) + (0.08 if _upgrade_owned("dj_console") else 0.0) + (0.08 if _upgrade_owned("iconic_sound") else 0.0)
 
 
 func _xp_needed(level: int) -> int:
@@ -271,6 +282,8 @@ func _ready() -> void:
 	_build_camera()
 	_build_overlay()
 	_build_hover()
+	if FileAccess.file_exists(SAVE_PATH):
+		_load_club()
 
 func _make_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
 	var mesh := BoxMesh.new()
@@ -488,12 +501,57 @@ func _count_kind(kind: String) -> int:
 			count += 1
 	return count
 
+func _upgrade_owned(id: String) -> bool:
+	return owned_upgrades.has(id)
+
+
+func _upgrade_upkeep() -> int:
+	var total := 0
+	for upgrade in EQUIPMENT_UPGRADES:
+		if _upgrade_owned(str(upgrade["id"])):
+			total += int(upgrade["upkeep"])
+	return total
+
+
+func _buy_equipment_upgrade(id: String) -> void:
+	if night_active:
+		_notify("Buy upgrades between nights")
+		return
+	for upgrade in EQUIPMENT_UPGRADES:
+		if str(upgrade["id"]) != id:
+			continue
+		var price := int(upgrade["price"])
+		if _upgrade_owned(id) or club_level < int(upgrade["level"]) or cash < price or _count_kind(str(upgrade["requires"])) == 0:
+			_notify("Upgrade locked, unaffordable or missing required equipment")
+			return
+		cash -= price
+		owned_upgrades.append(id)
+		_refresh_economy()
+		_notify("%s installed for €%d" % [str(upgrade["name"]), price])
+		return
+
+
+func _refresh_upgrade_buttons() -> void:
+	for upgrade in EQUIPMENT_UPGRADES:
+		var id := str(upgrade["id"])
+		if not upgrade_buttons.has(id):
+			continue
+		var button := upgrade_buttons[id] as Button
+		var owned := _upgrade_owned(id)
+		var level := int(upgrade["level"])
+		var price := int(upgrade["price"])
+		var available := club_level >= level and cash >= price and _count_kind(str(upgrade["requires"])) > 0
+		button.disabled = owned or not available or night_active
+		button.text = "%s  %s  €%d" % ["✓" if owned else ("🔒" if club_level < level else "＋"), str(upgrade["name"]), price]
+		button.tooltip_text = "LVL %d | %s | +€%d/night upkeep\n%s\nTarget payback: %s (if used)" % [level, str(upgrade["effect"]), int(upgrade["upkeep"]), "Requires " + str(upgrade["requires"]), str(upgrade["target"])]
+
+
 func _visible_guest_limit() -> int:
 	return EXPANDED_GUEST_LIMIT if expanded else MAX_GUESTS
 
 
 func _club_capacity() -> int:
-	return mini(_visible_guest_limit(), mini(dance_tiles.size() * 3, _count_kind("wc") * 48))
+	return mini(_visible_guest_limit(), mini(dance_tiles.size() * 3, _count_kind("wc") * (72 if _upgrade_owned("wc_plus") else 48)))
 
 
 func _night_furniture_upkeep() -> int:
@@ -550,7 +608,7 @@ func _show_catalog_info(kind: String) -> void:
 
 
 func _night_utilities() -> int:
-	return 10 + _count_kind("speaker") * 2 + _count_kind("light") * 3 + _count_kind("laser") * 5 + _count_kind("bar") * 3 + _count_kind("wc") * 3 + _night_furniture_upkeep() + (12 if expanded else 0)
+	return 10 + _count_kind("speaker") * 2 + _count_kind("light") * 3 + _count_kind("laser") * 5 + _count_kind("bar") * 3 + _count_kind("wc") * 3 + _night_furniture_upkeep() + (12 if expanded else 0) + _upgrade_upkeep()
 
 
 func _night_staff_cost() -> int:
@@ -1188,9 +1246,9 @@ func _guest_mood(guest: Dictionary) -> float:
 		service_penalty += 12.0
 	var wc_penalty := maxf(0.0, float(guest.get("wc_need", 0.0)) - 0.75) * 65.0
 	var dancing_bonus := 9.0 if bool(guest["dance"]) else 0.0
-	var sound_bonus := minf(6.0, float(maxi(0, _count_kind("speaker") - 2)) * 2.0)
+	var sound_bonus := minf(6.0, float(maxi(0, _count_kind("speaker") - 2)) * 2.0) + (3.0 if _upgrade_owned("premium_sound") and _count_kind("speaker") > 0 else 0.0) + (4.0 if _upgrade_owned("iconic_sound") and _count_kind("speaker") > 0 else 0.0)
 	var atmosphere_bonus := minf(8.0, float(_count_kind("light")) * 2.0 + float(_count_kind("laser")) * 3.0 + float(_count_kind("plant2")) * 0.5)
-	var comfort_bonus := minf(4.0, float(_count_kind("table") + _count_kind("stool")) * 0.7)
+	var comfort_bonus := minf(4.0, float(_count_kind("table") + _count_kind("stool")) * 0.7) + (2.0 if _upgrade_owned("lounge") and _count_kind("sofa") > 0 else 0.0)
 	var prestige_mood := _club_prestige() * 0.35
 	return clampf(86.0 + dancing_bonus + sound_bonus + atmosphere_bonus + comfort_bonus + prestige_mood - thirst_penalty - fatigue_penalty - waiting_penalty - service_penalty - wc_penalty, 0.0, 100.0)
 
@@ -1347,7 +1405,7 @@ func _process(delta: float) -> void:
 				elif state == "ordering":
 					var wants_to_buy := float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price
 					var bar_id := int(guest.get("service_object", -1))
-					var service_interval := 5.0
+					var service_interval := 3.3 if _upgrade_owned("fast_bar") else 5.0
 					if wants_to_buy and bar_id >= 0 and float(bar_service_clocks.get(bar_id, 0.0)) >= service_interval:
 						bar_service_clocks[bar_id] = 0.0
 						night_drinks_sold += 1
@@ -2551,6 +2609,7 @@ func _buy_expansion() -> void:
 
 func _refresh_progression() -> void:
 	_refresh_build_catalog()
+	_refresh_upgrade_buttons()
 	if progression_details == null:
 		return
 	var level_name: String = LEVEL_NAMES[mini(club_level - 1, LEVEL_NAMES.size() - 1)]
@@ -2588,7 +2647,7 @@ func _save_club() -> void:
 	for cell in dance_tiles:
 		tile_data.append({"x": cell.x, "y": cell.y, "paid": bool(dance_tiles[cell].get("paid", false))})
 	var data := {
-		"version": 3, "expanded": expanded, "club_name": club_name, "cash": cash, "reputation": reputation,
+		"version": 4, "upgrades": owned_upgrades, "expanded": expanded, "club_name": club_name, "cash": cash, "reputation": reputation,
 		"level": club_level, "xp": club_xp, "total_xp": total_xp,
 		"perk_points": perk_points, "perks": unlocked_perks,
 		"milestones": completed_milestones, "profit_streak": profitable_night_streak,
@@ -2676,6 +2735,10 @@ func _load_club() -> void:
 	for milestone_id in data.get("milestones", []):
 		completed_milestones.append(str(milestone_id))
 	profitable_night_streak = maxi(0, int(data.get("profit_streak", 0)))
+	owned_upgrades.clear()
+	for upgrade_id in data.get("upgrades", []):
+		if EQUIPMENT_UPGRADES.any(func(u): return str(u["id"]) == str(upgrade_id)):
+			owned_upgrades.append(str(upgrade_id))
 	unlocked_perks.clear()
 	for perk in data.get("perks", []):
 		unlocked_perks.append(str(perk))
@@ -2750,6 +2813,7 @@ func _new_club() -> void:
 	total_xp = 0
 	perk_points = 0
 	unlocked_perks.clear()
+	owned_upgrades.clear()
 	completed_milestones.clear()
 	profitable_night_streak = 0
 	night_number = 0
@@ -3023,6 +3087,16 @@ func _build_overlay() -> void:
 	UIStyle.decorate_button(expansion_button)
 	expansion_button.pressed.connect(_buy_expansion)
 	goal_panel.add_child(expansion_button)
+	var upgrades_title := Label.new()
+	upgrades_title.text = "EQUIPMENT UPGRADES  ·  LVL 4–10"
+	UIStyle.decorate_label(upgrades_title, 14, true)
+	goal_panel.add_child(upgrades_title)
+	for upgrade in EQUIPMENT_UPGRADES:
+		var upgrade_button := Button.new()
+		UIStyle.decorate_button(upgrade_button)
+		upgrade_button.pressed.connect(_buy_equipment_upgrade.bind(str(upgrade["id"])))
+		goal_panel.add_child(upgrade_button)
+		upgrade_buttons[str(upgrade["id"])] = upgrade_button
 	_refresh_progression()
 	var night_panel := PanelContainer.new()
 	night_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
