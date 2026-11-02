@@ -506,9 +506,8 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 	visual.position += Vector3(-bounds.get_center().x,
 		base_y - bounds.position.y,
 		offset_z - bounds.get_center().z)
-	if kind == "discoball":
-		# Suspend the mirrored sphere over the crowd rather than on the floor.
-		visual.position.y += 2.35
+	# The discoball model includes its own floor-standing pole.
+	# Keep the fitted geometry grounded like other freestanding props.
 	if kind == "floor" and parent == club:
 		floor_heights[Vector2i(x, y)] = _visual_bounds(pivot_node).end.y
 	# Sign geometry must be added AFTER fitting the GLB, or it distorts its bounds.
@@ -1821,8 +1820,10 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		var rig := Node3D.new()
 		rig.name = "DiscoBallLights"
 		node.add_child(rig)
-		var height := maxf(1.5, _visual_bounds(node).end.y)
-		rig.position.y = height
+		# The sphere is at the highest point of the assembled model.
+		# Bounds are measured after the model is fitted and grounded.
+		var bounds := _visual_bounds(node)
+		rig.position = Vector3(bounds.get_center().x, bounds.end.y - 0.06, bounds.get_center().z)
 		for ray_index in range(4):
 			var ray := SpotLight3D.new()
 			ray.name = "MirrorRay%d" % ray_index
