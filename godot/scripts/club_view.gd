@@ -178,6 +178,7 @@ var night_speed_button: Button
 var night_pause_button: Button
 var night_history: Array[Dictionary] = []
 var transition_overlay: ColorRect
+var lighting_fade_tween: Tween
 var exit_cleanup_active := false
 var exit_cleanup_elapsed := 0.0
 var analytics_summary: Label
@@ -1348,11 +1349,33 @@ func _select_guest_at(screen_pos: Vector2) -> bool:
 	return true
 
 
-func _fade_lights(to_black: bool, duration: float = 1.5) -> void:
-	if transition_overlay == null:
-		return
-	var tween := create_tween()
-	tween.tween_property(transition_overlay, "color:a", 1.0 if to_black else 0.0, duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+func _transition_club_lighting(to_night: bool, duration: float = 3.5) -> void:
+	# Crossfade actual lighting values instead of fading the whole screen
+	# to black. Night begins with a slow dim; morning gradually brightens.
+	if lighting_fade_tween != null and lighting_fade_tween.is_running():
+		lighting_fade_tween.kill()
+	lighting_fade_tween = create_tween()
+	lighting_fade_tween.set_parallel(true)
+	lighting_fade_tween.set_trans(Tween.TRANS_SINE)
+	lighting_fade_tween.set_ease(Tween.EASE_IN_OUT)
+	if club_environment != null:
+		lighting_fade_tween.tween_property(club_environment, "ambient_light_energy", 0.48 if to_night else 0.85, duration)
+		lighting_fade_tween.tween_property(club_environment, "background_color", Color("#080b18") if to_night else Color("#131a2b"), duration)
+		club_environment.volumetric_fog_enabled = to_night
+	if club_sun != null:
+		lighting_fade_tween.tween_property(club_sun, "light_energy", 0.33 if to_night else 1.0, duration)
+	for spot in stage_lights:
+		if is_instance_valid(spot):
+			lighting_fade_tween.tween_property(spot, "light_energy", 4.0 if to_night else 0.0, duration)
+			var haze := spot.get_node_or_null("FixtureHaze") as FogVolume
+			if haze != null:
+				haze.visible = to_night
+	for glow in dance_lights:
+		if is_instance_valid(glow):
+			lighting_fade_tween.tween_property(glow, "light_energy", 1.2 if to_night else 0.0, duration)
+	for beam in beam_meshes:
+		if is_instance_valid(beam):
+			beam.visible = to_night and beam.get_node_or_null("LaserHalo") != null
 
 
 func _begin_guest_exit() -> void:
@@ -1970,9 +1993,7 @@ func _start_night() -> void:
 	night_active = true
 	_refresh_poster_text()
 	_refresh_club_sign()
-	_fade_lights(true, 0.8)
-	_set_night_lighting(true)
-	_fade_lights(false, 2.0)
+	_transition_club_lighting(true, 4.0)
 	dj_animation_clock = 0.0
 	_spawn_dj_performers()
 	_play_dj_music()
@@ -2002,13 +2023,7 @@ func _end_night() -> void:
 	night_active = false
 	_refresh_poster_text()
 	_refresh_club_sign()
-	_fade_lights(true, 1.2)
-	var lighting_transition := create_tween()
-	lighting_transition.tween_interval(1.2)
-	lighting_transition.tween_callback(func() -> void:
-		_set_night_lighting(false)
-		_fade_lights(false, 2.0)
-	)
+	_transition_club_lighting(false, 4.0)
 	_clear_dj_performers()
 	_stop_dj_music()
 	var costs := _night_total_expenses()
