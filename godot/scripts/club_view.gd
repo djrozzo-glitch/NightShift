@@ -1259,7 +1259,7 @@ func _guest_arrived(guest: Dictionary) -> void:
 				person.position += toward_seat_offset(float(seat["rotation"]), 0.5)
 				guest["seated"] = true
 				guest["state"] = "sitting"
-				guest["wait"] = _play_sit(guest, false)
+				guest["wait"] = _play_sit(guest, false) / maxf(1.0, night_speed)
 	else:
 		guest["state"] = "dancing"
 		guest["dance"] = true
@@ -1361,7 +1361,10 @@ func _transition_club_lighting(to_night: bool, duration: float = 3.5) -> void:
 	if club_environment != null:
 		lighting_fade_tween.tween_property(club_environment, "ambient_light_energy", 0.48 if to_night else 0.85, duration)
 		lighting_fade_tween.tween_property(club_environment, "background_color", Color("#080b18") if to_night else Color("#131a2b"), duration)
-		club_environment.volumetric_fog_enabled = to_night
+		club_environment.volumetric_fog_enabled = true
+		if to_night:
+			club_environment.volumetric_fog_density = 0.0
+		lighting_fade_tween.tween_property(club_environment, "volumetric_fog_density", 0.075 if to_night else 0.0, duration)
 	if club_sun != null:
 		lighting_fade_tween.tween_property(club_sun, "light_energy", 0.33 if to_night else 1.0, duration)
 	for spot in stage_lights:
@@ -1489,7 +1492,7 @@ func _process(delta: float) -> void:
 			var exhausted := float(guest["energy"]) < 0.16
 			var unhappy := float(guest.get("mood", 85.0)) < 35.0 and float(guest["time_inside"]) > 30.0
 			var finished := float(guest["time_inside"]) > 110.0 + float(guest["energy"]) * 60.0
-			if exhausted or unhappy or finished:
+			if (exhausted or unhappy or finished) and str(guest.get("state", "")) not in ["sitting", "resting", "standing"]:
 				var exit_path := _path_to(guest["cell"], GUEST_ENTRY)
 				if not exit_path.is_empty():
 					guest["path"] = exit_path
@@ -1519,7 +1522,7 @@ func _process(delta: float) -> void:
 					guest["wait"] = randf_range(5.0, 7.0)
 				elif state == "resting" and bool(guest.get("seated", false)):
 					guest["state"] = "standing"
-					guest["wait"] = _play_sit(guest, true)
+					guest["wait"] = _play_sit(guest, true) / maxf(1.0, night_speed)
 				elif state == "standing":
 					var standing_person: Node3D = guest["node"]
 					standing_person.position = guest["sofa_approach"]
@@ -1604,7 +1607,8 @@ func _process(delta: float) -> void:
 				desired_motion = "idle" if motions.has("idle") else "walk"
 			if guest["motion"] != desired_motion:
 				if desired_motion == "sit" and str(guest["state"]) == "sitting":
-					_play_sit(guest, false)
+					# Sit was started on arrival; do not restart and truncate it.
+					pass
 				for motion_name in motions:
 					(motions[motion_name] as Node3D).visible = motion_name == desired_motion
 				guest["motion"] = desired_motion
@@ -1629,16 +1633,21 @@ func _process(delta: float) -> void:
 				_guest_arrived(guest)
 		else:
 			var next_position := person.position.move_toward(target, float(guest["speed"]) * step)
-			if _guest_too_close(next_position, guest):
+			if _guest_too_close(next_position, guest) and float(guest.get("yield_time", 0.0)) <= 0.0:
 				guest["blocked_time"] = float(guest.get("blocked_time", 0.0)) + step
 				guest["repath_cooldown"] = maxf(0.0, float(guest.get("repath_cooldown", 0.0)) - step)
 				if float(guest["blocked_time"]) >= 0.65 and float(guest["repath_cooldown"]) <= 0.0:
 					var detour := _path_around_guests(guest["cell"], guest["destination"], guest)
 					if not detour.is_empty():
 						guest["path"] = detour
+					elif float(guest["blocked_time"]) > 4.0:
+						# Resolve deadlocks in tight aisles: briefly let the
+						# stuck guest yield rather than freezing in place.
+						guest["yield_time"] = 0.8
 					guest["repath_cooldown"] = randf_range(0.7, 1.3)
 				continue
 			guest["blocked_time"] = 0.0
+			guest["yield_time"] = maxf(0.0, float(guest.get("yield_time", 0.0)) - step)
 			person.position = next_position
 			person.rotation.y = atan2(direction.x, direction.z)
 
