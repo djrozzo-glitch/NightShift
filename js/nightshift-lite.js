@@ -236,11 +236,21 @@ const variants=['baggy_m','fashion_f','jungle_f','raver_f','raver_m'];
 const actorAssets={};
 let loaded=0;
 let actorPromise=null;
-function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatMap((name,i)=>['walk','dance'].map(async state=>{
- const g=await loadGLB('assets/characters/'+name+'_'+state+'.glb');
- if(!actorAssets[i])actorAssets[i]={};
- if(g)actorAssets[i][state]=g; loaded++;
-}))).then(()=>{return true});}
+// Service animations are loaded only when the first party begins, keeping startup light.
+const guestAnimationFiles={
+ baggy_m:{walk:'baggy_m_walk.glb',dance:'baggy_m_dance.glb',drink:'baggy_m_drink.glb',sit:'baggy_m_sit.glb'},
+ fashion_f:{walk:'fashion_f_walk.glb',dance:'fashion_f_dance.glb',drink:'fashion_f_drink.glb',sit:'fashion_f_sit.glb'},
+ jungle_f:{walk:'jungle_f_walk.glb',dance:'jungle_f_dance.glb',drink:'jungle_f_drink.glb',sit:'jungle_f_sit.glb'},
+ raver_f:{walk:'raver_f_walk.glb',dance:'raver_f_dance.glb',drink:'raver_f_chat.glb',sit:'raver_f_sit.glb'},
+ raver_m:{walk:'raver_m_walk.glb',dance:'raver_m_dance.glb',drink:'raver_m_idle.glb',sit:'raver_m_sit 2.glb'}
+};
+function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatMap((name,i)=>
+ Object.entries(guestAnimationFiles[name]).map(async([state,file])=>{
+  const g=await loadGLB('assets/characters/'+encodeURIComponent(file));
+  if(!actorAssets[i])actorAssets[i]={};
+  if(g)actorAssets[i][state]=g;loaded++;
+ })
+)).then(()=>true);}
 const MAX_GUESTS=40;
 let opened=false,running=false,guestClock=0,partyTime=0;
 const guests=[];const clock=new THREE.Clock();
@@ -306,8 +316,9 @@ function updateGuest(p,dt){
   const dx=p.x-p.group.position.x,dz=p.z-p.group.position.z,dist=Math.hypot(dx,dz);
   if(dist<.13){
    if(p.activity==='dance'){actorState(p,'dance');p.wait=7+Math.random()*12;}
-   else{actorState(p,'walk');p.state='service';p.wait=p.activity==='bar'?3+Math.random()*4:6+Math.random()*8;}
-   p.group.rotation.y=p.activity==='bar'?(p.group.position.x<0?-Math.PI/2:Math.PI/2):p.group.rotation.y;
+   else{actorState(p,p.activity==='bar'?'drink':'sit');p.wait=p.activity==='bar'?3+Math.random()*4:6+Math.random()*8;}
+   p.group.rotation.y=p.activity==='bar'?(p.group.position.x<0?-Math.PI/2:Math.PI/2):
+    p.activity==='sofa'?(Math.abs(p.group.position.x)>5.5?(p.group.position.x<0?Math.PI/2:-Math.PI/2):0):p.group.rotation.y;
   }else{
    const step=Math.min(p.speed*dt,dist);
    p.group.position.x+=dx/dist*step;p.group.position.z+=dz/dist*step;p.group.rotation.y=Math.atan2(dx,dz);
@@ -316,7 +327,7 @@ function updateGuest(p,dt){
  }
  p.wait-=dt;
  if(p.wait>0)return;
- if(p.state==='service'){
+ if(p.state==='drink'||p.state==='sit'){
   if(p.activity==='bar'){p.thirst=Math.max(0,p.thirst-.75);p.energy=Math.min(1,p.energy+.04);}
   else p.energy=Math.min(1,p.energy+.55);
   p.visits++;routeGuest(p,'dance');return;
