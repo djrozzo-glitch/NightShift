@@ -381,7 +381,7 @@ func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node
 	if kind in ["wall", "poster"]:
 		if x == 0:
 			pivot_node.position.x += 0.48
-		elif x == SIZE - 1 or x == grid_width - 1:
+		elif x == grid_width - 1:
 			pivot_node.position.x -= 0.48
 		if y == 0:
 			pivot_node.position.z += 0.48
@@ -2789,6 +2789,20 @@ func _remove_old_east_perimeter() -> void:
 			old_wall.queue_free()
 
 
+func _repair_expansion_corner_walls() -> void:
+	# These two pieces used to belong to the vertical east perimeter.
+	# Replace them with horizontal north/south segments, aligned to
+	# the new wing walls (including their grid-edge offsets).
+	if not expanded:
+		return
+	for edge_y in [0, SIZE - 1]:
+		var existing := club.get_node_or_null("wall_15_%d" % edge_y)
+		if existing != null:
+			club.remove_child(existing)
+			existing.queue_free()
+		_model(club, "wall", SIZE - 1, edge_y, 0)
+
+
 func _apply_east_wing() -> void:
 	if expanded:
 		return
@@ -2804,6 +2818,7 @@ func _apply_east_wing() -> void:
 	# Open the entire east side; posters move to the new outside wall.
 	_relocate_east_posters()
 	_remove_old_east_perimeter()
+	_repair_expansion_corner_walls()
 	# Enclose the new wing with a single outer perimeter.
 	for x in range(SIZE - 1, EXPANDED_WIDTH):
 		if club.get_node_or_null("wall_%d_0" % x) == null:
@@ -2964,10 +2979,7 @@ func _load_club() -> void:
 		_attach_fixture_lighting(node, kind)
 	if expanded:
 		_remove_old_east_perimeter()
-		# Repair the two corner joins in clubs expanded before this fix.
-		for edge_y in [0, SIZE - 1]:
-			if club.get_node_or_null("wall_15_%d" % edge_y) == null:
-				_model(club, "wall", 15, edge_y)
+		_repair_expansion_corner_walls()
 	club_name = str(data.get("club_name", "ABLETON GYM")).strip_edges().substr(0, 28)
 	if club_name.is_empty():
 		club_name = "ABLETON GYM"
