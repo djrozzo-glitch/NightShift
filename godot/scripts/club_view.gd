@@ -70,10 +70,10 @@ var upgrade_buttons: Dictionary = {}
 var owned_upgrades: Array[String] = []
 const EQUIPMENT_UPGRADES := [
 	{"id": "lounge", "name": "Lounge Comfort", "level": 5, "price": 950, "upkeep": 8, "requires": "sofa", "effect": "+2 mood with sofas", "target": "8–12 nights"},
-	{"id": "wc_plus", "name": "Restroom Upgrade", "level": 6, "price": 1300, "upkeep": 12, "requires": "wc", "effect": "+24 sanitation capacity per WC", "target": "6–12 nights"},
+	{"id": "wc_plus", "name": "Restroom Upgrade", "level": 6, "price": 1300, "upkeep": 12, "requires": "wc", "effect": "+24 capacity/WC; faster visits", "target": "6–12 nights"},
 	{"id": "premium_sound", "name": "Premium Sound", "level": 7, "price": 2600, "upkeep": 18, "requires": "speaker", "effect": "+3 mood; +4% arrivals", "target": "8–14 nights"},
 	{"id": "dj_console", "name": "Pure Vinyl", "level": 9, "price": 4600, "upkeep": 24, "requires": "dj", "effect": "+8% arrivals; +1 reputation on good nights", "target": "10–16 nights"},
-	{"id": "iconic_sound", "name": "Iconic Sound", "level": 10, "price": 7800, "upkeep": 38, "requires": "speaker", "effect": "+4 mood; +8% arrivals", "target": "12–20 nights"}
+	{"id": "iconic_sound", "name": "Iconic Sound", "level": 10, "price": 7800, "upkeep": 38, "requires": "speaker", "effect": "+3 mood; +8% arrivals", "target": "12–20 nights"}
 ]
 var management_panel: PanelContainer
 const SAVE_PATH := "user://nightshift_club.json"
@@ -683,12 +683,12 @@ func _build_economics_hint(kind: String) -> String:
 	var note := ""
 	match kind:
 		"dance_tile": note = "+3 guest capacity (up to venue / WC limit); more ticket sales."
-		"wc": note = "+48 sanitation capacity, 4 simultaneous users; fewer WC waits."
+		"wc": note = "+48 sanitation capacity, 4 simultaneous users; upgrade adds +24 and faster visits."
 		"bar": note = "More drink service capacity and sales; extra staff costs."
-		"speaker": note = "Sound quality: +2 guest mood per speaker above two (max +6)."
+		"speaker": note = "Sound coverage: +1.5 mood per speaker above two (max +5); upgrades add quality."
 		"dj": note = "Required to open; enables DJ bookings and ticket revenue."
-		"light": note = "Atmosphere: +2 mood (shared +8 cap); +0.8 prestige."
-		"laser": note = "Atmosphere: +3 mood (shared +8 cap); +1 prestige."
+		"light": note = "Atmosphere: +1.5 mood (shared +9 cap); +0.8 prestige; power €3/night."
+		"laser": note = "Atmosphere: +2.3 mood (shared +9 cap); +1 prestige; power €5/night."
 		"discoball": note = "Rotating light reflections; +2 atmosphere mood, +1.5 prestige; €12/night upkeep."
 		"plant2": note = "Small Plant: +0.4 atmosphere mood, +0.55 prestige; €1/night upkeep."
 		"plant_big": note = "Big Plant: +1.2 atmosphere mood, +1.25 prestige; €3/night upkeep."
@@ -698,7 +698,7 @@ func _build_economics_hint(kind: String) -> String:
 		"poster": note = "DJ name display; +1.2 prestige."
 		"rail": note = "Crowd routing / layout; +0.6 prestige."
 		_: note = "Club infrastructure."
-	return "PRICE €%d   |   EXTRA UPKEEP €%d/NIGHT\n%s\nPrestige improves mood, reputation and guest demand (capped)." % [_build_price(kind), int(OBJECT_UPKEEP.get(kind, 0)), note]
+	return "PRICE €%d   |   DIRECT UPKEEP €%d/NIGHT\n%s\nPrestige boosts demand, mood and reputation (diminishing returns).\nPowered fixtures and services also add utilities/staff costs." % [_build_price(kind), int(OBJECT_UPKEEP.get(kind, 0)), note]
 
 
 func _show_catalog_info(kind: String) -> void:
@@ -1313,7 +1313,7 @@ func _guest_arrived(guest: Dictionary) -> void:
 		_face_service_object(guest)
 	elif state == "walk_wc":
 		guest["state"] = "using_wc"
-		guest["wait"] = 1.0
+		guest["wait"] = 0.7 if _upgrade_owned("wc_plus") else 1.0
 		guest["wc_need"] = 0.0
 		guest["visual"].visible = false
 		_face_service_object(guest)
@@ -1350,7 +1350,8 @@ func _guest_mood(guest: Dictionary) -> float:
 		service_penalty += 12.0
 	var wc_penalty := maxf(0.0, float(guest.get("wc_need", 0.0)) - 0.75) * 65.0
 	var dancing_bonus := 9.0 if bool(guest["dance"]) else 0.0
-	var sound_bonus := minf(6.0, float(maxi(0, _count_kind("speaker") - 2)) * 2.0) + (3.0 if _upgrade_owned("premium_sound") and _count_kind("speaker") > 0 else 0.0) + (4.0 if _upgrade_owned("iconic_sound") and _count_kind("speaker") > 0 else 0.0)
+	# Sound improvements are limited by coverage and have diminishing returns.
+	var sound_bonus := minf(5.0, float(maxi(0, _count_kind("speaker") - 2)) * 1.5) + (3.0 if _upgrade_owned("premium_sound") and _count_kind("speaker") >= 2 else 0.0) + (3.0 if _upgrade_owned("iconic_sound") and _count_kind("speaker") >= 2 else 0.0)
 	var atmosphere_bonus := minf(9.0, float(_count_kind("light")) * 1.5 + float(_count_kind("laser")) * 2.3 + float(_count_kind("discoball")) * 2.0 + float(_count_kind("plant2")) * 0.4 + float(_count_kind("plant_big")) * 1.2)
 	var comfort_bonus := minf(4.0, float(_count_kind("table") + _count_kind("stool")) * 0.7) + (2.0 if _upgrade_owned("lounge") and _count_kind("sofa") > 0 else 0.0)
 	var prestige_mood := _club_prestige() * 0.35
@@ -1627,12 +1628,12 @@ func _process(delta: float) -> void:
 				elif state == "ordering":
 					var wants_to_buy := float(guest["thirst"]) >= 0.35 and int(guest["wallet"]) >= drink_price and randf() < _drink_demand_factor()
 					var bar_id := int(guest.get("service_object", -1))
-					var service_interval := 3.3 if _upgrade_owned("fast_bar") else 5.0
+					var service_interval := 5.0
 					if wants_to_buy and bar_id >= 0 and float(bar_service_clocks.get(bar_id, 0.0)) >= service_interval:
 						bar_service_clocks[bar_id] = 0.0
 						night_drinks_sold += 1
 						night_supply_cost += 2
-						var sale := roundi(float(drink_price) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0) + (0.15 if _upgrade_owned("cocktail_bar") and _count_kind("bar") > 0 else 0.0)))
+						var sale := roundi(float(drink_price) * (1.0 + (0.05 if unlocked_perks.has("happy") else 0.0) + (0.10 if unlocked_perks.has("premium") else 0.0)))
 						night_drink_income += sale
 						cash += sale
 						guest["wallet"] = int(guest["wallet"]) - drink_price
@@ -2210,11 +2211,11 @@ func _end_night() -> void:
 	# Reputation reflects turnout, bar service and the night's finances.
 	var revenue := night_ticket_income + night_drink_income
 	var profit := revenue - costs
-	var turnout_score := clampf(float(guest_count) / 32.0, 0.0, 1.0)
+	var turnout_score := clampf(float(guest_count) / maxf(24.0, float(_club_capacity()) * 1.3), 0.0, 1.0)
 	var service_score := float(night_drinks_sold) / float(maxi(1, guest_count))
 	var average_mood := night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last
-	var price_pressure := maxf(0.0, float(ticket_price - 20)) * 0.14 + maxf(0.0, float(drink_price - 10)) * 0.18
-	var reputation_delta := roundi((1.0 if _upgrade_owned("dj_console") and profit > 0 else 0.0) + _club_prestige() * 0.15 + (turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure - float(night_unhappy_departures) * 0.5)
+	var price_pressure := maxf(0.0, float(ticket_price) - _fair_ticket_price()) * 0.10 + maxf(0.0, float(drink_price) - (7.0 + float(club_level - 1) * 0.8)) * 0.12
+	var reputation_delta := roundi((1.0 if _upgrade_owned("dj_console") and profit > 0 else 0.0) + _club_prestige() * 0.11 + (turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure - float(night_unhappy_departures) * 0.5)
 	last_rep_change = clampi(reputation_delta, -7, 7)
 	reputation = clampi(reputation + last_rep_change, 0, 100)
 	last_xp_gain = maxi(10, roundi(float(guest_count) * 2.0 + float(night_drinks_sold) * 1.2 + average_mood * 0.22 + (12.0 if profit > 0 else 0.0)))
