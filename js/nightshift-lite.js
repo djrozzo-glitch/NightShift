@@ -25,20 +25,36 @@ const loadGLB=path=>new Promise(resolve=>loader.load(path,resolve,undefined,err=
 const mat=(color,roughness=.85)=>new THREE.MeshStandardMaterial({color,roughness});
 const concrete=mat(0x252330),dark=mat(0x302c3c),danceMat=mat(0x503463),edgeMat=mat(0x50455a);
 function block(w,h,d,x,y,z,material,parent=stage){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);o.position.set(x,y,z);parent.add(o);return o;}
+// Fixed NightShift venue: clear front opening, modelled wall modules, lounge and equipment.
 block(16,.2,16,0,-.15,0,concrete);
-for(let i=-7.5;i<=7.5;i+=1){block(1,1.55,.26,i,.68,-7.9,dark);block(.26,1.55,1,-7.9,.68,i,dark);}
-for(let i=-7.5;i<=7.5;i+=1)if(Math.abs(i)>1)block(1,1.55,.26,i,.68,7.9,dark);
-for(let i=-7.5;i<=7.5;i+=1)block(.26,1.55,1,7.9,.68,i,dark);
-block(3,.035,3,0,.02,-3.8,danceMat);
-for(let x=-3.5;x<=3.5;x++)for(let z=-2.5;z<=3.5;z++)block(.95,.025,.95,x,.02,z,danceMat);
+for(let x=-7.5;x<=7.5;x++)for(let z=-7.5;z<=7.5;z++){
+ if(Math.abs(x)<4.5&&z>-3&&z<4)continue;
+ block(1,.012,1,x,-.035,z,(Math.round(x+z)&1)?concrete:dark);
+}
+const wallPieces=[];
+for(let i=-7.5;i<=7.5;i++){
+ wallPieces.push([i,-7.9,0],[7.9,i,Math.PI/2],[-7.9,i,Math.PI/2]);
+ if(Math.abs(i)>1.5)wallPieces.push([i,7.9,0]);
+}
+for(let x=-3.5;x<=3.5;x++)for(let z=-2.5;z<=3.5;z++)
+ block(.98,.05,.98,x,.035,z,danceMat);
 const decor=[
-['dj_stand_upgraded',0,-5.1,2.6],['speaker_updated',-2.9,-5.4,1.6],['speaker_updated',2.9,-5.4,1.6],
-['bar_new',5.1,2.7,2.4],['wc_new',5.8,-4.5,2.0],['sofa_upgraded',-5.4,3.1,2.4],
-['plant_big',-6,-5.6,1.6],['plant2',6,-5.2,1.25],
-['laser_new',-4.8,-3.7,1.2],['laser_new',4.8,-3.7,1.2],['light',4.4,-5.8,1.2],
-['discoball',0,4.5,2.0],['poster',-6.9,-2,1.7],
-['table',-5,1.1,1.1],['stool',4.6,3.2,.8]
+ ['dj_stand_upgraded',0,-5.65,2.6,0],
+ ['speaker_updated',-2.6,-5.65,1.65,0],['speaker_updated',2.6,-5.65,1.65,0],
+ ['bar_new',-6.1,1.7,2.2,Math.PI/2],['bar_new',5.9,-6,2.2,Math.PI],
+ ['wc_new',5.9,5.75,2.0,Math.PI/2],
+ ['sofa_upgraded',-5.8,5,2.2,Math.PI/2],['sofa_upgraded',5.8,2.2,2.2,-Math.PI/2],
+ ['plant_big',-6.0,-5.9,1.4,0],['plant_big',6,-5.85,1.4,0],
+ ['plant2',-6,5.6,1.2,0],['plant2',6,4.25,1.2,0],
+ ['laser_new',-4.2,-4.7,1.15,0],['laser_new',4.2,-4.7,1.15,0],
+ ['light',-4.5,-1.1,1.15,0],['light',4.5,-1.1,1.15,0],
+ ['discoball',-4.9,3.65,1.25,0],
+ ['poster',-7.55,-3.2,1.2,Math.PI/2],['poster',-7.55,2.6,1.2,Math.PI/2],
+ ['poster',7.55,-2.5,1.2,-Math.PI/2],['poster',2.8,-7.55,1.2,0],
+ ['entrance',0,7.8,2.7,Math.PI],
+ ['table',-5.7,3.0,.8,0],['stool',5.0,4.4,.7,0]
 ];
+const loadedModels=new Map();
 function fitModel(root,size){root.updateMatrixWorld(true);let box=new THREE.Box3().setFromObject(root);
 if(box.isEmpty())return;const ext=new THREE.Vector3();box.getSize(ext);
 root.scale.multiplyScalar(size/Math.max(ext.x,ext.z,.001));
@@ -97,13 +113,57 @@ function animateFixtures(t,dt,active){
   }
  }
 }
-Promise.all(decor.map(async([name,x,z,size])=>{
+Promise.all(decor.map(async([name,x,z,size,rotation])=>{
  const gltf=await loadGLB('godot/assets/models/'+name+'.glb');
  if(!gltf)return;
  const holder=new THREE.Group(),obj=gltf.scene;
- fitModel(obj,size);holder.position.set(x,.04,z);holder.add(obj);stage.add(holder);
+ fitModel(obj,size);holder.position.set(x,.04,z);holder.rotation.y=rotation||0;holder.add(obj);stage.add(holder);loadedModels.set(name,holder);
  if(['discoball','laser_new','light'].includes(name))addFixture(holder,obj,name);
-})).then(()=>{ready3d=true;$('loading').textContent='Клуб готов.'});
+})).then(()=>{ready3d=true;$('loading').textContent='Клуб готов.';});
+const wallLoad=loadGLB('godot/assets/models/wall.glb').then(g=>{
+ for(const [x,z,rotation] of wallPieces){
+  if(!g){block(1,1.55,.22,x,.7,z,dark);continue}
+  const holder=new THREE.Group(),obj=g.scene.clone(true);fitModel(obj,.99);
+  holder.position.set(x,.02,z);holder.rotation.y=rotation;holder.add(obj);stage.add(holder);
+ }
+});
+const peopleExtras=Promise.all([
+ loadGLB('assets/characters/bouncer.glb'),
+ loadGLB('assets/characters/raver_m_idle.glb'),
+ loadGLB('assets/characters/raver_m_dance.glb')
+]).then(([bouncer,idle,dance])=>{
+ const bouncerRoot=new THREE.Group();bouncerRoot.position.set(1.8,.04,8.35);
+ if(bouncer){const actor=bouncer.scene;fitModel(actor,.58);actor.scale.multiplyScalar(1.5);bouncerRoot.add(actor);if(bouncer.animations?.length){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(bouncer.animations[0]).play();extraMixers.push(mixer);}}
+ stage.add(bouncerRoot);
+ const djRoot=new THREE.Group();djRoot.position.set(0,.06,-6.15);djRoot.rotation.y=Math.PI;
+ stage.add(djRoot);
+ if(idle||dance){const actor=cloneSkeleton((idle||dance).scene);fitModel(actor,.55);actor.scale.multiplyScalar(1.4);djRoot.add(actor);
+ const clip=(idle||dance).animations?.[0];if(clip){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(clip).play();extraMixers.push(mixer);}}
+});
+const extraMixers=[];
+function makeTextPanel(text,w,h,{fontSize=68,background='#130c22',foreground='#e5c6ff'}={}){
+ const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=256;
+ const ctx=canvas.getContext('2d');ctx.fillStyle=background;ctx.fillRect(0,0,1024,256);
+ ctx.strokeStyle='#a657dd';ctx.lineWidth=18;ctx.strokeRect(9,9,1006,238);
+ ctx.fillStyle=foreground;ctx.font='800 '+fontSize+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+ ctx.fillText(text,512,128,950);
+ const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+ const mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide}));
+ return {mesh,texture,ctx,canvas};
+}
+const sign=makeTextPanel('NIGHT SHIFT',2.8,.72,{fontSize:86});
+sign.mesh.position.set(0,2.0,8.05);stage.add(sign.mesh);
+let clubName=localStorage.getItem('nightshift-lite-club')||'ABLETON GYM';
+function updateClubName(){
+ sign.ctx.fillStyle='#130c22';sign.ctx.fillRect(0,0,1024,256);
+ sign.ctx.strokeStyle='#a657dd';sign.ctx.lineWidth=18;sign.ctx.strokeRect(9,9,1006,238);
+ sign.ctx.fillStyle='#8bffc9';sign.ctx.font='800 84px sans-serif';sign.ctx.textAlign='center';sign.ctx.textBaseline='middle';sign.ctx.fillText(clubName.toUpperCase(),512,128,950);
+ sign.texture.needsUpdate=true;
+ $('clubName').value=clubName;
+}
+$('saveClubName').onclick=()=>{const next=$('clubName').value.trim().slice(0,32);if(!next)return;clubName=next;localStorage.setItem('nightshift-lite-club',clubName);updateClubName();};
+updateClubName();
+
 const beams=[new THREE.PointLight(0xdd39ff,0,13,2),new THREE.PointLight(0x377dff,0,12,2)];
 beams[0].position.set(-4,3,-3);beams[1].position.set(4,3,-4);beams.forEach(l=>scene.add(l));
 const nameToLabel={rozzo:'rozzo',neonexus:'Neonexus',vanya:'Vanya Velin',lutanina:'Lutanina',zlostniy:'zlostniy',lowq:'lowQ',velvet37:'Velvet 37',raison:'Raison',boriskhodok:'DJ Boris Khodok'};
@@ -145,7 +205,7 @@ $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play
 $('play').onclick=async()=>{if(!opened||running)return;running=true;partyTime=0;guestClock=0;removeGuests();$('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;$('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До 20 гостей на танцполе.';await actorPromise;if(running)addGuest();};
 $('end').onclick=()=>{running=false;removeGuests();$('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;$('stageStatus').textContent='Вечеринка закончилась. Выбери следующего DJ.';};
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
-let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;controls.update();const target=running?1:0;
+let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;controls.update();const target=running?1:0;for(const mixer of extraMixers)mixer.update(dt);
 hemi.intensity+=((running?.4:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.15:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(running?0x050410:0x090b16),.02);
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
