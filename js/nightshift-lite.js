@@ -42,18 +42,23 @@ for(let x=-3.5;x<=3.5;x++)for(let z=-2.5;z<=3.5;z++)
 const decor=[
  ['dj_stand_upgraded',0,-5.65,2.6,0],
  ['speaker_updated',-2.6,-5.65,1.65,0],['speaker_updated',2.6,-5.65,1.65,0],
- ['bar_new',-6.1,1.7,2.2,Math.PI/2],['bar_new',5.9,-6,2.2,Math.PI],
- ['wc_new',5.9,5.75,2.0,Math.PI/2],
- ['sofa_upgraded',-5.8,5,2.2,Math.PI/2],['sofa_upgraded',5.8,2.2,2.2,-Math.PI/2],
- ['plant_big',-6.0,-5.9,1.4,0],['plant_big',6,-5.85,1.4,0],
- ['plant2',-6,5.6,1.2,0],['plant2',6,4.25,1.2,0],
- ['laser_new',-4.2,-4.7,1.15,0],['laser_new',4.2,-4.7,1.15,0],
- ['light',-4.5,-1.1,1.15,0],['light',4.5,-1.1,1.15,0],
- ['discoball',-4.9,3.65,1.25,0],
+ // Bars and lounge furniture kept against the outer walls.
+ ['bar_new',-6.7,-2.0,2.0,Math.PI/2],['bar_new',6.7,-3.7,2.0,-Math.PI/2],
+ ['sofa_upgraded',-6.65,3.3,2.0,Math.PI/2],['sofa_upgraded',6.6,2.7,2.0,-Math.PI/2],
+ ['sofa_upgraded',-3.8,6.7,1.9,Math.PI],['sofa_upgraded',3.8,6.7,1.9,Math.PI],
+ // Both plant sizes, arranged as wall-side accents.
+ ['plant_big',-6.55,-5.9,1.25,0],['plant_big',6.5,-5.9,1.25,0],
+ ['plant_big',-6.55,5.9,1.25,0],['plant_big',6.5,5.9,1.25,0],
+ ['plant2',-6.65,.55,.8,0],['plant2',6.65,.55,.8,0],
+ ['plant2',-1.9,-6.75,.8,0],['plant2',1.9,-6.75,.8,0],
+ // Four times smaller fixtures, leaving the dance floor unobstructed.
+ ['laser_new',-4.8,-4.9,.2875,0],['laser_new',4.8,-4.9,.2875,0],
+ ['light',-5.3,-1.2,.2875,0],['light',5.3,-1.2,.2875,0],
+ ['discoball',-5.5,2.9,.3125,0],['discoball',5.5,2.9,.3125,0],
  ['poster',-7.55,-3.2,1.2,Math.PI/2],['poster',-7.55,2.6,1.2,Math.PI/2],
  ['poster',7.55,-2.5,1.2,-Math.PI/2],['poster',2.8,-7.55,1.2,0],
- ['entrance',0,7.8,2.7,Math.PI],
- ['table',-5.7,3.0,.8,0],['stool',5.0,4.4,.7,0]
+ ['entrance',0,7.8,2.7,0],
+ ['table',-5.8,4.6,.8,0],['stool',5.8,4.6,.7,0]
 ];
 const loadedModels=new Map();
 function fitModel(root,size){root.updateMatrixWorld(true);let box=new THREE.Box3().setFromObject(root);
