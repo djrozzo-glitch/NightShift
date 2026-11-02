@@ -189,7 +189,7 @@ const peopleExtras=Promise.all([
  stage.add(bouncerRoot);
  const djRoot=new THREE.Group();djRoot.position.set(0,.06,-7.5);djRoot.rotation.y=0;
  stage.add(djRoot);
- for(const [state,asset] of [['idle',idle||standing],['party',handsup||standing||idle]]){
+ for(const [state,asset] of [['idle',idle||standing],['standing',standing||idle],['party',handsup||standing||idle]]){
   if(!asset)continue;
   const actor=cloneSkeleton(asset.scene);fitCharacterHeight(actor,1.65);
   actor.visible=state==='idle';djRoot.add(actor);djActors[state]=actor;
@@ -241,7 +241,13 @@ function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatM
  if(!actorAssets[i])actorAssets[i]={};
  if(g)actorAssets[i][state]=g; loaded++;
 }))).then(()=>{return true});}
-let opened=false,running=false,guestClock=0,partyTime=0;const guests=[];const clock=new THREE.Clock();
+const MAX_GUESTS=40;
+let opened=false,running=false,guestClock=0,partyTime=0;
+const guests=[];const clock=new THREE.Clock();
+const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+const danceSpot=()=>({x:-3.5+Math.floor(Math.random()*8),z:-5.5+Math.floor(Math.random()*7)});
+const barSpots=[{x:-5.9,z:-4},{x:5.9,z:-4}];
+const sofaSpots=[{x:-5.9,z:5},{x:5.9,z:5},{x:-3,z:5.9},{x:3,z:5.9}];
 function actorState(p,state){
  if(p.state===state)return;
  if(p.mesh)p.mesh.visible=false;
@@ -264,16 +270,63 @@ function actorState(p,state){
 }
 const guestFallbackGeometry=new THREE.CapsuleGeometry(.22,.72,3,5);
 const guestFallbackMaterial=mat(0x965bd1);
-function addGuest(){if(!running||guests.length>=20)return;
-const variant=Math.floor(Math.random()*variants.length);
-const x=-3.35+Math.random()*6.7,z=-2.25+Math.random()*5.7;
-const group=new THREE.Group();group.position.set(0,.05,7);stage.add(group);
-const p={group,mesh:null,mixer:null,state:null,variant,x,z,speed:1.1+Math.random()*.5,phase:Math.random()*6.28};actorState(p,'walk');guests.push(p);$('counter').textContent='GUESTS: '+guests.length+' / 20';
+function routeGuest(p,activity){
+ p.activity=activity;p.wait=0;
+ const destination=activity==='bar'?pick(barSpots):activity==='sofa'?pick(sofaSpots):danceSpot();
+ p.x=destination.x+(Math.random()-.5)*.38;
+ p.z=destination.z+(Math.random()-.5)*.38;
+ actorState(p,'walk');
 }
-function removeGuests(){for(const p of guests){for(const state of Object.values(p.cache||{}))state.mixer?.stopAllAction();stage.remove(p.group)}guests.length=0;$('counter').textContent='GUESTS: 0 / 20';}
+function addGuest(){
+ if(!running||guests.length>=MAX_GUESTS)return;
+ const variant=Math.floor(Math.random()*variants.length);
+ const group=new THREE.Group();group.position.set((Math.random()-.5)*1.1,.05,7.2);stage.add(group);
+ const p={group,mesh:null,mixer:null,state:null,variant,x:0,z:0,speed:1.0+Math.random()*.65,phase:Math.random()*6.28,
+ energy:.55+Math.random()*.45,thirst:Math.random()*.3,wait:0,activity:'dance',cache:{},visits:0};
+ routeGuest(p,'dance');guests.push(p);$('counter').textContent='GUESTS: '+guests.length+' / '+MAX_GUESTS;
+}
+function removeGuests(){for(const p of guests){for(const state of Object.values(p.cache||{}))state.mixer?.stopAllAction();stage.remove(p.group)}guests.length=0;$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
-$('play').onclick=async()=>{if(!opened||running)return;running=true;partyTime=0;guestClock=0;removeGuests();$('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;$('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До 20 гостей на танцполе.';await loadGuestsOnDemand();if(running)addGuest();};
+$('play').onclick=async()=>{if(!opened||running)return;running=true;partyTime=0;guestClock=0;removeGuests();$('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;$('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До '+MAX_GUESTS+' гостей, танцы, бары и диваны.';await loadGuestsOnDemand();if(running)addGuest();};
 $('end').onclick=()=>{running=false;removeGuests();$('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;$('stageStatus').textContent='Вечеринка закончилась. Выбери следующего DJ.';};
+let djNextAction=8,djPose='idle';
+function animateDJ(){
+ if(!djActors.idle)return;
+ if(partyTime>=djNextAction){
+  const r=Math.random();
+  djPose=!running?'idle':r<.70?'idle':r<.90?'standing':'party';
+  djNextAction=partyTime+(djPose==='idle'?7+Math.random()*11:2+Math.random()*4);
+ }
+ for(const [state,actor] of Object.entries(djActors))actor.visible=state===djPose;
+}
+function updateGuest(p,dt){
+ p.thirst=Math.min(1,p.thirst+dt*(p.state==='dance'?.008:.003));
+ p.energy=Math.max(0,p.energy-dt*(p.state==='dance'?.004:.001));
+ if(p.state==='walk'){
+  const dx=p.x-p.group.position.x,dz=p.z-p.group.position.z,dist=Math.hypot(dx,dz);
+  if(dist<.13){
+   if(p.activity==='dance'){actorState(p,'dance');p.wait=7+Math.random()*12;}
+   else{actorState(p,'walk');p.state='service';p.wait=p.activity==='bar'?3+Math.random()*4:6+Math.random()*8;}
+   p.group.rotation.y=p.activity==='bar'?(p.group.position.x<0?-Math.PI/2:Math.PI/2):p.group.rotation.y;
+  }else{
+   const step=Math.min(p.speed*dt,dist);
+   p.group.position.x+=dx/dist*step;p.group.position.z+=dz/dist*step;p.group.rotation.y=Math.atan2(dx,dz);
+  }
+  return;
+ }
+ p.wait-=dt;
+ if(p.wait>0)return;
+ if(p.state==='service'){
+  if(p.activity==='bar'){p.thirst=Math.max(0,p.thirst-.75);p.energy=Math.min(1,p.energy+.04);}
+  else p.energy=Math.min(1,p.energy+.55);
+  p.visits++;routeGuest(p,'dance');return;
+ }
+ // Godot-inspired choice: drink when thirsty, rest when tired, otherwise keep dancing.
+ if(p.thirst>.48)routeGuest(p,'bar');
+ else if(p.energy<.38)routeGuest(p,'sofa');
+ else if(Math.random()<.18)routeGuest(p,Math.random()<.5?'bar':'sofa');
+ else routeGuest(p,'dance');
+}
 const monitor=document.createElement('div');
 monitor.style.cssText='position:absolute;right:14px;top:60px;z-index:3;color:#baffd8;background:#080916bd;border:1px solid #365b56;border-radius:6px;padding:6px 9px;font:11px monospace;pointer-events:none';
 mount.appendChild(monitor);
@@ -284,17 +337,20 @@ function monitorFrame(dt){fpsCount++;fpsClock+=dt;if(fpsClock>=1.5){const fps=Ma
  fpsClock=0;fpsCount=0;}}
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
 let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const target=running?1:0;
-if(djActors.idle)djActors.idle.visible=!running;
-if(djActors.party)djActors.party.visible=running;
+if(!running){djPose='idle';djNextAction=8;}
+else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
 hemi.intensity+=((running?.4:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.15:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(running?0x050410:0x090b16),.02);
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
 animateFixtures(t,dt,running);
-if(running){partyTime+=dt;guestClock+=dt;if(guestClock>1.65&&guests.length<20){guestClock=0;addGuest();}
-animAccum+=dt;
-for(const p of guests){if(p.state==='walk'){const dx=p.x-p.group.position.x,dz=p.z-p.group.position.z,dist=Math.hypot(dx,dz);if(dist<.16){actorState(p,'dance');p.group.rotation.y=Math.random()*Math.PI*2;}else{const step=Math.min(p.speed*dt,dist);p.group.position.x+=dx/dist*step;p.group.position.z+=dz/dist*step;p.group.rotation.y=Math.atan2(dx,dz);}}}
-if(animAccum>=1/30){for(const p of guests)p.mixer?.update(animAccum);animAccum=0;}
+if(running){
+ partyTime+=dt;guestClock+=dt;
+ if(guestClock>1.25&&guests.length<MAX_GUESTS){guestClock=0;addGuest();}
+ animAccum+=dt;
+ for(const p of guests)updateGuest(p,dt);
+ if(animAccum>=1/30){for(const p of guests)p.mixer?.update(animAccum);animAccum=0;}
 }
+
 renderer.render(scene,camera)}
 frame();
