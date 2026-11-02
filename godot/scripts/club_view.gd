@@ -379,8 +379,6 @@ func _load_models() -> void:
 				models[variant] = scene
 		else:
 			push_warning("NightShift: optional upgrade model missing: %s" % variant_path)
-	else:
-		push_warning("NightShift: upgraded sofa missing: %s" % upgraded_path)
 	print("NIGHTSHIFT MODELS | laser_new=%s | sofa_upgraded=%s" % [str(models.has("laser") and str((models["laser"] as PackedScene).resource_path).contains("laser_new")), str(models.has("sofa_upgraded"))])
 
 const TWO_CELL := ["dj", "bar", "sofa", "wc", "entrance"]
