@@ -28,7 +28,7 @@ var free_dance_tiles := 0
 var hover_cell := Vector2i(-1, -1)
 var hover_mesh: MeshInstance3D
 var status_label: Label
-const BUILD_TYPES := ["dance_tile", "speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser", "rail"]
+const BUILD_TYPES := ["dance_tile", "speaker", "dj", "bar", "sofa", "wc", "table", "stool", "plant2", "light", "laser", "rail", "poster"]
 var selected_kind := "speaker"
 var build_turn := 0
 var preview_root: Node3D
@@ -50,7 +50,7 @@ var object_at_cell: Dictionary = {}
 var next_object_id := 1
 var action_history: Array[Dictionary] = []
 # Prototype economy: prices and starting balance will be balanced later.
-const BUILD_PRICES := {"dance_tile": 70, "speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450, "rail": 180}
+const BUILD_PRICES := {"dance_tile": 70, "speaker": 300, "dj": 1200, "bar": 850, "sofa": 400, "wc": 650, "table": 100, "stool": 75, "plant2": 90, "light": 250, "laser": 450, "rail": 180, "poster": 220}
 const STARTING_CAPITAL := 6000
 var cash := STARTING_CAPITAL
 var reputation := 55
@@ -69,7 +69,7 @@ var management_panel: PanelContainer
 const SAVE_PATH := "user://nightshift_club.json"
 const LEVEL_NAMES := ["Illegal Basement", "Word of Mouth", "Local Favorite", "Afterhours", "Underground Institution", "Citywide Buzz", "Cult Following", "Scene Leader", "International Attention", "Legendary Venue"]
 const LEVEL_UNLOCKS := {"stool": 3, "plant2": 5, "laser": 2, "sofa": 3, "table": 4, "rail": 4}
-const BUILD_NAMES := {"dance_tile": "Dance Tile", "dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light"}
+const BUILD_NAMES := {"dance_tile": "Dance Tile", "dj": "DJ Booth", "wc": "Restroom", "plant2": "Plant", "light": "Moving Light", "poster": "DJ Poster"}
 const PERK_OPTIONS := [
 	{"id": "connections", "name": "Local Connections", "effect": "-5% DJ fees", "branch": "MUSIC"},
 	{"id": "resident", "name": "Resident Deal", "effect": "-10% DJ fees", "branch": "MUSIC"},
@@ -291,6 +291,11 @@ const TWO_CELL := ["dj", "bar", "sofa", "wc", "entrance"]
 func _model(parent: Node3D, kind: String, x: int, y: int, turn: int = 0) -> Node3D:
 	# Separate the grid pivot from the visible GLB so 90-degree turns rotate
 	# around the occupied footprint rather than the GLB author's origin.
+	if kind == "poster" and parent == club:
+		var existing_wall := club.get_node_or_null("wall_%d_%d" % [x, y])
+		if existing_wall != null:
+			club.remove_child(existing_wall)
+			existing_wall.queue_free()
 	var pivot_node := Node3D.new()
 	pivot_node.name = "%s_%d_%d" % [kind, x, y]
 	parent.add_child(pivot_node)
@@ -1888,6 +1893,11 @@ func _remove_object(id: int) -> Dictionary:
 					beam_meshes.erase(child)
 					laser_beams.erase(child)
 		if str(record["kind"]) == "poster":
+			# A removed poster exposes the original perimeter wall.
+			var px := int(record["x"])
+			var py := int(record["y"])
+			if club.get_node_or_null("wall_%d_%d" % [px, py]) == null:
+				_model(club, "wall", px, py, 1 if px == 0 or px == grid_width - 1 else 0)
 			var label := node.find_child("DJPosterText", true, false) as Label3D
 			if label != null:
 				poster_labels.erase(label)
@@ -1978,6 +1988,10 @@ func _footprint(x: int, y: int, kind: String, turn: int) -> Array[Vector2i]:
 	return cells
 
 func _can_place(x: int, y: int, kind: String = "speaker", turn: int = 0) -> bool:
+	if kind == "poster":
+		var on_wall := x == 0 or x == grid_width - 1 or y == 0 or y == SIZE - 1
+		var entrance_gap := y == SIZE - 1 and x in [7, 8]
+		return on_wall and not entrance_gap and not object_at_cell.has(Vector2i(x, y)) and club.get_node_or_null("wall_%d_%d" % [x, y]) != null
 	for cell in _footprint(x, y, kind, turn):
 		if kind == "dance_tile" and dance_tiles.has(cell):
 			return false
