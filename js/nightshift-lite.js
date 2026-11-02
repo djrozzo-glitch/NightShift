@@ -23,6 +23,11 @@ const sun=new THREE.DirectionalLight(0xffdfba,2);sun.position.set(-10,16,8);scen
 const stage=new THREE.Group();scene.add(stage);
 const loader=new GLTFLoader();
 const loadGLB=path=>new Promise(resolve=>loader.load(path,resolve,undefined,err=>{console.warn('Optional GLB not loaded',path,err);resolve(null)}));
+// Optimized copies live next to original Godot GLBs. The original remains a safe fallback.
+const loadVenueModel=async name=>{
+ const base='godot/assets/models/'+name;
+ return (await loadGLB(base+'_opt.glb')) || (await loadGLB(base+'.glb'));
+};
 const mat=(color,roughness=.85)=>new THREE.MeshStandardMaterial({color,roughness});
 const concrete=mat(0x252330),dark=mat(0x302c3c),danceMat=mat(0x503463),edgeMat=mat(0x50455a);
 function block(w,h,d,x,y,z,material,parent=stage){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);o.position.set(x,y,z);parent.add(o);return o;}
@@ -120,13 +125,13 @@ function animateFixtures(t,dt,active){
  }
 }
 Promise.all(decor.map(async([name,x,z,size,rotation])=>{
- const gltf=await loadGLB('godot/assets/models/'+name+'.glb');
+ const gltf=await loadVenueModel(name);
  if(!gltf)return;
  const holder=new THREE.Group(),obj=gltf.scene;
  fitModel(obj,size);holder.position.set(x,.04,z);holder.rotation.y=rotation||0;holder.add(obj);stage.add(holder);loadedModels.set(name,holder);
  if(['discoball','laser_new','light'].includes(name))addFixture(holder,obj,name);
 })).then(()=>{ready3d=true;$('loading').textContent='Клуб готов.';});
-const wallLoad=loadGLB('godot/assets/models/wall.glb').then(g=>{
+const wallLoad=loadVenueModel('wall').then(g=>{
  for(const [x,z,rotation] of wallPieces){
   if(!g){block(1,1.55,.22,x,.7,z,dark);continue}
   const holder=new THREE.Group(),obj=g.scene.clone(true);fitModel(obj,.99);
