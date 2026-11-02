@@ -177,6 +177,9 @@ var night_time_label: Label
 var night_speed_button: Button
 var night_pause_button: Button
 var night_history: Array[Dictionary] = []
+var transition_overlay: ColorRect
+var exit_cleanup_active := false
+var exit_cleanup_elapsed := 0.0
 var analytics_summary: Label
 var analytics_history: Label
 var analytics_insight: Label
@@ -1345,7 +1348,81 @@ func _select_guest_at(screen_pos: Vector2) -> bool:
 	return true
 
 
+func _fade_lights(to_black: bool, duration: float = 1.5) -> void:
+	if transition_overlay == null:
+		return
+	var tween := create_tween()
+	tween.tween_property(transition_overlay, "color:a", 1.0 if to_black else 0.0, duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+func _begin_guest_exit() -> void:
+	exit_cleanup_active = not guests.is_empty()
+	exit_cleanup_elapsed = 0.0
+	for guest in guests:
+		var person := guest["node"] as Node3D
+		if not is_instance_valid(person):
+			continue
+		var path := _path_to(guest["cell"], GUEST_ENTRY)
+		guest["path"] = path
+		guest["destination"] = GUEST_ENTRY
+		guest["state"] = "walk_exit"
+		guest["dance"] = false
+		guest["leaving"] = false
+		guest["service_object"] = -1
+		guest["seated"] = false
+		guest["visual"].visible = true
+		guest["speed"] = maxf(1.8, float(guest["speed"]))
+		if path.is_empty() and guest["cell"] == GUEST_ENTRY:
+			guest["leaving"] = true
+
+
+func _process_guest_exit(delta: float) -> void:
+	if not exit_cleanup_active:
+		return
+	exit_cleanup_elapsed += delta
+	for guest in guests:
+		var person := guest["node"] as Node3D
+		if not is_instance_valid(person):
+			guest["leaving"] = true
+			continue
+		if bool(guest.get("leaving", false)):
+			continue
+		var path: Array = guest["path"]
+		if path.is_empty():
+			# Re-path once in case a guest was in a service animation.
+			path = _path_to(guest["cell"], GUEST_ENTRY)
+			guest["path"] = path
+			if path.is_empty():
+				guest["leaving"] = true
+				continue
+		var target_cell: Vector2i = path[0]
+		var direction := _cell_position(target_cell) - person.position
+		if direction.length() < 0.09:
+			person.position = _cell_position(target_cell)
+			guest["cell"] = target_cell
+			path.pop_front()
+			if path.is_empty():
+				guest["leaving"] = true
+		else:
+			person.position = person.position.move_toward(_cell_position(target_cell), float(guest["speed"]) * delta)
+			person.rotation.y = atan2(direction.x, direction.z)
+		if bool(guest.get("imported", false)):
+			var motions: Dictionary = guest["motions"]
+			for motion_name in motions:
+				(motions[motion_name] as Node3D).visible = motion_name == "walk"
+	for index in range(guests.size() - 1, -1, -1):
+		if bool(guests[index].get("leaving", false)):
+			var departing := guests[index]["node"] as Node3D
+			if is_instance_valid(departing):
+				departing.queue_free()
+			guests.remove_at(index)
+	if guests.is_empty() or exit_cleanup_elapsed >= 35.0:
+		_clear_guests()
+		exit_cleanup_active = false
+
+
 func _process(delta: float) -> void:
+	_process_guest_exit(delta)
 	if night_active:
 		_refresh_guest_info(delta)
 	_animate_poster_leds(delta)
@@ -1893,12 +1970,15 @@ func _start_night() -> void:
 	night_active = true
 	_refresh_poster_text()
 	_refresh_club_sign()
+	_fade_lights(true, 0.8)
 	_set_night_lighting(true)
+	_fade_lights(false, 2.0)
 	dj_animation_clock = 0.0
 	_spawn_dj_performers()
 	_play_dj_music()
 	night_report_panel.show()
 	_clear_guests()
+	exit_cleanup_active = false
 	guest_count = 0
 	build_mode = false
 	erase_mode = false
@@ -1922,7 +2002,13 @@ func _end_night() -> void:
 	night_active = false
 	_refresh_poster_text()
 	_refresh_club_sign()
-	_set_night_lighting(false)
+	_fade_lights(true, 1.2)
+	var lighting_transition := create_tween()
+	lighting_transition.tween_interval(1.2)
+	lighting_transition.tween_callback(func() -> void:
+		_set_night_lighting(false)
+		_fade_lights(false, 2.0)
+	)
 	_clear_dj_performers()
 	_stop_dj_music()
 	var costs := _night_total_expenses()
@@ -1941,7 +2027,7 @@ func _end_night() -> void:
 	var levels_gained := _award_xp(last_xp_gain)
 	var milestone_awards := _award_night_milestones(profit)
 	_record_night_analytics(profit, average_mood)
-	_clear_guests()
+	_begin_guest_exit()
 	_refresh_economy()
 	night_pause_button.disabled = true
 	night_speed_button.disabled = true
@@ -2785,6 +2871,7 @@ func _load_club() -> void:
 			_notify("Save contains an invalid object position")
 			return
 	_clear_guests()
+	exit_cleanup_active = false
 	if bool(data.get("expanded", false)) and not expanded:
 		_apply_east_wing()
 	elif not bool(data.get("expanded", false)) and expanded:
@@ -2870,6 +2957,7 @@ func _new_club() -> void:
 		return
 	_cancel_move()
 	_clear_guests()
+	exit_cleanup_active = false
 	_clear_dj_performers()
 	_clear_dance_tiles()
 	# Remove the sample layout, including perimeter posters. Keep the floor,
@@ -2954,6 +3042,16 @@ func _build_overlay() -> void:
 	theme_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(theme_root)
+	# Full-screen blackout above the scene, but below UI controls.
+	# Mouse input passes through so it cannot interfere with camera/UI.
+	var fade_layer := CanvasLayer.new()
+	fade_layer.layer = 10
+	add_child(fade_layer)
+	transition_overlay = ColorRect.new()
+	transition_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	transition_overlay.color = Color(0.015, 0.012, 0.035, 0.0)
+	transition_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fade_layer.add_child(transition_overlay)
 	guest_info_panel = PanelContainer.new()
 	guest_info_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	guest_info_panel.anchor_top = 1.0
