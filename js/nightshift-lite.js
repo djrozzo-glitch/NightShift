@@ -42,30 +42,52 @@ for(let i=-7.5;i<=7.5;i++){
  wallPieces.push([i,-7.9,0],[7.9,i,Math.PI/2],[-7.9,i,Math.PI/2]);
  if(Math.abs(i)>1.5)wallPieces.push([i,7.9,0]);
 }
-for(let x=-3.5;x<=3.5;x++)for(let z=-2.5;z<=3.5;z++)
- block(.98,.05,.98,x,.035,z,danceMat);
+// Replace placeholder rectangles with optimized floor.glb tiles, keeping a fallback.
+const danceTilePositions=[];
+for(let x=-3.5;x<=3.5;x++)for(let z=-2.5;z<=3.5;z++)danceTilePositions.push([x,z]);
+const dancePlaceholders=danceTilePositions.map(([x,z])=>block(.98,.05,.98,x,.035,z,danceMat));
+// Tile grid: 1x1 objects sit at half-integers, 2x1 furniture at whole integers.
 const decor=[
- ['dj_stand_upgraded',0,-5.65,2.6,0],
- ['speaker_updated',-2.6,-5.65,1.65,0],['speaker_updated',2.6,-5.65,1.65,0],
- // Bars and lounge furniture kept against the outer walls.
- ['bar_new',-6.7,-2.0,2.0,Math.PI/2],['bar_new',6.7,-3.7,2.0,-Math.PI/2],
- ['sofa_upgraded',-6.65,3.3,2.0,Math.PI/2],['sofa_upgraded',6.6,2.7,2.0,-Math.PI/2],
- ['sofa_upgraded',-3.8,6.7,1.9,Math.PI],['sofa_upgraded',3.8,6.7,1.9,Math.PI],
- // Both plant sizes, arranged as wall-side accents.
- ['plant_big',-6.55,-5.9,1.25,0],['plant_big',6.5,-5.9,1.25,0],
- ['plant_big',-6.55,5.9,1.25,0],['plant_big',6.5,5.9,1.25,0],
- ['plant2',-6.65,.55,.8,0],['plant2',6.65,.55,.8,0],
- ['plant2',-1.9,-6.75,.8,0],['plant2',1.9,-6.75,.8,0],
- // Four times smaller fixtures, leaving the dance floor unobstructed.
- ['laser_new',-4.8,-4.9,.2875,0],['laser_new',4.8,-4.9,.2875,0],
- ['light',-5.3,-1.2,.2875,0],['light',5.3,-1.2,.2875,0],
- ['discoball',-5.5,2.9,.3125,0],['discoball',5.5,2.9,.3125,0],
+ ['dj_stand_upgraded',0,-6.5,2.0,0],
+ ['speaker_updated',-3.5,-6.5,.95,0],['speaker_updated',3.5,-6.5,.95,0],
+ // Two-tile bars and sofas: exactly one tile from the inner wall, clear of posters.
+ ['bar_new',-6.5,-4,2.0,Math.PI/2],['bar_new',6.5,-4,2.0,-Math.PI/2],
+ ['sofa_upgraded',-6.5,5,2.0,Math.PI/2],['sofa_upgraded',6.5,5,2.0,-Math.PI/2],
+ ['sofa_upgraded',-3,6.5,2.0,Math.PI],['sofa_upgraded',3,6.5,2.0,Math.PI],
+ ['plant_big',-6.5,-6.5,.95,0],['plant_big',6.5,-6.5,.95,0],
+ ['plant_big',-6.5,6.5,.95,0],['plant_big',6.5,6.5,.95,0],
+ ['plant2',-6.5,.5,.85,0],['plant2',6.5,.5,.85,0],
+ ['plant2',-1.5,-6.5,.85,0],['plant2',1.5,-6.5,.85,0],
+ // Triple the former size; all lamps remain snapped to individual tiles.
+ ['laser_new',-5.5,-4.5,.8625,0],['laser_new',5.5,-4.5,.8625,0],
+ ['light',-5.5,-1.5,.8625,0],['light',5.5,-1.5,.8625,0],
+ ['discoball',-5.5,3.5,.9375,0],['discoball',5.5,3.5,.9375,0],
  ['poster',-7.55,-3.2,1.2,Math.PI/2],['poster',-7.55,2.6,1.2,Math.PI/2],
  ['poster',7.55,-2.5,1.2,-Math.PI/2],['poster',2.8,-7.55,1.2,0],
  ['entrance',0,7.8,2.7,0],
- ['table',-5.8,4.6,.8,0],['stool',5.8,4.6,.7,0]
+ ['table',-4.5,4.5,.8,0],['stool',4.5,4.5,.7,0]
 ];
 const loadedModels=new Map();
+loadVenueModel('floor').then(g=>{
+ if(!g)return;
+ const source=g.scene;
+ fitModel(source,.98);
+ dancePlaceholders.forEach(p=>stage.remove(p));
+ for(const [x,z] of danceTilePositions){
+  const tile=source.clone(true);
+  const holder=new THREE.Group();holder.position.set(x,.045,z);holder.add(tile);stage.add(holder);
+ }
+});
+function fitCharacterHeight(root,height=1.65){
+ root.updateMatrixWorld(true);
+ let box=new THREE.Box3().setFromObject(root);
+ if(box.isEmpty())return;
+ root.scale.multiplyScalar(height/Math.max(box.max.y-box.min.y,.001));
+ root.updateMatrixWorld(true);box=new THREE.Box3().setFromObject(root);
+ const center=new THREE.Vector3();box.getCenter(center);
+ root.position.x-=center.x;root.position.z-=center.z;root.position.y-=box.min.y;
+}
+
 function fitModel(root,size){root.updateMatrixWorld(true);let box=new THREE.Box3().setFromObject(root);
 if(box.isEmpty())return;const ext=new THREE.Vector3();box.getSize(ext);
 root.scale.multiplyScalar(size/Math.max(ext.x,ext.z,.001));
@@ -143,12 +165,12 @@ const peopleExtras=Promise.all([
  loadGLB('assets/characters/raver_m_idle.glb'),
  loadGLB('assets/characters/raver_m_dance.glb')
 ]).then(([bouncer,idle,dance])=>{
- const bouncerRoot=new THREE.Group();bouncerRoot.position.set(1.8,.04,8.35);
- if(bouncer){const actor=bouncer.scene;fitModel(actor,.58);actor.scale.multiplyScalar(1.5);bouncerRoot.add(actor);if(bouncer.animations?.length){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(bouncer.animations[0]).play();extraMixers.push(mixer);}}
+ const bouncerRoot=new THREE.Group();bouncerRoot.position.set(1.5,.04,8.5);
+ if(bouncer){const actor=bouncer.scene;fitCharacterHeight(actor,1.65);bouncerRoot.add(actor);if(bouncer.animations?.length){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(bouncer.animations[0]).play();extraMixers.push(mixer);}}
  stage.add(bouncerRoot);
- const djRoot=new THREE.Group();djRoot.position.set(0,.06,-6.15);djRoot.rotation.y=Math.PI;
+ const djRoot=new THREE.Group();djRoot.position.set(0,.06,-6.5);djRoot.rotation.y=Math.PI;
  stage.add(djRoot);
- if(idle||dance){const actor=cloneSkeleton((idle||dance).scene);fitModel(actor,.55);actor.scale.multiplyScalar(1.4);djRoot.add(actor);
+ if(idle||dance){const actor=cloneSkeleton((idle||dance).scene);fitCharacterHeight(actor,1.65);djRoot.add(actor);
  const clip=(idle||dance).animations?.[0];if(clip){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(clip).play();extraMixers.push(mixer);}}
 });
 const extraMixers=[];
@@ -207,7 +229,7 @@ function actorState(p,state){
   const asset=actorAssets[p.variant]?.[state]||actorAssets[p.variant]?.dance||actorAssets[p.variant]?.walk;
   if(!asset){const mesh=new THREE.Mesh(guestFallbackGeometry,guestFallbackMaterial);mesh.position.y=.55;p.group.add(mesh);item={mesh,mixer:null};}
   else{
-   const mesh=cloneSkeleton(asset.scene);fitModel(mesh,.65);mesh.scale.multiplyScalar(1.45);p.group.add(mesh);
+   const mesh=cloneSkeleton(asset.scene);fitCharacterHeight(mesh,1.65);p.group.add(mesh);
    const mixer=asset.animations.length?new THREE.AnimationMixer(mesh):null;
    if(mixer)mixer.clipAction(asset.animations[0]).play();
    item={mesh,mixer};
