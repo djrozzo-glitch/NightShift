@@ -289,9 +289,10 @@ function initSoundCloud(){
  const E=window.SC.Widget.Events;
  scWidget.bind(E.READY,()=>{
   scReady=true;
-  if(scRequested&&running)scWidget.play();
+  if(scRequested&&running&&!paused&&!ending)scWidget.play();
  });
  scWidget.bind(E.PLAY,()=>{
+  if(paused||ending){scWidget.pause();return;}
   scStarted=true;
   musicStatus.textContent='♫ Играет '+nameToLabel[$('dj').value]+'. Вечеринка закончится вместе с треком.';
  });
@@ -612,7 +613,7 @@ function completeParty(){
  $('stageStatus').textContent=endMessage;
 }
 let endMessage='Вечеринка закончилась. Все гости вышли.';
-function endParty(message='Вечеринка закончилась. Все гости направляются к выходу.'){
+function endParty(message='Вечеринка завершена. Все гости вышли.'){
  if(ending||(!running&&!paused))return;
  ending=true;running=false;paused=false;scRequested=false;scStarted=false;
  scWidget?.pause();
