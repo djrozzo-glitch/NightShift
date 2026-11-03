@@ -104,6 +104,56 @@ const decor=[
  ['table',1.5,7.5,.72,0],['table',4.5,7.5,.72,0]
 ];
 const loadedModels=new Map();
+// Each poster receives a full-face emissive screen, fitted to its GLB face.
+const posterScreens=[];
+let posterScreenName='',posterScreenLive=false;
+function makePosterScreen(holder,bounds){
+ const width=Math.max(.24,bounds.max.x-bounds.min.x);
+ const height=Math.max(.3,bounds.max.y-bounds.min.y);
+ const canvas=document.createElement('canvas');canvas.width=512;canvas.height=1024;
+ const ctx=canvas.getContext('2d');
+ const texture=new THREE.CanvasTexture(canvas);
+ texture.colorSpace=THREE.SRGBColorSpace;
+ const material=new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide,toneMapped:false});
+ const mesh=new THREE.Mesh(new THREE.PlaneGeometry(width*.965,height*.985),material);
+ mesh.position.set((bounds.min.x+bounds.max.x)/2,(bounds.min.y+bounds.max.y)/2,bounds.max.z+.035);
+ mesh.renderOrder=3;
+ holder.add(mesh);
+ const screen={ctx,texture,mesh};posterScreens.push(screen);
+ drawPosterScreen(screen,posterScreenName,posterScreenLive);
+}
+function drawPosterScreen(screen,name,live){
+ const ctx=screen.ctx,w=512,h=1024;
+ const gradient=ctx.createLinearGradient(0,0,w,h);
+ gradient.addColorStop(0,'#160d25');gradient.addColorStop(.55,'#39163e');gradient.addColorStop(1,'#0d1932');
+ ctx.fillStyle=gradient;ctx.fillRect(0,0,w,h);
+ ctx.fillStyle='#8538a8';ctx.fillRect(18,18,w-36,9);ctx.fillRect(18,h-27,w-36,9);
+ ctx.strokeStyle='#ae58d8';ctx.lineWidth=8;ctx.strokeRect(9,9,w-18,h-18);
+ ctx.textAlign='center';ctx.textBaseline='middle';
+ ctx.fillStyle='#b3a6d5';ctx.font='bold 37px sans-serif';
+ ctx.fillText('NIGHT SHIFT',w/2,112,w-60);
+ ctx.fillStyle='#f1e0ff';ctx.font='bold 50px sans-serif';
+ ctx.fillText(live?'NOW PLAYING':'TONIGHT',w/2,280,w-42);
+ const words=String(name||'DJ').toUpperCase().split(/\s+/);
+ const lines=[];let line='';
+ for(const word of words){
+  if((line+' '+word).length>13&&line){lines.push(line);line=word;}
+  else line=line?line+' '+word:word;
+ }
+ if(line)lines.push(line);
+ const fontSize=lines.length>2?66:lines.length>1?82:100;
+ ctx.font='900 '+fontSize+'px sans-serif';ctx.fillStyle='#b8f9df';
+ const start=505-(lines.length-1)*fontSize*.62;
+ lines.forEach((part,i)=>ctx.fillText(part,w/2,start+i*fontSize*1.12,w-58));
+ ctx.fillStyle='#dbaaf0';ctx.font='bold 32px sans-serif';
+ ctx.fillText(live?'● LIVE ON THE DANCEFLOOR':'UNDERGROUND SESSION',w/2,830,w-52);
+ screen.texture.needsUpdate=true;
+}
+function updatePosterScreens(name,live){
+ posterScreenName=name||'DJ';posterScreenLive=!!live;
+ for(const screen of posterScreens)drawPosterScreen(screen,posterScreenName,posterScreenLive);
+}
+
 // Drinks on all eight sofa armrest tables: simple lightweight glassware.
 const drinkGlass=new THREE.CylinderGeometry(.065,.045,.16,8);
 const drinkMat=new THREE.MeshStandardMaterial({color:0x9cc8d8,transparent:true,opacity:.68,roughness:.2,metalness:.1});
@@ -242,7 +292,12 @@ Promise.all(decor.map(async([name,x,z,size,rotation])=>{
  const gltf=await loadVenueModel(name);
  if(!gltf)return;
  const holder=new THREE.Group(),obj=gltf.scene;
- fitModel(obj,size);holder.position.set(x,.04,z);holder.rotation.y=rotation||0;holder.add(obj);stage.add(holder);loadedModels.set(name,holder);
+ fitModel(obj,size);
+// Capture local bounds before rotating the poster holder; this guarantees
+// the screen faces into the venue on all three walls.
+const posterBounds=name==='poster'?new THREE.Box3().setFromObject(obj):null;
+holder.position.set(x,.04,z);holder.rotation.y=rotation||0;holder.add(obj);stage.add(holder);loadedModels.set(name,holder);
+ if(posterBounds)makePosterScreen(holder,posterBounds);
  if(['discoball','laser_new','light'].includes(name))addFixture(holder,obj,name);
 })).then(()=>{ready3d=true;$('loading').textContent='Клуб готов.';});
 const wallLoad=loadVenueModel('wall').then(g=>{
@@ -355,6 +410,7 @@ function renderLineup(){
  select.value=artists.some(a=>a.id===selected)?selected:artists[0]?.id||'';
  nameToLabel=Object.fromEntries(artists.map(a=>[a.id,a.name]));
  tracks=Object.fromEntries(artists.map(a=>[a.id,a.url]));
+ updatePosterScreens(nameToLabel[select.value]||'DJ',false);
 }
 renderLineup();
 let playerVolume=Math.max(0,Math.min(100,Number(localStorage.getItem('nightshift-sc-volume')??75)||0));
@@ -372,6 +428,7 @@ let scWidget=null,scReady=false,scRequested=false,scStarted=false;
 const musicStatus=$('musicStatus');
 function syncTrack(){
  const artist=currentArtist();
+ updatePosterScreens(artist?.name||'DJ',false);
  const url=artist?.url||'';
  $('trackLink').href=url||'https://soundcloud.com';
  $('trackLink').textContent=url?'♫ '+artist.name+' — открыть SoundCloud':'Для '+(artist?.name||'DJ')+' нет ссылки SoundCloud';
@@ -908,6 +965,7 @@ let endMessage='Вечеринка закончилась. Все гости в�
 function endParty(message='Вечеринка завершена. Все гости вышли.'){
  if(ending||(!running&&!paused))return;
  ending=true;running=false;paused=false;guestsReady=false;scRequested=false;scStarted=false;
+ updatePosterScreens(nameToLabel[$('dj').value],false);
  scWidget?.pause();
  endMessage=message;
  $('play').disabled=true;$('pause').disabled=true;$('end').disabled=true;
@@ -948,6 +1006,7 @@ function animateExits(dt){
 $('play').onclick=async()=>{
  if(!opened||running||ending)return;
  running=true;paused=false;guestsReady=false;partyTime=0;guestClock=0;chatClock=0;
+ updatePosterScreens(nameToLabel[$('dj').value],true);
  guestCapacity=getGuestCapacity();
  removeGuests();
  $('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;
