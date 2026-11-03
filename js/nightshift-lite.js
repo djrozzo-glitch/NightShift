@@ -515,17 +515,20 @@ $('loadSheet').onclick=loadSheet;
 const defaultSheet='https://docs.google.com/spreadsheets/d/1vfeH9qxnX1HcEv_BhwrJGI2qjWHQyDVENAFAzgDaqQ8/edit?usp=sharing';
 const saved=localStorage.getItem('nightshift-lite-sheet');
 $('sheet').value=saved||defaultSheet;
-try{
- const cached=JSON.parse(localStorage.getItem('nightshift-lite-artists')||'null');
- if(Array.isArray(cached)&&cached.length&&cached.every(a=>a&&a.id&&a.name&&a.url&&Number.isFinite(a.fee))){
-  artists=cached;
-  fees=Object.fromEntries(cached.map(a=>[a.id,a.fee]));
-  renderLineup();
-  updateFee();
-  syncTrack();
- }
-}catch(error){console.warn('Cannot read cached DJ lineup:',error);}
-loadSheet();
+// Defer cache hydration until gameplay constants and guest arrays exist.
+Promise.resolve().then(()=>{
+ try{
+  const cached=JSON.parse(localStorage.getItem('nightshift-lite-artists')||'null');
+  if(Array.isArray(cached)&&cached.length&&cached.every(a=>a&&a.id&&a.name&&a.url&&Number.isFinite(a.fee))){
+   artists=cached;
+   fees=Object.fromEntries(cached.map(a=>[a.id,a.fee]));
+   renderLineup();
+   updateFee();
+   syncTrack();
+  }
+ }catch(error){console.warn('Cannot read cached DJ lineup:',error);}
+ loadSheet();
+});
 const variants=['baggy_m','fashion_f','jungle_f','raver_f','raver_m'];
 const actorAssets={};
 let loaded=0;
