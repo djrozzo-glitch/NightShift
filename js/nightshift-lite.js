@@ -430,9 +430,10 @@ function actorState(p,motion){
  // Complete any unfinished fade before starting another. Never turn both
  // meshes invisible during a rapid change of activity.
  if(p.fadingItem){
-  p.fadingItem.mesh.visible=false;
-  setAvatarOpacity(p.fadingItem,1);
-  p.fadingItem.mixer?.stopAllAction();
+  const fading=p.fadingItem;
+  fading.mesh.visible=false;
+  setAvatarOpacity(fading,1);
+  fading.mixer?.stopAllAction();
   p.fadingItem=null;
  }
  if(previous&&previous!==item){
@@ -445,6 +446,9 @@ function actorState(p,motion){
    // transparent, causing a one-frame disappearing guest.
    p.fadingItem=previous;
    p.fadeTime=0;
+   // Freeze the previous action at its current pose while it fades.
+   // Stopping here would snap the old mesh back to the bind pose.
+   if(previous.action)previous.action.paused=true;
    setAvatarOpacity(previous,1);
   }
  }
@@ -457,6 +461,9 @@ function actorState(p,motion){
   item.action.clampWhenFinished=false;
   item.action.play();
   if(motion==='dance')item.action.time=Math.random()*Math.max(item.action.getClip().duration,.1);
+  // Calculate the FIRST animated pose before rendering the new mesh.
+  // Otherwise the rest pose briefly flashes on every transition.
+  item.mixer.update(0);
  }
  p.mesh=item.mesh;p.mixer=item.mixer;p.activeItem=item;p.motion=motion;
 }
@@ -465,7 +472,7 @@ function updateAvatar(p,dt){
  if(current?.mixer)current.mixer.update(dt);
  if(p.fadingItem){
   const fade=p.fadingItem;
-  if(fade.mixer)fade.mixer.update(dt);
+  // The outgoing pose stays frozen; advancing it would cause ghost motion.
   p.fadeTime+=dt;
   const alpha=Math.min(1,p.fadeTime/.20);
   setAvatarOpacity(current,1);
@@ -516,10 +523,18 @@ function createChatPair(){
 function addGuest(){
  if(!running||guests.length>=MAX_GUESTS)return;
  const variant=Math.floor(Math.random()*variants.length);
- const group=new THREE.Group();group.position.set((Math.random()-.5)*1.1,.05,7.2);stage.add(group);
+ // Every guest is created at the two-cell entrance, never at their dance destination.
+ const group=new THREE.Group();
+ group.position.set((Math.random()-.5)*.7,.05,7.45);
+ stage.add(group);
  const p={group,mesh:null,mixer:null,motion:null,state:null,variant,x:0,z:0,speed:1.0+Math.random()*.65,phase:Math.random()*6.28,
- energy:.55+Math.random()*.45,thirst:Math.random()*.3,wait:0,activity:'dance',cache:{},visits:0};
- routeGuest(p,'dance');guests.push(p);$('counter').textContent='GUESTS: '+guests.length+' / '+MAX_GUESTS;
+ energy:.55+Math.random()*.45,thirst:Math.random()*.3,wait:0,activity:'dance',cache:{},visits:0,
+ entryPending:true,entryX:group.position.x,entryZ:5.4};
+ routeGuest(p,'dance');
+ // Render the model at the doorway in its already-evaluated walking pose.
+ p.group.updateMatrixWorld(true);
+ guests.push(p);
+ $('counter').textContent='GUESTS: '+guests.length+' / '+MAX_GUESTS;
 }
 function removeGuests(){for(const p of guests){releaseSpot(p);p.chatPartner=null;for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
@@ -576,7 +591,14 @@ function updateGuest(p,dt){
  p.thirst=Math.min(1,p.thirst+dt*(p.state==='dance'?.008:.003));
  p.energy=Math.max(0,p.energy-dt*(p.state==='dance'?.004:.001));
  if(p.state==='walk'){
-  const dx=p.x-p.group.position.x,dz=p.z-p.group.position.z,dist=Math.hypot(dx,dz);
+  // Walk inside from the door before taking the path to the reserved tile.
+  const targetX=p.entryPending?p.entryX:p.x;
+  const targetZ=p.entryPending?p.entryZ:p.z;
+  const dx=targetX-p.group.position.x,dz=targetZ-p.group.position.z,dist=Math.hypot(dx,dz);
+  if(p.entryPending&&dist<.13){
+   p.entryPending=false;
+   return;
+  }
   if(dist<.13){
    if(p.activity==='dance'){actorState(p,'dance');p.state='dance';p.wait=7+Math.random()*12;}
    else if(p.activity==='bar'){actorState(p,'drink');p.state='drink';p.wait=3+Math.random()*4;}
@@ -644,7 +666,7 @@ function monitorFrame(dt){fpsCount++;fpsClock+=dt;if(fpsClock>=1.5){const fps=Ma
  monitor.textContent='FPS '+fps+' | '+memory+' | GEO '+info.memory.geometries+' | TEX '+info.memory.textures+' | GUESTS '+guests.length;
  fpsClock=0;fpsCount=0;}}
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
-let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const target=running?1:0;
+let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const target=running?1:0;
 if(!running){djPose='idle';djNextAction=8;}
 else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
@@ -665,9 +687,10 @@ if(running){
  partyTime+=dt;guestClock+=dt;chatClock+=dt;
  if(chatClock>16){chatClock=0;createChatPair();}
  if(guestClock>1.25&&guests.length<MAX_GUESTS){guestClock=0;addGuest();}
- animAccum+=dt;
  for(const p of guests)updateGuest(p,dt);
- if(animAccum>=1/30){for(const p of guests)updateAvatar(p,animAccum);animAccum=0;}
+ // Advance animated poses every rendered frame. A 30fps mixer with 120fps
+ // locomotion previously created visible stepping/jitter in all variants.
+ for(const p of guests)updateAvatar(p,dt);
 }
 
 renderer.render(scene,camera)}
