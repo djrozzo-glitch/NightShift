@@ -780,30 +780,35 @@ function monitorFrame(dt){fpsCount++;fpsClock+=dt;if(fpsClock>=1.5){const fps=Ma
  monitor.textContent='FPS '+fps+' | '+memory+' | GEO '+info.memory.geometries+' | TEX '+info.memory.textures+' | GUESTS '+guests.length;
  fpsClock=0;fpsCount=0;}}
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
-let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const target=running?1:0;
-if(!running){djPose='idle';djNextAction=8;}
+let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const partyActive=running&&!paused&&!ending;const target=partyActive?1:0;
+if(!partyActive){djPose='idle';djNextAction=8;}
 else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
-hemi.intensity+=((running?1.45:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.85:2)-sun.intensity)*.025;
-scene.background.lerp(new THREE.Color(running?0x050410:0x090b16),.02);
+hemi.intensity+=((partyActive?1.45:2.3)-hemi.intensity)*.025;sun.intensity+=((partyActive?.85:2)-sun.intensity)*.025;
+scene.background.lerp(new THREE.Color(partyActive?0x050410:0x090b16),.02);
 scene.fog.color.copy(scene.background);
-scene.fog.density+=((running?.022:.018)-scene.fog.density)*.016;
+scene.fog.density+=((partyActive?.022:.018)-scene.fog.density)*.016;
 for(const layer of hazeLayers){
  const m=layer.mesh;
- m.material.opacity+=((running?.24:0)-m.material.opacity)*.018;
+ m.material.opacity+=((partyActive?.24:0)-m.material.opacity)*.018;
  m.position.x=layer.baseX+Math.sin(t*.11+layer.offset)*.42;
  m.position.z=layer.baseZ+Math.cos(t*.08+layer.offset)*.38;
 }
-venueFills.forEach((l,i)=>{l.intensity+=( (running?3.2:0)-l.intensity)*.025;});
+venueFills.forEach((l,i)=>{l.intensity+=((partyActive?3.2:0)-l.intensity)*.025;});
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
-animateFixtures(t,dt,running);
-if(running){
+animateFixtures(t,dt,partyActive);
+if(partyActive){
  partyTime+=dt;guestClock+=dt;chatClock+=dt;
  if(chatClock>16){chatClock=0;createChatPair();}
  if(guestClock>1.25&&guests.length<guestCapacity){guestClock=0;addGuest();}
  for(const p of guests)updateGuest(p,dt);
  // Advance animated poses every rendered frame. A 30fps mixer with 120fps
  // locomotion previously created visible stepping/jitter in all variants.
+ for(const p of guests)updateAvatar(p,dt);
+}else if(ending){
+ animateExits(dt);
+}else if(paused){
+ // Advance only the idle animation: routes, thirst, energy and party time stay frozen.
  for(const p of guests)updateAvatar(p,dt);
 }
 
