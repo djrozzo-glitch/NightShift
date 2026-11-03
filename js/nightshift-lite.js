@@ -386,7 +386,7 @@ function syncTrack(){
  }else{
   $('scFrame').src='https://w.soundcloud.com/player/?url='+encodeURIComponent(url)+'&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false';
  }
- if(opened&&!running&&!ending)$('play').disabled=false;
+ if($('curtain').style.display==='none'&&$('end').disabled)$('play').disabled=false;
  musicStatus.textContent='Трек готовится к воспроизведению. Нажми «Начать вечеринку».';
 }
 function initSoundCloud(){
