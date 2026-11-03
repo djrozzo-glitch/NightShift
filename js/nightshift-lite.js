@@ -437,9 +437,95 @@ function refreshBooking(){
 
 function csvRows(s){const rows=[];let row=[],field='',quote=false;for(let i=0;i<s.length;i++){const c=s[i];if(c==='"'){if(quote&&s[i+1]==='"'){field+='"';i++}else quote=!quote}else if(c===','&&!quote){row.push(field);field=''}else if((c==='\n'||c==='\r')&&!quote){if(c==='\r'&&s[i+1]==='\n')i++;row.push(field);if(row.some(v=>v.trim()))rows.push(row);row=[];field=''}else field+=c}row.push(field);if(row.some(v=>v.trim()))rows.push(row);return rows}
 function updateFee(){refreshBooking();}
-async function loadSheet(){const url=$('sheet').value.trim();if(!url){$('sheetStatus').textContent='Вставь CSV-ссылку.';return}if(!/^https:\/\/(docs\.google\.com|drive\.google\.com)\//.test(url)){$('sheetStatus').textContent='Используй опубликованную HTTPS-ссылку Google Sheets.';return}
-$('sheetStatus').textContent='Загружаю…';try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const rows=csvRows((await r.text()).replace(/^\uFEFF/,''));const header=rows.shift().map(x=>x.trim().toLowerCase());const idCol=header.indexOf('id'),feeCol=header.indexOf('fee');if(idCol<0||feeCol<0)throw Error('Нужны колонки id и fee');const next={};for(const row of rows){const id=(row[idCol]||'').trim().toLowerCase(),raw=(row[feeCol]||'').trim().replace(/[€\s]/g,'').replace(',','.');const value=Number(raw);if(Object.hasOwn(nameToLabel,id)&&raw&&Number.isFinite(value)&&value>=0)next[id]=value}if(!Object.keys(next).length)throw Error('Нет распознанных DJ/цен');fees=next;localStorage.setItem('nightshift-lite-sheet',url);$('sheetStatus').textContent='Загружено гонораров: '+Object.keys(fees).length;updateFee()}catch(e){$('sheetStatus').textContent='Ошибка загрузки: '+e.message+'. Проверь публикацию CSV и доступ CORS.'}}
-$('loadSheet').onclick=loadSheet;const defaultSheet='https://docs.google.com/spreadsheets/d/1vfeH9qxnX1HcEv_BhwrJGI2qjWHQyDVENAFAzgDaqQ8/gviz/tq?tqx=out:csv';const stored=localStorage.getItem('nightshift-lite-sheet');$('sheet').value=stored||defaultSheet;loadSheet();
+// Public Google Sheet is the source of truth for the DJ catalogue.
+// Accept the shared /edit link, published /pub CSV, or the gviz CSV endpoint.
+function sheetCsvUrl(input){
+ const value=input.trim();
+ const match=value.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+ if(match){
+  const gid=value.match(/[?&#]gid=(\d+)/)?.[1];
+  return 'https://docs.google.com/spreadsheets/d/'+match[1]+'/gviz/tq?tqx=out%3Acsv'+(gid?'&gid='+gid:'');
+ }
+ if(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/e\//.test(value))return value;
+ throw Error('Нужна ссылка Google Sheets.');
+}
+function normalizeColumn(value){
+ return String(value||'').toLowerCase().replace(/[\s_.\-()\/]+/g,'').replace(/[₽€$]/g,'');
+}
+function parseSheetArtists(rows){
+ if(rows.length<2)throw Error('Таблица пуста.');
+ const columns=rows.shift().map(normalizeColumn);
+ const column=(aliases)=>columns.findIndex(c=>aliases.some(a=>c===normalizeColumn(a)));
+ const idIdx=column(['id','artistid','djid','key','slug','код','ид']);
+ const nameIdx=column(['name','dj','djname','artist','artistname','имя','имядиджея','диджей','артист','исполнитель']);
+ const genreIdx=column(['genre','style','musicstyle','жанр','стиль','music','направление']);
+ const urlIdx=column(['soundcloud','soundcloudurl','soundcloudlink','track','trackurl','tracklink','url','link','ссылка','ссылканатрек','саундклауд','музыка']);
+ const feeIdx=column(['fee','booking','bookingfee','price','cost','bookingcost','гонорар','стоимость','ценабукинга','стоимостьбукинга','цена']);
+ if(nameIdx<0&&idIdx<0)throw Error('Нужна колонка Name или ID.');
+ if(urlIdx<0)throw Error('Нужна колонка SoundCloud или URL.');
+ if(feeIdx<0)throw Error('Нужна колонка Fee или Booking.');
+ const ids=new Set();
+ const result=[];
+ for(const row of rows){
+  const rawName=String(row[nameIdx]||row[idIdx]||'').trim();
+  if(!rawName)continue;
+  const rawID=String(row[idIdx]||'').trim().toLowerCase();
+  const match=fallbackArtists.find(a=>a.id===rawID||a.name.toLowerCase()===rawName.toLowerCase());
+  const id=rawID||match?.id||rawName.toLowerCase().replace(/[^a-z0-9а-яё]+/gi,'-').replace(/^-|-$/g,'');
+  if(!id||ids.has(id))continue;
+  const url=String(row[urlIdx]||'').trim();
+  if(!/^https:\/\/(www\.)?(soundcloud\.com|on\.soundcloud\.com)\//i.test(url)){
+   console.warn('Ignoring DJ without a SoundCloud link:',rawName,url);
+   continue;
+  }
+  const feeText=String(row[feeIdx]||'').replace(/[€$\s]/g,'').replace(/\.(?=\d{3}(?:\D|$))/g,'').replace(',','.');
+  const fee=Number(feeText);
+  if(!Number.isFinite(fee)||fee<0)continue;
+  ids.add(id);
+  result.push({id,name:rawName,genre:genreIdx>=0?String(row[genreIdx]||'').trim():'',url,fee});
+ }
+ if(!result.length)throw Error('Не найдено DJ с корректной SoundCloud-ссылкой и гонораром.');
+ return result;
+}
+async function loadSheet(){
+ const input=$('sheet').value.trim();
+ $('sheetStatus').textContent='Загружаю DJ из Google Sheets…';
+ try{
+  const csvURL=sheetCsvUrl(input);
+  const response=await fetch(csvURL,{cache:'no-store'});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const body=(await response.text()).replace(/^\uFEFF/,'');
+  if(/^\s*<!doctype|^\s*<html/i.test(body))throw Error('Google Sheets вернул HTML вместо CSV. Нужен публичный доступ.');
+  const entries=parseSheetArtists(csvRows(body));
+  if(running||ending)throw Error('Обновление доступно после окончания вечеринки.');
+  artists=entries;
+  fees=Object.fromEntries(entries.map(a=>[a.id,a.fee]));
+  localStorage.setItem('nightshift-lite-sheet',input);
+  localStorage.setItem('nightshift-lite-artists',JSON.stringify(entries));
+  renderLineup();
+  updateFee();
+  syncTrack();
+  $('sheetStatus').textContent='Синхронизировано DJ: '+entries.length+' · имена, жанры, SoundCloud и гонорары.';
+ }catch(error){
+  $('sheetStatus').textContent='Google Sheets: '+error.message+' Используется последний доступный список.';
+  console.warn('NightShift sheet sync:',error);
+ }
+}
+$('loadSheet').onclick=loadSheet;
+const defaultSheet='https://docs.google.com/spreadsheets/d/1vfeH9qxnX1HcEv_BhwrJGI2qjWHQyDVENAFAzgDaqQ8/edit?usp=sharing';
+const saved=localStorage.getItem('nightshift-lite-sheet');
+$('sheet').value=saved||defaultSheet;
+try{
+ const cached=JSON.parse(localStorage.getItem('nightshift-lite-artists')||'null');
+ if(Array.isArray(cached)&&cached.length&&cached.every(a=>a&&a.id&&a.name&&a.url&&Number.isFinite(a.fee))){
+  artists=cached;
+  fees=Object.fromEntries(cached.map(a=>[a.id,a.fee]));
+  renderLineup();
+  updateFee();
+  syncTrack();
+ }
+}catch(error){console.warn('Cannot read cached DJ lineup:',error);}
+loadSheet();
 const variants=['baggy_m','fashion_f','jungle_f','raver_f','raver_m'];
 const actorAssets={};
 let loaded=0;
