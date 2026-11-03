@@ -217,14 +217,28 @@ function addFixture(holder,obj,name){
  const bounds=new THREE.Box3().setFromObject(obj);
  const top=Math.max(.4,bounds.max.y-holder.position.y);
  if(name==='discoball'){
-  const points=[];
-  const circle=new THREE.CircleGeometry(.105,8);
-  for(let i=0;i<40;i++){
-   const material=new THREE.MeshBasicMaterial({color:[0xbdb3ff,0xffbddf,0xbceeff,0xffffff][i%4],transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
-   const dot=new THREE.Mesh(circle,material);dot.rotation.x=-Math.PI/2;dot.position.y=.05;stage.add(dot);points.push(dot);
+  // One instanced mesh per mirror ball, instead of dozens of draw calls.
+  // Dots spill onto the floor AND the surrounding walls, like real mirror
+  // reflections moving with the ball.
+  const geometry=new THREE.CircleGeometry(1,10);
+  const material=new THREE.MeshBasicMaterial({
+   map:smokeTexture,color:0xffffff,transparent:true,opacity:0,
+   depthWrite:false,side:THREE.DoubleSide,
+   blending:THREE.AdditiveBlending,toneMapped:false
+  });
+  const reflections=new THREE.InstancedMesh(geometry,material,90);
+  reflections.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  reflections.frustumCulled=false;
+  reflections.renderOrder=2;
+  for(let i=0;i<90;i++){
+   const color=new THREE.Color();
+   color.setHSL(.58+(i%7)*.034,.20+(i%3)*.06,.64+(i%5)*.04);
+   reflections.setColorAt(i,color);
   }
-  const glow=new THREE.PointLight(0xcbb9ff,0,8,2);glow.position.y=top-.06;holder.add(glow);
-  fixtures.push({name,holder,obj,points,glow,top});
+  stage.add(reflections);
+  const glow=new THREE.PointLight(0xcbb9ff,0,8,2);
+  glow.position.y=top-.06;holder.add(glow);
+  fixtures.push({name,holder,obj,reflections,glow,top,phase:holder.position.x>0?1.7:0});
  }else if(name==='laser_new'||name==='light'){
   const laser=name==='laser_new';
   const colors=laser?[0x31ff64,0x287cff,0xff334d]:[0xc15dff,0x87abff];
@@ -244,17 +258,37 @@ function animateFixtures(t,dt,active){
  const quality=fxSettings[fxQuality];
  for(const fx of fixtures){
   if(fx.name==='discoball'){
-   if(active)fx.obj.rotation.y+=dt*.52;
-   fx.glow.intensity=active?(1.1+.45*Math.sin(t*4))*quality.brightness:0;
-   fx.points.forEach((p,i)=>{
-    const angle=t*.36+i*Math.PI*2/40,radius=2.1+i%5*.52;
-    p.position.set(
-     THREE.MathUtils.clamp(fx.holder.position.x+Math.cos(angle)*radius,-7.5,7.5),
-     .055,
-     THREE.MathUtils.clamp(fx.holder.position.z+Math.sin(angle)*radius,-7.5,7.5)
-    );
-    p.material.opacity=active?.2+.25*(.5+.5*Math.sin(t*2+i)):0;
-   });
+   if(active)fx.obj.rotation.y+=dt*.58;
+   fx.glow.intensity=active?(1.15+.26*Math.sin(t*3.4+fx.phase))*quality.brightness:0;
+   const count=fxQuality==='low'?30:fxQuality==='medium'?60:90;
+   fx.reflections.count=active?count:0;
+   fx.reflections.material.opacity=active?.62*quality.brightness:0;
+   const dummy=new THREE.Object3D();
+   for(let i=0;i<count;i++){
+    const theta=i*2.39996323+t*.38+fx.phase;
+    const drift=Math.sin(t*.27+i*.79);
+    const r=1.15+(i%13)*.37;
+    const x=fx.holder.position.x+Math.cos(theta)*r;
+    const z=fx.holder.position.z+Math.sin(theta)*r;
+    const size=(.075+(i%5)*.018)*(.84+.16*Math.sin(t*2+i));
+    dummy.rotation.set(0,0,0);
+    if(i%9===0){
+     // Reflections on the rear wall.
+     dummy.position.set(THREE.MathUtils.clamp(x,-7.5,7.5),.35+(i%12)*.13,-7.78);
+    }else if(i%7===0){
+     // Reflections on the side wall facing the club.
+     const side=fx.holder.position.x<0?-1:1;
+     dummy.position.set(side*7.76,.3+(i%11)*.14,THREE.MathUtils.clamp(z,-7.4,7.4));
+     dummy.rotation.y=side===-1?Math.PI/2:-Math.PI/2;
+    }else{
+     dummy.position.set(THREE.MathUtils.clamp(x+drift*.1,-7.55,7.55),.063,THREE.MathUtils.clamp(z,-7.55,7.55));
+     dummy.rotation.x=-Math.PI/2;
+    }
+    dummy.scale.set(size,size,1);
+    dummy.updateMatrix();
+    fx.reflections.setMatrixAt(i,dummy.matrix);
+   }
+   fx.reflections.instanceMatrix.needsUpdate=true;
    continue;
   }
   // Alternating fan/sweep patterns: smooth scanning, no hard jumps.
@@ -1156,7 +1190,7 @@ if(!partyActive){djPose='idle';djNextAction=8;
  for(const [state,actor] of Object.entries(djActors))actor.visible=state==='idle';
 }else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
-hemi.intensity+=((partyActive?1.85:2.3)-hemi.intensity)*.025;sun.intensity+=((partyActive?1.05:2)-sun.intensity)*.025;
+hemi.intensity+=((partyActive?1.65:2.3)-hemi.intensity)*.025;sun.intensity+=((partyActive?.92:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(partyActive?0x050410:0x090b16),.02);
 scene.fog.color.copy(scene.background);
 scene.fog.density+=((partyActive?.014:.018)-scene.fog.density)*.016;
@@ -1171,8 +1205,8 @@ hazeLayers.forEach((layer,i)=>{
  m.position.z=layer.baseZ+Math.cos(t*.08+layer.offset)*.43;
  m.position.y=.7+(.5+.5*Math.sin(t*.10+layer.offset))*.95;
 });
-venueFills.forEach((l,i)=>{l.intensity+=((partyActive?3.0*quality.brightness:0)-l.intensity)*.025;});
-wallWashes.forEach((l,i)=>{l.intensity+=((partyActive&&fxQuality!=='low'?1.5*quality.brightness:0)-l.intensity)*.025;});
+venueFills.forEach((l,i)=>{l.intensity+=((partyActive?2.75*quality.brightness:0)-l.intensity)*.025;});
+wallWashes.forEach((l,i)=>{l.intensity+=((partyActive&&fxQuality!=='low'?1.3*quality.brightness:0)-l.intensity)*.025;});
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
 animateFixtures(t,dt,partyActive);
 if(partyActive){
