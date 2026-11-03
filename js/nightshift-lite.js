@@ -106,8 +106,7 @@ function animateDanceFloor(dt,active,time){
  danceFloorGlow+= (aim-danceFloorGlow)*Math.min(1,dt*(active?3.5:4.8));
  danceFloorTick+=dt;
  // Updating colors 20 times/sec is enough for slow, smooth waves.
- if(danceFloorTick<.05&&Math.abs(danceFloorGlow-aim)>.002)return;
- if(danceFloorTick<.05&&active)return;
+ if(danceFloorTick<.05)return;
  danceFloorTick=0;
  for(const tile of danceFloorTiles){
   const wave=Math.sin(time*1.35+tile.phase);
@@ -119,7 +118,12 @@ function animateDanceFloor(dt,active,time){
   for(const entry of tile.materials){
    const m=entry.material;
    if(entry.baseEmissive){
-    m.emissive.copy(entry.baseEmissive).addScaledVector(danceFloorTint,strength);
+    // THREE.Color has no addScaledVector (that method belongs to Vector3).
+    // Mutate RGB channels directly without allocating objects each frame.
+    m.emissive.copy(entry.baseEmissive);
+    m.emissive.r+=danceFloorTint.r*strength;
+    m.emissive.g+=danceFloorTint.g*strength;
+    m.emissive.b+=danceFloorTint.b*strength;
    }else if(entry.baseColor){
     m.color.copy(entry.baseColor).lerp(danceFloorTint,strength*.40);
    }
