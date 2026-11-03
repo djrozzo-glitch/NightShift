@@ -421,16 +421,25 @@ function prepareAvatar(model){
  });
  return materials;
 }
+// Animation policy: actual travel=walk only; at a destination choose
+// dance, drink, sit or idle. No dance/drink fallback for locomotion.
+const MOTION_BY_ACTIVITY={dance:'dance',bar:'drink',sofa:'sit',chat:'idle'};
+function resetAvatarTransition(p){
+ if(!p.fadingItem)return;
+ const outgoing=p.fadingItem;
+ outgoing.mesh.visible=false;
+ setAvatarOpacity(outgoing,1);
+ outgoing.action?.stop();
+ p.fadingItem=null;
+ p.fadeTime=0;
+}
 function actorState(p,motion){
- if(p.motion===motion&&p.mesh)return;
  p.cache||={};
- // Never substitute a dancing animation for walking. If an animation
- // failed to load, use this same character's idle/walk mesh instead.
  const assets=actorAssets[p.variant]||{};
- const asset=assets[motion]||assets.walk||assets.idle||assets.dance||assets.sit||assets.drink;
+ const asset=assets[motion]||(motion==='walk'?null:assets.idle||assets.walk);
  if(!asset){
-  console.warn('Missing character GLB',variants[p.variant],motion);
-  return;
+  console.warn('Required animation unavailable:',variants[p.variant],motion);
+  return false;
  }
  let item=p.cache[motion];
  if(!item){
@@ -439,69 +448,80 @@ function actorState(p,motion){
   const materials=prepareAvatar(mesh);
   p.group.add(mesh);
   const mixer=asset.animations?.length?new THREE.AnimationMixer(mesh):null;
-  const preferred=asset.animations?.find(clip=>clip.name.toLowerCase().includes(motion==='drink'?'drink':motion==='sit'?'sit':motion))||asset.animations?.[0];
-  const action=mixer?mixer.clipAction(preferred):null;
+  const keyword=motion==='sit'?'sit':motion;
+  const clip=asset.animations?.find(c=>c.name.toLowerCase().includes(keyword))||asset.animations?.[0];
+  const action=mixer&&clip?mixer.clipAction(clip):null;
   item={mesh,mixer,action,materials};
   p.cache[motion]=item;
  }
- const previous=p.activeItem;
- const moving=motion==='walk';
- // Complete any unfinished fade before starting another. Never turn both
- // meshes invisible during a rapid change of activity.
- if(p.fadingItem){
-  const fading=p.fadingItem;
-  fading.mesh.visible=false;
-  setAvatarOpacity(fading,1);
-  fading.mixer?.stopAllAction();
-  p.fadingItem=null;
+ if(p.motion===motion&&p.activeItem===item){
+  if(motion==='walk')enforceWalkingVisual(p);
+  return true;
  }
+ const previous=p.activeItem;
+ resetAvatarTransition(p);
+ const moving=motion==='walk';
  if(previous&&previous!==item){
   if(moving){
-   previous.mesh.visible=false;
-   previous.action?.stop();
+   // Never blend an activity pose into a moving character.
+   previous.mesh.visible=false;previous.action?.stop();
+   setAvatarOpacity(previous,1);
   }else{
-   // Keep walk's last pose visible as the dance/idle pose becomes visible.
-   // The old implementation stopped walk immediately and made dance 100%
-   // transparent, causing a one-frame disappearing guest.
-   p.fadingItem=previous;
-   p.fadeTime=0;
-   // Freeze the previous action at its current pose while it fades.
-   // Stopping here would snap the old mesh back to the bind pose.
+   // The last pose stays still while the new animation starts.
+   p.fadingItem=previous;p.fadeTime=0;
    if(previous.action)previous.action.paused=true;
+   previous.mesh.visible=true;
    setAvatarOpacity(previous,1);
   }
  }
  item.mesh.visible=true;
- setAvatarOpacity(item,1); // The new model is visible on the first frame.
+ setAvatarOpacity(item,1);
  if(item.action){
+  item.action.stop();
   item.action.reset();
   item.action.setEffectiveTimeScale(1);
   item.action.setLoop(THREE.LoopRepeat,Infinity);
   item.action.clampWhenFinished=false;
   item.action.play();
   if(motion==='dance')item.action.time=Math.random()*Math.max(item.action.getClip().duration,.1);
-  // Calculate the FIRST animated pose before rendering the new mesh.
-  // Otherwise the rest pose briefly flashes on every transition.
   item.mixer.update(0);
  }
  p.mesh=item.mesh;p.mixer=item.mixer;p.activeItem=item;p.motion=motion;
+ if(moving)enforceWalkingVisual(p);
+ return true;
+}
+function enforceWalkingVisual(p){
+ const walk=p.cache?.walk;
+ if(!walk)return;
+ resetAvatarTransition(p);
+ // Also hide any older cached actions that were left visible by an
+ // interrupted fade or a reverse sit animation.
+ for(const [name,item] of Object.entries(p.cache)){
+  if(name==='walk')continue;
+  item.mesh.visible=false;
+  item.action?.stop();
+  setAvatarOpacity(item,1);
+ }
+ walk.mesh.visible=true;
+ setAvatarOpacity(walk,1);
+ if(walk.action&&!walk.action.isRunning()){
+  walk.action.reset();
+  walk.action.setEffectiveTimeScale(1);
+  walk.action.setLoop(THREE.LoopRepeat,Infinity);
+  walk.action.play();
+  walk.mixer.update(0);
+ }
+ p.motion='walk';p.mesh=walk.mesh;p.activeItem=walk;p.mixer=walk.mixer;
 }
 function updateAvatar(p,dt){
  const current=p.activeItem;
  if(current?.mixer)current.mixer.update(dt);
  if(p.fadingItem){
   const fade=p.fadingItem;
-  // The outgoing pose stays frozen; advancing it would cause ghost motion.
   p.fadeTime+=dt;
-  const alpha=Math.min(1,p.fadeTime/.20);
   setAvatarOpacity(current,1);
-  setAvatarOpacity(fade,1-alpha);
-  if(alpha>=1){
-   fade.mesh.visible=false;
-   setAvatarOpacity(fade,1);
-   fade.mixer?.stopAllAction();
-   p.fadingItem=null;
-  }
+  setAvatarOpacity(fade,1-Math.min(1,p.fadeTime/.18));
+  if(p.fadeTime>=.18)resetAvatarTransition(p);
  }
 }
 function routeGuest(p,activity,preferredSpot=null){
@@ -707,8 +727,8 @@ function updateGuest(p,dt){
  p.thirst=Math.min(1,p.thirst+dt*(p.state==='dance'?.008:.003));
  p.energy=Math.max(0,p.energy-dt*(p.state==='dance'?.004:.001));
  if(p.state==='walk'){
-  // Always enforce locomotion while coordinates are changing.
-  if(p.motion!=='walk')actorState(p,'walk');
+  // Hard invariant: locomotion never renders a dance, drink or sit pose.
+  enforceWalkingVisual(p);
   // Walk inside from the door before taking the path to the reserved tile.
   const targetX=p.entryPending?p.entryX:p.x;
   const targetZ=p.entryPending?p.entryZ:p.z;
@@ -809,7 +829,10 @@ if(partyActive){
  for(const p of guests)updateGuest(p,dt);
  // Advance animated poses every rendered frame. A 30fps mixer with 120fps
  // locomotion previously created visible stepping/jitter in all variants.
- for(const p of guests)updateAvatar(p,dt);
+ for(const p of guests){
+  if(p.state==='walk'||p.state==='exit')enforceWalkingVisual(p);
+  updateAvatar(p,dt);
+ }
 }else if(ending){
  animateExits(dt);
 }else if(paused){
