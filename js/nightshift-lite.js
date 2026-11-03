@@ -677,13 +677,46 @@ const guestAnimationFiles={
  raver_f:{walk:'raver_f_walk.glb',dance:'raver_f_dance.glb',idle:'raver_f_chat.glb',drink:'raver_f_chat.glb',sit:'raver_f_sit.glb'},
  raver_m:{walk:'raver_m_walk.glb',dance:'raver_m_dance.glb',idle:'raver_m_idle.glb',drink:'raver_m_drink.glb',sit:'raver_m_sit 2.glb'}
 };
-function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatMap((name,i)=>
- Object.entries(guestAnimationFiles[name]).map(async([state,file])=>{
-  const g=await loadGLB('assets/characters/'+encodeURIComponent(file));
+// Progressive loading: walking + dancing are playable first. Only ready
+// variants can spawn; no guest ever walks invisibly while GLBs are downloading.
+const readyGuestVariants=new Set();
+let coreGuestPromise=null;
+function guestVariantReady(i){
+ return !!(actorAssets[i]?.walk?.animations?.length && actorAssets[i]?.dance?.animations?.length);
+}
+function startGuestPreload(){
+ if(actorPromise)return coreGuestPromise;
+ const loadAction=async(i,state)=>{
+  const name=variants[i],file=guestAnimationFiles[name][state];
+  const gltf=await loadGLB('assets/characters/'+encodeURIComponent(file));
   if(!actorAssets[i])actorAssets[i]={};
-  if(g)actorAssets[i][state]=g;loaded++;
- })
-)).then(()=>true);}
+  if(gltf)actorAssets[i][state]=gltf;
+  loaded++;
+  return gltf;
+ };
+ // Stage one: all types can walk into the club and start dancing.
+ const core=variants.map((name,i)=>Promise.all([
+  loadAction(i,'walk'),loadAction(i,'dance')
+ ]).then(()=>{
+  if(!guestVariantReady(i))return;
+  readyGuestVariants.add(i);
+  if(running&&!paused&&!ending&&!guestsReady){
+   guestsReady=true;guestClock=0;
+   $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. Ожидается до '+guestCapacity+' гостей.';
+   addGuest();
+  }
+ }));
+ coreGuestPromise=Promise.all(core);
+ // Stage two: idle first (pause/chat), then bar and sofa actions.
+ // Starting only after core avoids 25 simultaneous 7–8MB downloads.
+ const extras=coreGuestPromise.then(async()=>{
+  await Promise.all(variants.map((name,i)=>loadAction(i,'idle')));
+  await Promise.all(variants.flatMap((name,i)=>['drink','sit'].map(state=>loadAction(i,state))));
+ });
+ actorPromise=Promise.all([coreGuestPromise,extras]).then(()=>true);
+ return coreGuestPromise;
+}
+function loadGuestsOnDemand(){return startGuestPreload();}
 // GLTF assets remain alive unless the shared geometry/textures are disposed.
 // Only call this after ALL guests have left: their animated clones reuse these assets.
 function releaseGuestAssets(){
@@ -709,6 +742,8 @@ function releaseGuestAssets(){
  materials.forEach(m=>m.dispose());
  textures.forEach(t=>t.dispose());
  for(const key of Object.keys(actorAssets))delete actorAssets[key];
+ readyGuestVariants.clear();
+ coreGuestPromise=null;
  actorPromise=null;
  loaded=0;
  console.info('NightShift: guest GLBs, geometry, materials and textures released after the party.');
@@ -893,7 +928,9 @@ function createChatPair(){
 }
 function addGuest(){
  if(!running||paused||ending||guests.length>=guestCapacity)return;
- const variant=Math.floor(Math.random()*variants.length);
+ const available=[...readyGuestVariants];
+ if(!available.length)return;
+ const variant=pick(available);
  // Every guest is created at the two-cell entrance, never at their dance destination.
  const group=new THREE.Group();
  group.position.set((Math.random()-.5)*.7,.05,7.45);
