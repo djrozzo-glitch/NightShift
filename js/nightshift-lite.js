@@ -317,11 +317,11 @@ let loaded=0;
 let actorPromise=null;
 // Service animations are loaded only when the first party begins, keeping startup light.
 const guestAnimationFiles={
- baggy_m:{walk:'baggy_m_walk.glb',dance:'baggy_m_dance.glb',drink:'baggy_m_drink.glb',sit:'baggy_m_sit.glb'},
- fashion_f:{walk:'fashion_f_walk.glb',dance:'fashion_f_dance.glb',drink:'fashion_f_drink.glb',sit:'fashion_f_sit.glb'},
- jungle_f:{walk:'jungle_f_walk.glb',dance:'jungle_f_dance.glb',drink:'jungle_f_drink.glb',sit:'jungle_f_sit.glb'},
- raver_f:{walk:'raver_f_walk.glb',dance:'raver_f_dance.glb',drink:'raver_f_chat.glb',sit:'raver_f_sit.glb'},
- raver_m:{walk:'raver_m_walk.glb',dance:'raver_m_dance.glb',drink:'raver_m_drink.glb',sit:'raver_m_sit 2.glb'}
+ baggy_m:{walk:'baggy_m_walk.glb',dance:'baggy_m_dance.glb',idle:'baggy_m_idle.glb',drink:'baggy_m_drink.glb',sit:'baggy_m_sit.glb'},
+ fashion_f:{walk:'fashion_f_walk.glb',dance:'fashion_f_dance.glb',idle:'fashion_f_idle.glb',drink:'fashion_f_drink.glb',sit:'fashion_f_sit.glb'},
+ jungle_f:{walk:'jungle_f_walk.glb',dance:'jungle_f_dance.glb',idle:'jungle_f_idle.glb',drink:'jungle_f_drink.glb',sit:'jungle_f_sit.glb'},
+ raver_f:{walk:'raver_f_walk.glb',dance:'raver_f_dance.glb',idle:'raver_f_chat.glb',drink:'raver_f_chat.glb',sit:'raver_f_sit.glb'},
+ raver_m:{walk:'raver_m_walk.glb',dance:'raver_m_dance.glb',idle:'raver_m_idle.glb',drink:'raver_m_drink.glb',sit:'raver_m_sit 2.glb'}
 };
 function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatMap((name,i)=>
  Object.entries(guestAnimationFiles[name]).map(async([state,file])=>{
@@ -336,6 +336,14 @@ const guests=[];const clock=new THREE.Clock();
 const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
 const barSpots=[{x:-6.4,z:-4},{x:6.4,z:-4}];
 const sofaSpots=[{x:-6.4,z:5},{x:6.4,z:5},{x:-3,z:6.65-1/3},{x:3,z:6.65-1/3}];
+// Quiet conversation spots in the open area between the floor and the lounge.
+const chatStations=[
+ [{x:-3.5,z:2.5},{x:-2.5,z:2.5}],
+ [{x:2.5,z:2.5},{x:3.5,z:2.5}],
+ [{x:-2,z:4.5},{x:-1,z:4.5}],
+ [{x:1,z:4.5},{x:2,z:4.5}]
+];
+let chatClock=0;
 // Reserve destinations while a guest is walking there AND while they use them.
 // A dance tile is never assigned to two guests simultaneously.
 const danceSpots=danceTilePositions.map(([x,z])=>({x,z}));
@@ -345,12 +353,13 @@ function releaseSpot(p){
  if(p.reservation&&reservedSpots.get(p.reservation)===p)reservedSpots.delete(p.reservation);
  p.reservation=null;
 }
-function reserveDestination(p,activity){
- const candidates=activity==='dance'?danceSpots:activity==='bar'?barSpots:sofaSpots;
+function reserveDestination(p,activity,preferredSpot=null){
+ const candidates=activity==='dance'?danceSpots:activity==='bar'?barSpots:activity==='chat'?chatStations.flat():sofaSpots;
  // Shuffle by starting at a random index, without sorting the shared list.
- const start=Math.floor(Math.random()*candidates.length);
- for(let i=0;i<candidates.length;i++){
-  const spot=candidates[(start+i)%candidates.length];
+ const start=preferredSpot?0:Math.floor(Math.random()*candidates.length);
+ const choices=preferredSpot?[preferredSpot]:candidates;
+ for(let i=0;i<choices.length;i++){
+  const spot=choices[(start+i)%choices.length];
   const key=spotKey(activity,spot);
   if(!reservedSpots.has(key)){
    reservedSpots.set(key,p);p.reservation=key;
@@ -417,9 +426,9 @@ function actorState(p,motion){
   p.cache[motion]=item;
  }
  const previous=p.activeItem;
- // Walking must display only the walking clip immediately. Crossfading the
- // old dance pose into locomotion makes guests appear to slide while dancing.
  const moving=motion==='walk';
+ // Complete any unfinished fade before starting another. Never turn both
+ // meshes invisible during a rapid change of activity.
  if(p.fadingItem){
   p.fadingItem.mesh.visible=false;
   setAvatarOpacity(p.fadingItem,1);
@@ -427,19 +436,20 @@ function actorState(p,motion){
   p.fadingItem=null;
  }
  if(previous&&previous!==item){
-  previous.action?.stop();
   if(moving){
    previous.mesh.visible=false;
-   setAvatarOpacity(previous,1);
-   p.fadeTime=0;
+   previous.action?.stop();
   }else{
+   // Keep walk's last pose visible as the dance/idle pose becomes visible.
+   // The old implementation stopped walk immediately and made dance 100%
+   // transparent, causing a one-frame disappearing guest.
    p.fadingItem=previous;
    p.fadeTime=0;
    setAvatarOpacity(previous,1);
   }
  }
  item.mesh.visible=true;
- setAvatarOpacity(item,previous&&previous!==item&&!moving?0:1);
+ setAvatarOpacity(item,1); // The new model is visible on the first frame.
  if(item.action){
   item.action.reset();
   item.action.setEffectiveTimeScale(1);
@@ -457,8 +467,8 @@ function updateAvatar(p,dt){
   const fade=p.fadingItem;
   if(fade.mixer)fade.mixer.update(dt);
   p.fadeTime+=dt;
-  const alpha=Math.min(1,p.fadeTime/.22);
-  setAvatarOpacity(current,alpha);
+  const alpha=Math.min(1,p.fadeTime/.20);
+  setAvatarOpacity(current,1);
   setAvatarOpacity(fade,1-alpha);
   if(alpha>=1){
    fade.mesh.visible=false;
@@ -468,9 +478,9 @@ function updateAvatar(p,dt){
   }
  }
 }
-function routeGuest(p,activity){
+function routeGuest(p,activity,preferredSpot=null){
  releaseSpot(p);
- let destination=reserveDestination(p,activity);
+ let destination=reserveDestination(p,activity,preferredSpot);
  // Busy bar/sofas: wait on a free dance tile and try again on the next decision.
  if(!destination&&activity!=='dance'){
   activity='dance';
@@ -489,6 +499,20 @@ function routeGuest(p,activity){
  p.state='walk';
  return true;
 }
+function createChatPair(){
+ const candidates=guests.filter(p=>p.state==='dance'&&!p.chatPartner&&!p.fadingItem);
+ if(candidates.length<2)return;
+ const station=pick(chatStations.filter(pair=>pair.every(spot=>!reservedSpots.has(spotKey('chat',spot)))));
+ if(!station)return;
+ const a=pick(candidates);
+ const b=pick(candidates.filter(p=>p!==a));
+ a.chatPartner=b;b.chatPartner=a;
+ a.chatStarted=false;b.chatStarted=false;
+ a.chatDuration=b.chatDuration=7+Math.random()*6;
+ // Both locations are reserved before either guest starts walking.
+ routeGuest(a,'chat',station[0]);
+ routeGuest(b,'chat',station[1]);
+}
 function addGuest(){
  if(!running||guests.length>=MAX_GUESTS)return;
  const variant=Math.floor(Math.random()*variants.length);
@@ -497,7 +521,7 @@ function addGuest(){
  energy:.55+Math.random()*.45,thirst:Math.random()*.3,wait:0,activity:'dance',cache:{},visits:0};
  routeGuest(p,'dance');guests.push(p);$('counter').textContent='GUESTS: '+guests.length+' / '+MAX_GUESTS;
 }
-function removeGuests(){for(const p of guests){releaseSpot(p);for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
+function removeGuests(){for(const p of guests){releaseSpot(p);p.chatPartner=null;for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
 function endParty(message='Вечеринка закончилась. Выбери следующего DJ.'){
  if(!running)return;
@@ -510,7 +534,7 @@ function endParty(message='Вечеринка закончилась. Выбер
 }
 $('play').onclick=async()=>{
  if(!opened||running)return;
- running=true;partyTime=0;guestClock=0;removeGuests();
+ running=true;partyTime=0;guestClock=0;chatClock=0;removeGuests();
  $('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;
  $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До '+MAX_GUESTS+' гостей, танцы, бары и диваны.';
  // Call SoundCloud directly from the user click, BEFORE awaiting guest models.
@@ -556,6 +580,16 @@ function updateGuest(p,dt){
   if(dist<.13){
    if(p.activity==='dance'){actorState(p,'dance');p.state='dance';p.wait=7+Math.random()*12;}
    else if(p.activity==='bar'){actorState(p,'drink');p.state='drink';p.wait=3+Math.random()*4;}
+   else if(p.activity==='chat'){
+    actorState(p,'idle');p.state='chat_wait';p.wait=0;
+    const other=p.chatPartner;
+    if(other){p.group.rotation.y=Math.atan2(other.group.position.x-p.group.position.x,other.group.position.z-p.group.position.z);
+     if(other.state==='chat_wait'){
+      p.state='chat';other.state='chat';p.wait=other.wait=p.chatDuration;
+      other.group.rotation.y=Math.atan2(p.group.position.x-other.group.position.x,p.group.position.z-other.group.position.z);
+     }
+    }
+   }
    else{
     // Sofa model faces the room; rear-wall sofas need the opposite orientation.
     p.group.rotation.y=p.sofaBack?Math.PI:(p.group.position.x<0?Math.PI/2:-Math.PI/2);
@@ -570,8 +604,15 @@ function updateGuest(p,dt){
   }
   return;
  }
+ if(p.state==='chat_wait')return;
  p.wait-=dt;
  if(p.wait>0)return;
+ if(p.state==='chat'){
+  const other=p.chatPartner;
+  p.chatPartner=null;
+  if(other?.chatPartner===p)other.chatPartner=null;
+  routeGuest(p,'dance');return;
+ }
  if(p.state==='sit_down'){
   p.state='resting';p.wait=3+Math.random()*2;
   if(p.activeItem?.action)p.activeItem.action.paused=true;
@@ -621,7 +662,8 @@ venueFills.forEach((l,i)=>{l.intensity+=( (running?3.2:0)-l.intensity)*.025;});
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
 animateFixtures(t,dt,running);
 if(running){
- partyTime+=dt;guestClock+=dt;
+ partyTime+=dt;guestClock+=dt;chatClock+=dt;
+ if(chatClock>16){chatClock=0;createChatPair();}
  if(guestClock>1.25&&guests.length<MAX_GUESTS){guestClock=0;addGuest();}
  animAccum+=dt;
  for(const p of guests)updateGuest(p,dt);
