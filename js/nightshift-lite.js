@@ -403,6 +403,44 @@ const wallLoad=loadVenueModel('wall').then(g=>{
  }
 });
 const djActors={};
+const femaleDJActors={};
+let maleDJRoot=null,femaleDJRoot=null,femaleDJPromise=null;
+function selectedDJGender(){
+ return currentArtist()?.gender==='F'?'F':'M';
+}
+function activeDJActors(){return selectedDJGender()==='F'&&femaleDJRoot?femaleDJActors:djActors;}
+function syncDJModel(){
+ const female=selectedDJGender()==='F';
+ if(maleDJRoot)maleDJRoot.visible=!female||!femaleDJRoot;
+ if(femaleDJRoot)femaleDJRoot.visible=female;
+ if(female&&!femaleDJRoot)loadFemaleDJModels();
+}
+function loadFemaleDJModels(){
+ if(femaleDJPromise)return femaleDJPromise;
+ // Load asynchronously, independently of venue/guest readiness.
+ femaleDJPromise=Promise.all([
+  loadGLB('assets/characters/female_dj_idle.glb'),
+  loadGLB('assets/characters/female_dj_standing.glb'),
+  loadGLB('assets/characters/female_dj_handsup.glb')
+ ]).then(([idle,standing,handsup])=>{
+  if(!idle&&!standing&&!handsup){console.warn('Female DJ models unavailable');return;}
+  femaleDJRoot=new THREE.Group();
+  femaleDJRoot.position.set(0,.06,-7.5);
+  femaleDJRoot.visible=false;
+  stage.add(femaleDJRoot);
+  for(const [state,asset] of [['idle',idle||standing],['standing',standing||idle],['party',handsup||standing||idle]]){
+   if(!asset)continue;
+   const actor=cloneSkeleton(asset.scene);fitCharacterHeight(actor,1.65);
+   actor.visible=state==='idle';femaleDJRoot.add(actor);femaleDJActors[state]=actor;
+   if(asset.animations?.length){
+    const mixer=new THREE.AnimationMixer(actor);
+    mixer.clipAction(asset.animations[0]).play();extraMixers.push(mixer);
+   }
+  }
+  syncDJModel();
+ });
+ return femaleDJPromise;
+}
 const peopleExtras=Promise.all([
  // Keep bouncer GLB next to its external base-color and metallic/roughness textures.
  loadGLB('godot/characters/bouncer.glb'),
@@ -414,6 +452,7 @@ const peopleExtras=Promise.all([
  if(bouncer){const actor=bouncer.scene;fitCharacterHeight(actor,1.65);bouncerRoot.add(actor);if(bouncer.animations?.length){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(bouncer.animations[0]).play();extraMixers.push(mixer);}}
  stage.add(bouncerRoot);
  const djRoot=new THREE.Group();djRoot.position.set(0,.06,-7.5);djRoot.rotation.y=0;
+ maleDJRoot=djRoot;
  stage.add(djRoot);
  for(const [state,asset] of [['idle',idle||standing],['standing',standing||idle],['party',handsup||standing||idle]]){
   if(!asset)continue;
@@ -421,6 +460,7 @@ const peopleExtras=Promise.all([
   actor.visible=state==='idle';djRoot.add(actor);djActors[state]=actor;
   if(asset.animations?.length){const mixer=new THREE.AnimationMixer(actor);mixer.clipAction(asset.animations[0]).play();extraMixers.push(mixer);}
  }
+ syncDJModel();
 });
 const extraMixers=[];
 function makeTextPanel(text,w,h,{fontSize=68,background='#130c22',foreground='#e5c6ff'}={}){
@@ -524,6 +564,7 @@ let scWidget=null,scReady=false,scRequested=false,scStarted=false;
 const musicStatus=$('musicStatus');
 function syncTrack(){
  const artist=currentArtist();
+ syncDJModel();
  updatePosterScreens(artist?.name||'DJ',false);
  const url=artist?.url||'';
  $('trackLink').href=url||'https://soundcloud.com';
@@ -614,6 +655,7 @@ function parseSheetArtists(rows){
  const genreIdx=column(['genre','style','musicstyle','жанр','стиль','music','направление']);
  const urlIdx=column(['soundcloud','soundcloudurl','soundcloudlink','track','trackurl','tracklink','url','link','ссылка','ссылканатрек','саундклауд','музыка']);
  const feeIdx=column(['fee','booking','bookingfee','price','cost','bookingcost','гонорар','стоимость','ценабукинга','стоимостьбукинга','цена']);
+ const genderIdx=column(['gender','sex','m/f','mf','пол','полдиджея','djgender']);
  if(nameIdx<0&&idIdx<0)throw Error('Нужна колонка Name или ID.');
  if(urlIdx<0)throw Error('Нужна колонка SoundCloud или URL.');
  if(feeIdx<0)throw Error('Нужна колонка Fee или Booking.');
@@ -635,7 +677,7 @@ function parseSheetArtists(rows){
   const fee=Number(feeText);
   if(!Number.isFinite(fee)||fee<0)continue;
   ids.add(id);
-  result.push({id,name:rawName,genre:genreIdx>=0?String(row[genreIdx]||'').trim():'',url,fee});
+  result.push({id,name:rawName,genre:genreIdx>=0?String(row[genreIdx]||'').trim():'',url,fee,gender:genderIdx>=0&&String(row[genderIdx]||'').trim().toUpperCase()==='F'?'F':'M'});
  }
  if(!result.length)throw Error('Не найдено DJ с корректной SoundCloud-ссылкой и гонораром.');
  return result;
@@ -1177,13 +1219,14 @@ $('pause').onclick=togglePause;
 $('end').onclick=()=>endParty();
 let djNextAction=8,djPose='idle';
 function animateDJ(){
- if(!djActors.idle)return;
+ const actors=activeDJActors();
+ if(!actors.idle)return;
  if(partyTime>=djNextAction){
   const r=Math.random();
   djPose=!running?'idle':r<.70?'idle':r<.90?'standing':'party';
   djNextAction=partyTime+(djPose==='idle'?7+Math.random()*11:2+Math.random()*4);
  }
- for(const [state,actor] of Object.entries(djActors))actor.visible=state===djPose;
+ for(const [state,actor] of Object.entries(actors))actor.visible=state===djPose;
 }
 function sitAction(p,reverse=false){
  const action=p.cache?.sit?.action;
@@ -1295,7 +1338,7 @@ Promise.all([wallLoad,peopleExtras]).then(()=>{
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
 let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;controls.update();const partyActive=running&&!paused&&!ending;const target=partyActive?1:0;const quality=fxSettings[fxQuality];
 if(!partyActive){djPose='idle';djNextAction=8;
- for(const [state,actor] of Object.entries(djActors))actor.visible=state==='idle';
+ for(const [state,actor] of Object.entries(activeDJActors()))actor.visible=state==='idle';
 }else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
 hemi.intensity+=((partyActive?1.65:2.3)-hemi.intensity)*.025;sun.intensity+=((partyActive?.92:2)-sun.intensity)*.025;
