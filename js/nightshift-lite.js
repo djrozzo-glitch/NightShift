@@ -306,8 +306,25 @@ $('dj').addEventListener('change',()=>{updateFee();syncTrack()});
 syncTrack();
 initSoundCloud();
 let fees={};
+let guestCapacity=20;
+const MIN_GUESTS=20;
+function getGuestCapacity(id=$('dj').value){
+ const values=Object.values(fees).filter(Number.isFinite);
+ if(!Number.isFinite(fees[id])||values.length<2)return MIN_GUESTS;
+ const min=Math.min(...values),max=Math.max(...values);
+ if(max<=min)return MIN_GUESTS;
+ return Math.max(MIN_GUESTS,Math.min(MAX_GUESTS,Math.round(MIN_GUESTS+(fees[id]-min)/(max-min)*(MAX_GUESTS-MIN_GUESTS))));
+}
+function refreshBooking(){
+ const fee=fees[$('dj').value];
+ guestCapacity=getGuestCapacity();
+ $('fee').textContent=Number.isFinite(fee)?'€'+new Intl.NumberFormat('nl-NL',{maximumFractionDigits:2}).format(fee):'—';
+ $('bookingGuests').textContent=Number.isFinite(fee)?guestCapacity+' / '+MAX_GUESTS:'20 / '+MAX_GUESTS+' (ожидаем Google Sheets)';
+ $('counter').textContent='GUESTS: '+guests.length+' / '+guestCapacity;
+}
+
 function csvRows(s){const rows=[];let row=[],field='',quote=false;for(let i=0;i<s.length;i++){const c=s[i];if(c==='"'){if(quote&&s[i+1]==='"'){field+='"';i++}else quote=!quote}else if(c===','&&!quote){row.push(field);field=''}else if((c==='\n'||c==='\r')&&!quote){if(c==='\r'&&s[i+1]==='\n')i++;row.push(field);if(row.some(v=>v.trim()))rows.push(row);row=[];field=''}else field+=c}row.push(field);if(row.some(v=>v.trim()))rows.push(row);return rows}
-function updateFee(){const fee=fees[$('dj').value];$('fee').textContent=Number.isFinite(fee)?'€'+new Intl.NumberFormat('nl-NL',{maximumFractionDigits:2}).format(fee):'—';}
+function updateFee(){refreshBooking();}
 async function loadSheet(){const url=$('sheet').value.trim();if(!url){$('sheetStatus').textContent='Вставь CSV-ссылку.';return}if(!/^https:\/\/(docs\.google\.com|drive\.google\.com)\//.test(url)){$('sheetStatus').textContent='Используй опубликованную HTTPS-ссылку Google Sheets.';return}
 $('sheetStatus').textContent='Загружаю…';try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const rows=csvRows((await r.text()).replace(/^\uFEFF/,''));const header=rows.shift().map(x=>x.trim().toLowerCase());const idCol=header.indexOf('id'),feeCol=header.indexOf('fee');if(idCol<0||feeCol<0)throw Error('Нужны колонки id и fee');const next={};for(const row of rows){const id=(row[idCol]||'').trim().toLowerCase(),raw=(row[feeCol]||'').trim().replace(/[€\s]/g,'').replace(',','.');const value=Number(raw);if(Object.hasOwn(nameToLabel,id)&&raw&&Number.isFinite(value)&&value>=0)next[id]=value}if(!Object.keys(next).length)throw Error('Нет распознанных DJ/цен');fees=next;localStorage.setItem('nightshift-lite-sheet',url);$('sheetStatus').textContent='Загружено гонораров: '+Object.keys(fees).length;updateFee()}catch(e){$('sheetStatus').textContent='Ошибка загрузки: '+e.message+'. Проверь публикацию CSV и доступ CORS.'}}
 $('loadSheet').onclick=loadSheet;const defaultSheet='https://docs.google.com/spreadsheets/d/1vfeH9qxnX1HcEv_BhwrJGI2qjWHQyDVENAFAzgDaqQ8/gviz/tq?tqx=out:csv';const stored=localStorage.getItem('nightshift-lite-sheet');$('sheet').value=stored||defaultSheet;loadSheet();
@@ -331,7 +348,7 @@ function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatM
  })
 )).then(()=>true);}
 const MAX_GUESTS=40;
-let opened=false,running=false,guestClock=0,partyTime=0;
+let opened=false,running=false,paused=false,ending=false,guestClock=0,partyTime=0;
 const guests=[];const clock=new THREE.Clock();
 const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
 const barSpots=[{x:-6.4,z:-4},{x:6.4,z:-4}];
@@ -521,7 +538,7 @@ function createChatPair(){
  routeGuest(b,'chat',station[1]);
 }
 function addGuest(){
- if(!running||guests.length>=MAX_GUESTS)return;
+ if(!running||paused||ending||guests.length>=guestCapacity)return;
  const variant=Math.floor(Math.random()*variants.length);
  // Every guest is created at the two-cell entrance, never at their dance destination.
  const group=new THREE.Group();
@@ -534,9 +551,9 @@ function addGuest(){
  // Render the model at the doorway in its already-evaluated walking pose.
  p.group.updateMatrixWorld(true);
  guests.push(p);
- $('counter').textContent='GUESTS: '+guests.length+' / '+MAX_GUESTS;
+ $('counter').textContent='GUESTS: '+guests.length+' / '+guestCapacity;
 }
-function removeGuests(){for(const p of guests){releaseSpot(p);p.chatPartner=null;for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
+function removeGuests(){for(const p of guests){releaseSpot(p);p.chatPartner=null;for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+guestCapacity;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
 function endParty(message='Вечеринка закончилась. Выбери следующего DJ.'){
  if(!running)return;
@@ -686,7 +703,7 @@ animateFixtures(t,dt,running);
 if(running){
  partyTime+=dt;guestClock+=dt;chatClock+=dt;
  if(chatClock>16){chatClock=0;createChatPair();}
- if(guestClock>1.25&&guests.length<MAX_GUESTS){guestClock=0;addGuest();}
+ if(guestClock>1.25&&guests.length<guestCapacity){guestClock=0;addGuest();}
  for(const p of guests)updateGuest(p,dt);
  // Advance animated poses every rendered frame. A 30fps mixer with 120fps
  // locomotion previously created visible stepping/jitter in all variants.
