@@ -265,7 +265,7 @@ const guestAnimationFiles={
  fashion_f:{walk:'fashion_f_walk.glb',dance:'fashion_f_dance.glb',drink:'fashion_f_drink.glb',sit:'fashion_f_sit.glb'},
  jungle_f:{walk:'jungle_f_walk.glb',dance:'jungle_f_dance.glb',drink:'jungle_f_drink.glb',sit:'jungle_f_sit.glb'},
  raver_f:{walk:'raver_f_walk.glb',dance:'raver_f_dance.glb',drink:'raver_f_chat.glb',sit:'raver_f_sit.glb'},
- raver_m:{walk:'raver_m_walk.glb',dance:'raver_m_dance.glb',drink:'raver_m_idle.glb',sit:'raver_m_sit 2.glb'}
+ raver_m:{walk:'raver_m_walk.glb',dance:'raver_m_dance.glb',drink:'raver_m_drink.glb',sit:'raver_m_sit 2.glb'}
 };
 function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatMap((name,i)=>
  Object.entries(guestAnimationFiles[name]).map(async([state,file])=>{
@@ -361,14 +361,29 @@ function actorState(p,motion){
   p.cache[motion]=item;
  }
  const previous=p.activeItem;
+ // Walking must display only the walking clip immediately. Crossfading the
+ // old dance pose into locomotion makes guests appear to slide while dancing.
+ const moving=motion==='walk';
+ if(p.fadingItem){
+  p.fadingItem.mesh.visible=false;
+  setAvatarOpacity(p.fadingItem,1);
+  p.fadingItem.mixer?.stopAllAction();
+  p.fadingItem=null;
+ }
  if(previous&&previous!==item){
   previous.action?.stop();
-  p.fadingItem=previous;
-  p.fadeTime=0;
-  setAvatarOpacity(previous,1);
+  if(moving){
+   previous.mesh.visible=false;
+   setAvatarOpacity(previous,1);
+   p.fadeTime=0;
+  }else{
+   p.fadingItem=previous;
+   p.fadeTime=0;
+   setAvatarOpacity(previous,1);
+  }
  }
  item.mesh.visible=true;
- setAvatarOpacity(item,previous&&previous!==item?0:1);
+ setAvatarOpacity(item,previous&&previous!==item&&!moving?0:1);
  if(item.action){
   item.action.reset();
   item.action.setEffectiveTimeScale(1);
