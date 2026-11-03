@@ -525,96 +525,63 @@ function resetAvatarTransition(p){
  p.fadingItem=null;
  p.fadeTime=0;
 }
+// ONE avatar/skeleton per guest. All clips are played through the same
+// AnimationMixer, so no 3D model swap, transparent ghosts or rest-pose flashes.
 function actorState(p,motion){
- p.cache||={};
  const assets=actorAssets[p.variant]||{};
- const asset=assets[motion]||(motion==='walk'?null:assets.idle||assets.walk);
+ const asset=assets[motion];
  if(!asset){
-  console.warn('Required animation unavailable:',variants[p.variant],motion);
+  console.warn('Missing '+motion+' animation for',variants[p.variant]);
   return false;
+ }
+ if(!p.avatar){
+  const base=assets.walk;
+  if(!base)return false;
+  p.avatar=cloneSkeleton(base.scene);
+  fitCharacterHeight(p.avatar,1.65);
+  p.avatarMaterials=prepareAvatar(p.avatar);
+  p.group.add(p.avatar);
+  p.mixer=new THREE.AnimationMixer(p.avatar);
+  p.cache={};
  }
  let item=p.cache[motion];
  if(!item){
-  const mesh=cloneSkeleton(asset.scene);
-  fitCharacterHeight(mesh,1.65);
-  const materials=prepareAvatar(mesh);
-  p.group.add(mesh);
-  const mixer=asset.animations?.length?new THREE.AnimationMixer(mesh):null;
   const keyword=motion==='sit'?'sit':motion;
   const clip=asset.animations?.find(c=>c.name.toLowerCase().includes(keyword))||asset.animations?.[0];
-  const action=mixer&&clip?mixer.clipAction(clip):null;
-  item={mesh,mixer,action,materials};
+  if(!clip){console.warn('No animation clip:',variants[p.variant],motion);return false;}
+  const action=p.mixer.clipAction(clip);
+  item={action,clip};
   p.cache[motion]=item;
  }
- if(p.motion===motion&&p.activeItem===item){
-  if(motion==='walk')enforceWalkingVisual(p);
-  return true;
- }
- const previous=p.activeItem;
- resetAvatarTransition(p);
- const moving=motion==='walk';
- if(previous&&previous!==item){
-  if(moving){
-   // Never blend an activity pose into a moving character.
-   previous.mesh.visible=false;previous.action?.stop();
-   setAvatarOpacity(previous,1);
-  }else{
-   // The last pose stays still while the new animation starts.
-   p.fadingItem=previous;p.fadeTime=0;
-   if(previous.action)previous.action.paused=true;
-   previous.mesh.visible=true;
-   setAvatarOpacity(previous,1);
-  }
- }
- item.mesh.visible=true;
- setAvatarOpacity(item,1);
- if(item.action){
-  item.action.stop();
-  item.action.reset();
-  item.action.setEffectiveTimeScale(1);
-  item.action.setLoop(THREE.LoopRepeat,Infinity);
-  item.action.clampWhenFinished=false;
-  item.action.play();
-  if(motion==='dance')item.action.time=Math.random()*Math.max(item.action.getClip().duration,.1);
-  item.mixer.update(0);
- }
- p.mesh=item.mesh;p.mixer=item.mixer;p.activeItem=item;p.motion=motion;
- if(moving)enforceWalkingVisual(p);
+ if(p.motion===motion&&p.activeItem===item)return true;
+ const prev=p.activeItem?.action;
+ const next=item.action;
+ // All actions share one mesh and one skeleton. Stop root-motion side
+ // effects from overlapping visual clones by blending bone transforms.
+ next.enabled=true;
+ next.paused=false;
+ next.setEffectiveWeight(1);
+ next.setEffectiveTimeScale(1);
+ next.setLoop(motion==='sit'?THREE.LoopOnce:THREE.LoopRepeat,motion==='sit'?1:Infinity);
+ next.clampWhenFinished=motion==='sit';
+ next.reset().play();
+ if(motion==='dance')next.time=Math.random()*Math.max(item.clip.duration,.1);
+ if(prev&&prev!==next){
+  const duration=motion==='walk'?.15:motion==='sit'?.20:.24;
+  next.crossFadeFrom(prev,duration,false);
+  // Start walking shortly before moving coordinates, so the end of the
+  // previous activity cannot visually glide along the floor.
+  if(motion==='walk')p.walkBlendDelay=duration;
+ }else if(motion==='walk')p.walkBlendDelay=0;
+ p.motion=motion;p.mesh=p.avatar;p.activeItem=item;p.fadingItem=null;
+ p.mixer.update(0);
  return true;
 }
 function enforceWalkingVisual(p){
- const walk=p.cache?.walk;
- if(!walk)return;
- resetAvatarTransition(p);
- // Also hide any older cached actions that were left visible by an
- // interrupted fade or a reverse sit animation.
- for(const [name,item] of Object.entries(p.cache)){
-  if(name==='walk')continue;
-  item.mesh.visible=false;
-  item.action?.stop();
-  setAvatarOpacity(item,1);
- }
- walk.mesh.visible=true;
- setAvatarOpacity(walk,1);
- if(walk.action&&!walk.action.isRunning()){
-  walk.action.reset();
-  walk.action.setEffectiveTimeScale(1);
-  walk.action.setLoop(THREE.LoopRepeat,Infinity);
-  walk.action.play();
-  walk.mixer.update(0);
- }
- p.motion='walk';p.mesh=walk.mesh;p.activeItem=walk;p.mixer=walk.mixer;
+ if(p.motion!=='walk')actorState(p,'walk');
 }
 function updateAvatar(p,dt){
- const current=p.activeItem;
- if(current?.mixer)current.mixer.update(dt);
- if(p.fadingItem){
-  const fade=p.fadingItem;
-  p.fadeTime+=dt;
-  setAvatarOpacity(current,1);
-  setAvatarOpacity(fade,1-Math.min(1,p.fadeTime/.18));
-  if(p.fadeTime>=.18)resetAvatarTransition(p);
- }
+ p.mixer?.update(dt);
 }
 function routeGuest(p,activity,preferredSpot=null){
  releaseSpot(p);
@@ -711,18 +678,16 @@ function togglePause(){
 }
 function cleanGuest(p){
  releaseSpot(p);p.chatPartner=null;
- for(const item of Object.values(p.cache||{})){
-  item.mixer?.stopAllAction();
-  item.mixer?.uncacheRoot(item.mesh);
-  item.mesh?.traverse(obj=>{
-   // Skinned avatars own their bone textures; geometries/maps are shared
-   // with the GLB templates and are disposed only after the last guest.
-   if(obj.isSkinnedMesh)obj.skeleton?.dispose();
-  });
-  item.materials?.forEach(m=>m.material.dispose());
+ if(p.mixer&&p.avatar){
+  p.mixer.stopAllAction();
+  p.mixer.uncacheRoot(p.avatar);
  }
+ p.avatar?.traverse(obj=>{
+  if(obj.isSkinnedMesh)obj.skeleton?.dispose();
+ });
+ p.avatarMaterials?.forEach(entry=>entry.material.dispose());
  stage.remove(p.group);
- p.cache={};p.activeItem=null;p.fadingItem=null;p.mesh=null;p.mixer=null;
+ p.cache={};p.activeItem=null;p.fadingItem=null;p.mesh=null;p.mixer=null;p.avatar=null;p.avatarMaterials=null;
 }
 function completeParty(){
  ending=false;running=false;paused=false;guestsReady=false;
@@ -811,20 +776,26 @@ function animateDJ(){
  for(const [state,actor] of Object.entries(djActors))actor.visible=state===djPose;
 }
 function sitAction(p,reverse=false){
- const item=p.cache?.sit,action=item?.action;
+ const action=p.cache?.sit?.action;
  if(!action)return 0;
  const duration=Math.max(.25,action.getClip().duration);
- action.stop();
- action.reset();
  action.enabled=true;
  action.setLoop(THREE.LoopOnce,1);
  action.clampWhenFinished=true;
- action.setEffectiveTimeScale(reverse?-1:1);
- action.time=reverse?Math.max(0,duration-.001):0;
+ if(reverse){
+  // Keep the last seated pose, then play the clip in reverse on the SAME rig.
+  action.stop();
+  action.reset();
+  action.setEffectiveTimeScale(-1);
+  action.time=Math.max(0,duration-.001);
+  action.play();
+ }else{
+  action.setEffectiveTimeScale(1);
+  action.paused=false;
+  // The transition to sit has already started this clip with a crossfade.
+ }
  action.paused=false;
- action.play();
- // Evaluate the new sitting/standing pose before it reaches the renderer.
- item.mixer.update(0);
+ p.mixer?.update(0);
  return duration;
 }
 function updateGuest(p,dt){
@@ -869,6 +840,7 @@ function updateGuest(p,dt){
    }
    if(p.activity==='bar')p.group.rotation.y=p.group.position.x<0?-Math.PI/2:Math.PI/2;
   }else{
+   if(p.walkBlendDelay>0){p.walkBlendDelay=Math.max(0,p.walkBlendDelay-dt);return;}
    const step=Math.min(p.speed*dt,dist);
    p.group.position.x+=dx/dist*step;p.group.position.z+=dz/dist*step;p.group.rotation.y=Math.atan2(dx,dz);
   }
