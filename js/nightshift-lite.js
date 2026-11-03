@@ -892,6 +892,11 @@ function updateAvatar(p,dt){
  p.mixer?.update(dt);
 }
 function routeGuest(p,activity,preferredSpot=null){
+ // Optional actions arrive later than core walk/dance. Keep guests safely
+ // dancing until their own GLB action finishes loading.
+ if(activity==='bar'&&!actorAssets[p.variant]?.drink)activity='dance';
+ if(activity==='sofa'&&!actorAssets[p.variant]?.sit)activity='dance';
+ if(activity==='chat'&&!actorAssets[p.variant]?.idle)activity='dance';
  releaseSpot(p);
  let destination=reserveDestination(p,activity,preferredSpot);
  // Busy bar/sofas: wait on a free dance tile and try again on the next decision.
@@ -913,7 +918,7 @@ function routeGuest(p,activity,preferredSpot=null){
  return true;
 }
 function createChatPair(){
- const candidates=guests.filter(p=>p.state==='dance'&&!p.chatPartner&&!p.fadingItem);
+ const candidates=guests.filter(p=>p.state==='dance'&&!p.chatPartner&&!p.fadingItem&&actorAssets[p.variant]?.idle);
  if(candidates.length<2)return;
  const station=pick(chatStations.filter(pair=>pair.every(spot=>!reservedSpots.has(spotKey('chat',spot)))));
  if(!station)return;
@@ -945,7 +950,12 @@ function addGuest(){
  $('counter').textContent='GUESTS: '+guests.length+' / '+guestCapacity;
 }
 function removeGuests(){for(const p of guests)cleanGuest(p);guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+guestCapacity;}
-$('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
+$('openClub').onclick=()=>{
+ opened=true;$('curtain').style.display='none';
+ $('play').disabled=false;
+ $('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';
+ startGuestPreload();
+};
 function updatePauseButton(){
  $('pause').disabled=!running||ending;
  $('pause').textContent=paused?'ПРОДОЛЖИТЬ':'ПАУЗА';
@@ -962,7 +972,8 @@ function togglePause(){
     speed:p.activeItem?.action?.getEffectiveTimeScale?.()||1,
     wasPaused:!!p.activeItem?.action?.paused
    };
-   actorState(p,'idle');
+   if(actorAssets[p.variant]?.idle)actorState(p,'idle');
+   else if(p.activeItem?.action)p.activeItem.action.paused=true;
   }
   $('stageStatus').textContent='Пауза · свет включён, гости отдыхают. Нажми «Продолжить».';
   musicStatus.textContent='Музыка на паузе.';
@@ -1087,17 +1098,14 @@ $('play').onclick=async()=>{
  musicStatus.textContent='Запускаю музыку… Если браузер запретил автозапуск, нажми Play в плеере.';
  if(scWidget)scWidget.play();
  else musicStatus.textContent='Плеер SoundCloud недоступен. Воспроизведи трек вручную.';
- try{
-  await loadGuestsOnDemand();
-  // No invisible guests: a visible walking rig and clip are mandatory.
-  const missingWalk=variants.filter((name,i)=>!actorAssets[i]?.walk?.animations?.length);
-  if(missingWalk.length)throw new Error('Walk GLBs missing: '+missingWalk.join(', '));
-  if(running&&!ending){
-   guestsReady=true;guestClock=0;
-   $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. Ожидается до '+guestCapacity+' гостей.';
-   addGuest();
-  }
- }catch(error){console.error('Guest animations unavailable',error);endParty('Не удалось загрузить персонажей.');}
+ // Download may already be underway while the player selects the DJ.
+ // The first ready walk+dance rig starts walking from the entrance immediately.
+ startGuestPreload();
+ if(readyGuestVariants.size){
+  guestsReady=true;guestClock=0;
+  $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. Ожидается до '+guestCapacity+' гостей.';
+  addGuest();
+ }
 };
 $('pause').onclick=togglePause;
 $('end').onclick=()=>endParty();
