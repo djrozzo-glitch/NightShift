@@ -478,7 +478,7 @@ function parseSheetArtists(rows){
    console.warn('Ignoring DJ without a SoundCloud link:',rawName,url);
    continue;
   }
-  const feeText=String(row[feeIdx]||'').replace(/[€$\s]/g,'').replace(/\.(?=\d{3}(?:\D|$))/g,'').replace(',','.');
+  const feeText=String(row[feeIdx]||'').replace(/\b(?:EUR|EURO|USD|GBP)\b/gi,'').replace(/[€$£\s]/g,'').replace(/\.(?=\d{3}(?:\D|$))/g,'').replace(',','.');
   const fee=Number(feeText);
   if(!Number.isFinite(fee)||fee<0)continue;
   ids.add(id);
@@ -487,16 +487,60 @@ function parseSheetArtists(rows){
  if(!result.length)throw Error('Не найдено DJ с корректной SoundCloud-ссылкой и гонораром.');
  return result;
 }
+// Google gviz JSONP works for publicly readable Sheets even when the
+// spreadsheet CSV endpoint does not send cross-origin fetch headers.
+let sheetRequestCount=0;
+function loadSheetJSONP(csvURL){
+ return new Promise((resolve,reject)=>{
+  const callback='nightshiftSheetResponse_'+(++sheetRequestCount);
+  let settled=false;
+  const script=document.createElement('script');
+  const url=new URL(csvURL);
+  url.searchParams.set('tqx','out:json;responseHandler:'+callback);
+  const cleanup=()=>{
+   delete window[callback];
+   script.remove();
+   clearTimeout(timeout);
+  };
+  const finish=(error,rows)=>{
+   if(settled)return;
+   settled=true;cleanup();
+   if(error)reject(error);else resolve(rows);
+  };
+  window[callback]=(result)=>{
+   if(result?.status==='error'){
+    const message=result.errors?.map(e=>e.detailed_message||e.message).join('; ')||'Google Sheets отказал в доступе';
+    finish(Error(message));return;
+   }
+   const table=result?.table;
+   if(!table?.cols||!table?.rows){finish(Error('Google Sheets вернул неожиданный формат данных.'));return;}
+   const heading=table.cols.map(c=>c.label||c.id||'');
+   const rows=table.rows.map(r=>(r.c||[]).map(c=>c?.f??c?.v??''));
+   finish(null,[heading,...rows]);
+  };
+  script.onerror=()=>finish(Error('Google Sheets JSONP недоступен. Проверь доступ Viewer и URL.'));
+  const timeout=setTimeout(()=>finish(Error('Google Sheets не ответил за 12 секунд.')),12000);
+  script.src=url.toString();
+  document.head.appendChild(script);
+ });
+}
 async function loadSheet(){
  const input=$('sheet').value.trim();
  $('sheetStatus').textContent='Загружаю DJ из Google Sheets…';
  try{
   const csvURL=sheetCsvUrl(input);
-  const response=await fetch(csvURL,{cache:'no-store'});
-  if(!response.ok)throw Error('HTTP '+response.status);
-  const body=(await response.text()).replace(/^\uFEFF/,'');
-  if(/^\s*<!doctype|^\s*<html/i.test(body))throw Error('Google Sheets вернул HTML вместо CSV. Нужен публичный доступ.');
-  const entries=parseSheetArtists(csvRows(body));
+  let rows;
+  try{
+   const response=await fetch(csvURL,{cache:'no-store'});
+   if(!response.ok)throw Error('HTTP '+response.status);
+   const body=(await response.text()).replace(/^\uFEFF/,'');
+   if(/^\s*<!doctype|^\s*<html/i.test(body))throw Error('Google Sheets вернул HTML вместо CSV.');
+   rows=csvRows(body);
+  }catch(csvError){
+   console.info('NightShift: CSV unavailable, trying Google Visualization JSONP:',csvError);
+   rows=await loadSheetJSONP(csvURL);
+  }
+  const entries=parseSheetArtists(rows);
   if(running||ending)throw Error('Обновление доступно после окончания вечеринки.');
   artists=entries;
   fees=Object.fromEntries(entries.map(a=>[a.id,a.fee]));
