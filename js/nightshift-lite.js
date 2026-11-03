@@ -792,6 +792,10 @@ function togglePause(){
   $('stageStatus').textContent='Пауза · свет включён, гости отдыхают. Нажми «Продолжить».';
   musicStatus.textContent='Музыка на паузе.';
  }else{
+  // SoundCloud PLAY must be issued synchronously in the Resume button's
+  // trusted click handler, before any scene work, for browser media policies.
+  scRequested=true;
+  scWidget?.play();
   for(const p of guests){
    const snapshot=p.pausedAnimation;
    if(!snapshot)continue;
@@ -802,11 +806,24 @@ function togglePause(){
     action.setEffectiveTimeScale(snapshot.speed);
     action.paused=snapshot.wasPaused;
     if(snapshot.motion==='sit'){action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;}
-    p.activeItem.mixer.update(0);
+    p.mixer?.update(0);
    }
    p.pausedAnimation=null;
   }
-  scWidget?.play();
+  musicStatus.textContent='Продолжаю воспроизведение SoundCloud…';
+  // If the embedded player refuses automatic resume, report it clearly
+  // instead of pretending that the music is playing.
+  if(scReady&&scWidget?.getPaused){
+   setTimeout(()=>{
+    if(running&&!paused&&!ending){
+     scWidget.getPaused(isPaused=>{
+      if(isPaused&&running&&!paused&&!ending){
+       musicStatus.textContent='SoundCloud приостановлен браузером. Нажми Play в плеере.';
+      }
+     });
+    }
+   },900);
+  }
   $('stageStatus').textContent='Вечеринка продолжается · '+nameToLabel[$('dj').value]+' за пультом.';
  }
  updatePauseButton();
