@@ -113,8 +113,8 @@ function animateDanceFloor(dt,active,time){
   const shimmer=.5+.5*Math.sin(time*2.05-tile.x*.46-tile.z*.67);
   // Continuous palette travel avoids abrupt hue switches between tiles.
   const hue=.70+.20*Math.sin(time*.42+tile.phase*.54);
-  danceFloorTint.setHSL(hue,.78,.49);
-  const strength=danceFloorGlow*(.18+.18*shimmer+.11*(.5+.5*wave));
+  danceFloorTint.setHSL(hue,.60,.34);
+  const strength=danceFloorGlow*(.035+.045*shimmer+.025*(.5+.5*wave));
   for(const entry of tile.materials){
    const m=entry.material;
    if(entry.baseEmissive){
