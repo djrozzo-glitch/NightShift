@@ -74,7 +74,60 @@ for(let i=-7.5;i<=7.5;i++){
 // Replace placeholder rectangles with optimized floor.glb tiles, keeping a fallback.
 const danceTilePositions=[];
 for(let x=-3.5;x<=3.5;x++)for(let z=-5.5;z<=.5;z++)danceTilePositions.push([x,z]);
-const dancePlaceholders=danceTilePositions.map(([x,z])=>block(.98,.05,.98,x,.035,z,danceMat));
+// Lightweight dancefloor color wave: material-only animation, no extra
+// lights, meshes, render passes or draw calls. All GLB textures stay shared.
+const danceFloorTiles=[];
+const danceFloorTint=new THREE.Color();
+const danceFloorPalette=[.76,.60,.53,.88]; // violet / blue / cyan / pink
+let danceFloorGlow=0,danceFloorTick=0;
+function registerDanceTile(root,x,z){
+ const localMaterials=new Map(),materials=[];
+ root.traverse(obj=>{
+  if(!obj.isMesh||!obj.material)return;
+  const unique=source=>{
+   if(!source)return source;
+   if(!localMaterials.has(source)){
+    const copy=source.clone();
+    localMaterials.set(source,copy);
+    materials.push({material:copy,baseColor:copy.color?.clone(),baseEmissive:copy.emissive?.clone()});
+   }
+   return localMaterials.get(source);
+  };
+  obj.material=Array.isArray(obj.material)?obj.material.map(unique):unique(obj.material);
+ });
+ if(materials.length)danceFloorTiles.push({x,z,materials,phase:x*.68-z*.52});
+}
+const dancePlaceholders=danceTilePositions.map(([x,z])=>{
+ const tile=block(.98,.05,.98,x,.035,z,danceMat);
+ registerDanceTile(tile,x,z);
+ return tile;
+});
+function animateDanceFloor(dt,active,time){
+ const aim=active?1:0;
+ danceFloorGlow+= (aim-danceFloorGlow)*Math.min(1,dt*(active?3.5:4.8));
+ danceFloorTick+=dt;
+ // Updating colors 20 times/sec is enough for slow, smooth waves.
+ if(danceFloorTick<.05&&Math.abs(danceFloorGlow-aim)>.002)return;
+ if(danceFloorTick<.05&&active)return;
+ danceFloorTick=0;
+ for(const tile of danceFloorTiles){
+  const wave=Math.sin(time*1.35+tile.phase);
+  const shimmer=.5+.5*Math.sin(time*2.05-tile.x*.46-tile.z*.67);
+  const hueIndex=((Math.floor((wave+1)*1.5)+4)%4);
+  const hue=danceFloorPalette[hueIndex];
+  danceFloorTint.setHSL(hue,.78,.49);
+  const strength=danceFloorGlow*(.18+.18*shimmer+.11*(.5+.5*wave));
+  for(const entry of tile.materials){
+   const m=entry.material;
+   if(entry.baseEmissive){
+    m.emissive.copy(entry.baseEmissive).addScaledVector(danceFloorTint,strength);
+   }else if(entry.baseColor){
+    m.color.copy(entry.baseColor).lerp(danceFloorTint,strength*.40);
+   }
+  }
+ }
+}
+
 // Tile grid: 1x1 objects sit at half-integers, 2x1 furniture at whole integers.
 const decor=[
  ['dj_stand_upgraded',0,-6.5,2,0],
@@ -170,8 +223,13 @@ loadVenueModel('floor').then(g=>{
  const source=g.scene;
  fitModel(source,.98);
  dancePlaceholders.forEach(p=>stage.remove(p));
+ // Fallback tile materials were dedicated copies. Dispose only these,
+ // never the shared GLB geometry, textures or source materials.
+ for(const tile of danceFloorTiles)for(const entry of tile.materials)entry.material.dispose();
+ danceFloorTiles.length=0;
  for(const [x,z] of danceTilePositions){
   const tile=source.clone(true);
+  registerDanceTile(tile,x,z);
   const holder=new THREE.Group();holder.position.set(x,.045,z);holder.add(tile);stage.add(holder);
  }
 });
@@ -1255,6 +1313,7 @@ venueFills.forEach((l,i)=>{l.intensity+=((partyActive?2.75*quality.brightness:0)
 wallWashes.forEach((l,i)=>{l.intensity+=((partyActive&&fxQuality!=='low'?1.3*quality.brightness:0)-l.intensity)*.025;});
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
 animateFixtures(t,dt,partyActive);
+animateDanceFloor(dt,partyActive,t);
 if(partyActive){
  partyTime+=dt;guestClock+=dt;chatClock+=dt;
  if(chatClock>16){chatClock=0;createChatPair();}
