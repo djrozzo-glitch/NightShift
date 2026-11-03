@@ -326,8 +326,48 @@ const wallWashes=[
 [[-7,2,-3],[7,2,-3],[-7,2,3],[7,2,3]].forEach(([x,y,z],i)=>{
  wallWashes[i].position.set(x,y,z);scene.add(wallWashes[i]);
 });
-const nameToLabel={rozzo:'rozzo',neonexus:'Neonexus',vanya:'Vanya Velin',lutanina:'Lutanina',zlostniy:'zlostniy',lowq:'lowQ',velvet37:'Velvet 37',raison:'Raison',boriskhodok:'DJ Boris Khodok'};
-const tracks={rozzo:'https://soundcloud.com/irozov/rozzo-waste-my-time-i-dont-1',neonexus:'https://soundcloud.com/amn303/backdoor-radio-mix-neonexus',vanya:'https://soundcloud.com/bcco/bcco-premiere-vanya-velin',lutanina:'https://soundcloud.com/user-880945103/two-rndm-06-02',zlostniy:'https://soundcloud.com/velvet-37/shine-ft-zlostniy',lowq:'https://soundcloud.com/shiftedrecordings/waves-of-light-1',velvet37:'https://soundcloud.com/velvet-37/my-angel-1',raison:'https://soundcloud.com/raison_d_etre/even-sexier-groove',boriskhodok:'https://soundcloud.com/dj-boris-khodok/8-march-mix'};
+// Local lineup is used ONLY when the Google Sheet cannot be read.
+// A successful sheet load replaces names, styles, SoundCloud URLs and fees.
+const fallbackArtists=[
+ {id:'rozzo',name:'rozzo',genre:'Deep Tech',url:'https://soundcloud.com/irozov/rozzo-waste-my-time-i-dont-1'},
+ {id:'neonexus',name:'Neonexus',genre:'Hypnotic Techno',url:'https://soundcloud.com/amn303/backdoor-radio-mix-neonexus'},
+ {id:'vanya',name:'Vanya Velin',genre:'Raw Techno',url:'https://soundcloud.com/bcco/bcco-premiere-vanya-velin'},
+ {id:'lutanina',name:'Lutanina',genre:'Soulful Techno',url:'https://soundcloud.com/user-880945103/two-rndm-06-02'},
+ {id:'zlostniy',name:'zlostniy',genre:'Romantic Techno',url:'https://soundcloud.com/velvet-37/shine-ft-zlostniy'},
+ {id:'lowq',name:'lowQ',genre:'Jungle',url:'https://soundcloud.com/shiftedrecordings/waves-of-light-1'},
+ {id:'velvet37',name:'Velvet 37',genre:'Future Garage',url:'https://soundcloud.com/velvet-37/my-angel-1'},
+ {id:'raison',name:'Raison',genre:'Minimal Techno',url:'https://soundcloud.com/raison_d_etre/even-sexier-groove'},
+ {id:'boriskhodok',name:'DJ Boris Khodok',genre:'Deep House',url:'https://soundcloud.com/dj-boris-khodok/8-march-mix'}
+];
+let artists=fallbackArtists.map(a=>({...a}));
+let nameToLabel=Object.fromEntries(artists.map(a=>[a.id,a.name]));
+let tracks=Object.fromEntries(artists.map(a=>[a.id,a.url]));
+function currentArtist(){return artists.find(a=>a.id===$('dj').value)||artists[0];}
+function renderLineup(){
+ const select=$('dj'),selected=select.value;
+ select.replaceChildren();
+ for(const a of artists){
+  const option=document.createElement('option');
+  option.value=a.id;
+  option.textContent=a.name+(a.genre?' · '+a.genre:'');
+  select.appendChild(option);
+ }
+ select.value=artists.some(a=>a.id===selected)?selected:artists[0]?.id||'';
+ nameToLabel=Object.fromEntries(artists.map(a=>[a.id,a.name]));
+ tracks=Object.fromEntries(artists.map(a=>[a.id,a.url]));
+}
+renderLineup();
+let playerVolume=Math.max(0,Math.min(100,Number(localStorage.getItem('nightshift-sc-volume')??75)||0));
+$('musicVolume').value=String(playerVolume);
+$('musicVolumeValue').textContent=playerVolume+'%';
+function setMusicVolume(nextValue){
+ playerVolume=Math.max(0,Math.min(100,Number(nextValue)||0));
+ $('musicVolume').value=String(playerVolume);
+ $('musicVolumeValue').textContent=playerVolume+'%';
+ localStorage.setItem('nightshift-sc-volume',String(playerVolume));
+ if(scWidget)scWidget.setVolume(playerVolume);
+}
+$('musicVolume').addEventListener('input',event=>setMusicVolume(event.target.value));
 let scWidget=null,scReady=false,scRequested=false,scStarted=false;
 const musicStatus=$('musicStatus');
 function syncTrack(){
