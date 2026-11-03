@@ -78,7 +78,6 @@ for(let x=-3.5;x<=3.5;x++)for(let z=-5.5;z<=.5;z++)danceTilePositions.push([x,z]
 // lights, meshes, render passes or draw calls. All GLB textures stay shared.
 const danceFloorTiles=[];
 const danceFloorTint=new THREE.Color();
-const danceFloorPalette=[.76,.60,.53,.88]; // violet / blue / cyan / pink
 let danceFloorGlow=0,danceFloorTick=0;
 function registerDanceTile(root,x,z){
  const localMaterials=new Map(),materials=[];
@@ -113,8 +112,8 @@ function animateDanceFloor(dt,active,time){
  for(const tile of danceFloorTiles){
   const wave=Math.sin(time*1.35+tile.phase);
   const shimmer=.5+.5*Math.sin(time*2.05-tile.x*.46-tile.z*.67);
-  const hueIndex=((Math.floor((wave+1)*1.5)+4)%4);
-  const hue=danceFloorPalette[hueIndex];
+  // Continuous palette travel avoids abrupt hue switches between tiles.
+  const hue=.70+.20*Math.sin(time*.42+tile.phase*.54);
   danceFloorTint.setHSL(hue,.78,.49);
   const strength=danceFloorGlow*(.18+.18*shimmer+.11*(.5+.5*wave));
   for(const entry of tile.materials){
