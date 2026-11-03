@@ -22,6 +22,25 @@ controls.minDistance=11;controls.maxDistance=39;controls.update();
 const hemi=new THREE.HemisphereLight(0xded7ff,0x191424,2.3);scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xffdfba,2);sun.position.set(-10,16,8);scene.add(sun);
 const stage=new THREE.Group();scene.add(stage);
+// Atmospheric smoke made of camera-facing soft sprites, not opaque horizontal planes.
+// Use a single shared texture and lightweight geometry; no heavy post-processing.
+const smokeCanvas=document.createElement('canvas');smokeCanvas.width=128;smokeCanvas.height=128;
+const smokeCtx=smokeCanvas.getContext('2d');
+const smokeGradient=smokeCtx.createRadialGradient(64,64,3,64,64,63);
+smokeGradient.addColorStop(0,'rgba(200,190,220,0.45)');
+smokeGradient.addColorStop(.3,'rgba(177,169,205,0.25)');
+smokeGradient.addColorStop(.65,'rgba(145,140,170,0.09)');
+smokeGradient.addColorStop(1,'rgba(125,120,155,0)');
+smokeCtx.fillStyle=smokeGradient;smokeCtx.fillRect(0,0,128,128);
+const smokeTexture=new THREE.CanvasTexture(smokeCanvas);
+const hazeLayers=[];
+for(let i=0;i<22;i++){
+ const material=new THREE.SpriteMaterial({map:smokeTexture,color:0xc4c0d7,transparent:true,opacity:0,depthWrite:false,blending:THREE.NormalBlending,fog:true});
+ const sprite=new THREE.Sprite(material);
+ sprite.position.set(-6+Math.random()*12,.85+Math.random()*1.35,-6+Math.random()*12);
+ sprite.scale.set(1.8+Math.random()*1.6,1.1+Math.random()*1.1,1);
+ scene.add(sprite);hazeLayers.push({mesh:sprite,offset:i*1.73,baseX:sprite.position.x,baseZ:sprite.position.z});
+}
 const loader=new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
 const loadGLB=path=>new Promise(resolve=>loader.load(path,resolve,undefined,err=>{console.warn('Optional GLB not loaded',path,err);resolve(null)}));
@@ -129,11 +148,15 @@ function addFixture(holder,obj,name){
   fixtures.push({name,holder,obj,points,glow,top});
  }else if(name==='laser_new'||name==='light'){
   const colors=name==='laser_new'?[0x31ff64,0x287cff,0xff334d]:[0xc15dff,0x87abff];
-  const beams=colors.map(color=>{
-   const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.015,.055,1,6,1,true),new THREE.MeshBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));
-   stage.add(mesh);return mesh;
+  const beams=colors.map((color,i)=>{
+   // Broad translucent cones make light visible inside smoke instead of thin laser rods.
+   const laser=name==='laser_new';
+   const geometry=new THREE.CylinderGeometry(laser?.12:.55,laser?.035:.09,1,16,1,true);
+   const material=new THREE.MeshBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,fog:true});
+   const mesh=new THREE.Mesh(geometry,material);
+   mesh.renderOrder=2;mesh.frustumCulled=false;stage.add(mesh);return mesh;
   });
-  const lamp=new THREE.PointLight(colors[0],0,4,2);lamp.position.y=top-.1;holder.add(lamp);
+  const lamp=new THREE.PointLight(colors[0],0,6,2);lamp.position.y=top-.1;holder.add(lamp);
   fixtures.push({name,holder,top,beams,lamp});
  }
 }
@@ -149,7 +172,7 @@ function animateFixtures(t,dt,active){
     p.material.opacity=active?.25+.35*(.5+.5*Math.sin(t*2+i)):0;
    });
   }else{
-   fx.lamp.intensity=active?1.7:0;
+   fx.lamp.intensity=active?2.6+Math.sin(t*3.2+fx.holder.position.x)*.55:0;
    fx.lamp.getWorldPosition(beamStart);
    fx.beams.forEach((beam,i)=>{
     const a=t*(.8+i*.17)+i*1.7;
@@ -158,7 +181,7 @@ function animateFixtures(t,dt,active){
     beam.position.copy(beamStart).addScaledVector(dir,.5);
     beam.quaternion.setFromUnitVectors(upVector,dir.normalize());
     beam.scale.set(1,len,1);
-    beam.material.opacity=active?(fx.name==='laser_new'?.35:.10):0;
+    beam.material.opacity=active?(fx.name==='laser_new'?.18:.085)*(0.75+.25*Math.sin(t*3.2+i)):0;
    });
   }
  }
@@ -236,56 +259,174 @@ const variants=['baggy_m','fashion_f','jungle_f','raver_f','raver_m'];
 const actorAssets={};
 let loaded=0;
 let actorPromise=null;
-function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatMap((name,i)=>['walk','dance'].map(async state=>{
- const g=await loadGLB('assets/characters/'+name+'_'+state+'.glb');
- if(!actorAssets[i])actorAssets[i]={};
- if(g)actorAssets[i][state]=g; loaded++;
-}))).then(()=>{return true});}
+// Service animations are loaded only when the first party begins, keeping startup light.
+const guestAnimationFiles={
+ baggy_m:{walk:'baggy_m_walk.glb',dance:'baggy_m_dance.glb',drink:'baggy_m_drink.glb',sit:'baggy_m_sit.glb'},
+ fashion_f:{walk:'fashion_f_walk.glb',dance:'fashion_f_dance.glb',drink:'fashion_f_drink.glb',sit:'fashion_f_sit.glb'},
+ jungle_f:{walk:'jungle_f_walk.glb',dance:'jungle_f_dance.glb',drink:'jungle_f_drink.glb',sit:'jungle_f_sit.glb'},
+ raver_f:{walk:'raver_f_walk.glb',dance:'raver_f_dance.glb',drink:'raver_f_chat.glb',sit:'raver_f_sit.glb'},
+ raver_m:{walk:'raver_m_walk.glb',dance:'raver_m_dance.glb',drink:'raver_m_idle.glb',sit:'raver_m_sit 2.glb'}
+};
+function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatMap((name,i)=>
+ Object.entries(guestAnimationFiles[name]).map(async([state,file])=>{
+  const g=await loadGLB('assets/characters/'+encodeURIComponent(file));
+  if(!actorAssets[i])actorAssets[i]={};
+  if(g)actorAssets[i][state]=g;loaded++;
+ })
+)).then(()=>true);}
 const MAX_GUESTS=40;
 let opened=false,running=false,guestClock=0,partyTime=0;
 const guests=[];const clock=new THREE.Clock();
 const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
-const danceSpot=()=>({x:-3.5+Math.floor(Math.random()*8),z:-5.5+Math.floor(Math.random()*7)});
-const barSpots=[{x:-5.9,z:-4},{x:5.9,z:-4}];
-const sofaSpots=[{x:-5.9,z:5},{x:5.9,z:5},{x:-3,z:5.9},{x:3,z:5.9}];
-function actorState(p,state){
- if(p.state===state)return;
- if(p.mesh)p.mesh.visible=false;
- if(p.mixer)p.mixer.stopAllAction();
- p.cache ||= {};
- let item=p.cache[state];
- if(!item){
-  const asset=actorAssets[p.variant]?.[state]||actorAssets[p.variant]?.dance||actorAssets[p.variant]?.walk;
-  if(!asset){const mesh=new THREE.Mesh(guestFallbackGeometry,guestFallbackMaterial);mesh.position.y=.55;p.group.add(mesh);item={mesh,mixer:null};}
-  else{
-   const mesh=cloneSkeleton(asset.scene);fitCharacterHeight(mesh,1.65);p.group.add(mesh);
-   const mixer=asset.animations.length?new THREE.AnimationMixer(mesh):null;
-   if(mixer)mixer.clipAction(asset.animations[0]).play();
-   item={mesh,mixer};
-  }
-  p.cache[state]=item;
- }
- p.mesh=item.mesh;p.mesh.visible=true;p.mixer=item.mixer;p.state=state;
- if(p.mixer){const action=p.mixer._actions?.[0];if(action){action.reset().play();action.time=Math.random()*Math.max(action.getClip().duration,.1);}}
+const barSpots=[{x:-6.4,z:-4},{x:6.4,z:-4}];
+const sofaSpots=[{x:-6.4,z:5},{x:6.4,z:5},{x:-3,z:6.65-1/3},{x:3,z:6.65-1/3}];
+// Reserve destinations while a guest is walking there AND while they use them.
+// A dance tile is never assigned to two guests simultaneously.
+const danceSpots=danceTilePositions.map(([x,z])=>({x,z}));
+const reservedSpots=new Map();
+const spotKey=(activity,spot)=>activity+':'+spot.x+','+spot.z;
+function releaseSpot(p){
+ if(p.reservation&&reservedSpots.get(p.reservation)===p)reservedSpots.delete(p.reservation);
+ p.reservation=null;
 }
-const guestFallbackGeometry=new THREE.CapsuleGeometry(.22,.72,3,5);
-const guestFallbackMaterial=mat(0x965bd1);
+function reserveDestination(p,activity){
+ const candidates=activity==='dance'?danceSpots:activity==='bar'?barSpots:sofaSpots;
+ // Shuffle by starting at a random index, without sorting the shared list.
+ const start=Math.floor(Math.random()*candidates.length);
+ for(let i=0;i<candidates.length;i++){
+  const spot=candidates[(start+i)%candidates.length];
+  const key=spotKey(activity,spot);
+  if(!reservedSpots.has(key)){
+   reservedSpots.set(key,p);p.reservation=key;
+   return spot;
+  }
+ }
+ return null;
+}
+const DANCE_FLOOR_Y=.23;
+const REGULAR_FLOOR_Y=.05;
+function updateGuestElevation(p,dt){
+ // Imported dance-floor GLB sits higher than the checkerboard base.
+ const x=p.group.position.x,z=p.group.position.z;
+ const onDanceFloor=x>=-3.95&&x<=3.95&&z>=-5.95&&z<=.95;
+ const target=onDanceFloor?DANCE_FLOOR_Y:REGULAR_FLOOR_Y;
+ p.group.position.y+= (target-p.group.position.y)*Math.min(1,dt*9);
+}
+// Keep the logic state separate from the visible animation.
+// Each avatar keeps one cached, independently skinned model per action, so
+// neither GLTF skeletons nor materials are shared across guests.
+function setAvatarOpacity(item,value){
+ if(!item)return;
+ for(const entry of item.materials){
+  entry.material.opacity=entry.opacity*value;
+  entry.material.transparent=value<.995||entry.transparent;
+ }
+}
+function prepareAvatar(model){
+ const materials=[];
+ model.traverse(obj=>{
+  if(!obj.isMesh)return;
+  obj.frustumCulled=false; // animated skeletal bounds are often inaccurate
+  if(obj.material){
+   const originals=Array.isArray(obj.material)?obj.material:[obj.material];
+   const copies=originals.map(m=>{
+    const material=m.clone();materials.push({material,opacity:m.opacity,transparent:m.transparent});
+    return material;
+   });
+   obj.material=Array.isArray(obj.material)?copies:copies[0];
+  }
+ });
+ return materials;
+}
+function actorState(p,motion){
+ if(p.motion===motion&&p.mesh)return;
+ p.cache||={};
+ // Never substitute a dancing animation for walking. If an animation
+ // failed to load, use this same character's idle/walk mesh instead.
+ const assets=actorAssets[p.variant]||{};
+ const asset=assets[motion]||assets.walk||assets.dance||assets.sit||assets.drink;
+ if(!asset){
+  console.warn('Missing character GLB',variants[p.variant],motion);
+  return;
+ }
+ let item=p.cache[motion];
+ if(!item){
+  const mesh=cloneSkeleton(asset.scene);
+  fitCharacterHeight(mesh,1.65);
+  const materials=prepareAvatar(mesh);
+  p.group.add(mesh);
+  const mixer=asset.animations?.length?new THREE.AnimationMixer(mesh):null;
+  const action=mixer?mixer.clipAction(asset.animations[0]):null;
+  item={mesh,mixer,action,materials};
+  p.cache[motion]=item;
+ }
+ const previous=p.activeItem;
+ if(previous&&previous!==item){
+  previous.action?.stop();
+  p.fadingItem=previous;
+  p.fadeTime=0;
+  setAvatarOpacity(previous,1);
+ }
+ item.mesh.visible=true;
+ setAvatarOpacity(item,previous&&previous!==item?0:1);
+ if(item.action){
+  item.action.reset();
+  item.action.setEffectiveTimeScale(1);
+  item.action.setLoop(THREE.LoopRepeat,Infinity);
+  item.action.clampWhenFinished=false;
+  item.action.play();
+  if(motion==='dance')item.action.time=Math.random()*Math.max(item.action.getClip().duration,.1);
+ }
+ p.mesh=item.mesh;p.mixer=item.mixer;p.activeItem=item;p.motion=motion;
+}
+function updateAvatar(p,dt){
+ const current=p.activeItem;
+ if(current?.mixer)current.mixer.update(dt);
+ if(p.fadingItem){
+  const fade=p.fadingItem;
+  if(fade.mixer)fade.mixer.update(dt);
+  p.fadeTime+=dt;
+  const alpha=Math.min(1,p.fadeTime/.22);
+  setAvatarOpacity(current,alpha);
+  setAvatarOpacity(fade,1-alpha);
+  if(alpha>=1){
+   fade.mesh.visible=false;
+   setAvatarOpacity(fade,1);
+   fade.mixer?.stopAllAction();
+   p.fadingItem=null;
+  }
+ }
+}
 function routeGuest(p,activity){
+ releaseSpot(p);
+ let destination=reserveDestination(p,activity);
+ // Busy bar/sofas: wait on a free dance tile and try again on the next decision.
+ if(!destination&&activity!=='dance'){
+  activity='dance';
+  destination=reserveDestination(p,'dance');
+ }
+ if(!destination){
+  // All tiles reserved: do not stack another guest onto a taken tile.
+  p.wait=1.5;p.state='waiting';
+  actorState(p,'walk');return false;
+ }
  p.activity=activity;p.wait=0;
- const destination=activity==='bar'?pick(barSpots):activity==='sofa'?pick(sofaSpots):danceSpot();
- p.x=destination.x+(Math.random()-.5)*.38;
- p.z=destination.z+(Math.random()-.5)*.38;
+ p.x=destination.x;
+ p.z=destination.z;
+ p.sofaBack=activity==='sofa'&&destination.z>6;
  actorState(p,'walk');
+ p.state='walk';
+ return true;
 }
 function addGuest(){
  if(!running||guests.length>=MAX_GUESTS)return;
  const variant=Math.floor(Math.random()*variants.length);
  const group=new THREE.Group();group.position.set((Math.random()-.5)*1.1,.05,7.2);stage.add(group);
- const p={group,mesh:null,mixer:null,state:null,variant,x:0,z:0,speed:1.0+Math.random()*.65,phase:Math.random()*6.28,
+ const p={group,mesh:null,mixer:null,motion:null,state:null,variant,x:0,z:0,speed:1.0+Math.random()*.65,phase:Math.random()*6.28,
  energy:.55+Math.random()*.45,thirst:Math.random()*.3,wait:0,activity:'dance',cache:{},visits:0};
  routeGuest(p,'dance');guests.push(p);$('counter').textContent='GUESTS: '+guests.length+' / '+MAX_GUESTS;
 }
-function removeGuests(){for(const p of guests){for(const state of Object.values(p.cache||{}))state.mixer?.stopAllAction();stage.remove(p.group)}guests.length=0;$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
+function removeGuests(){for(const p of guests){releaseSpot(p);for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
 $('play').onclick=async()=>{if(!opened||running)return;running=true;partyTime=0;guestClock=0;removeGuests();$('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;$('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До '+MAX_GUESTS+' гостей, танцы, бары и диваны.';await loadGuestsOnDemand();if(running)addGuest();};
 $('end').onclick=()=>{running=false;removeGuests();$('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;$('stageStatus').textContent='Вечеринка закончилась. Выбери следующего DJ.';};
@@ -299,15 +440,38 @@ function animateDJ(){
  }
  for(const [state,actor] of Object.entries(djActors))actor.visible=state===djPose;
 }
+function sitAction(p,reverse=false){
+ const item=p.cache?.sit,action=item?.action;
+ if(!action)return 0;
+ const duration=Math.max(.25,action.getClip().duration);
+ action.enabled=true;action.paused=false;action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;
+ action.reset();action.time=reverse?duration:0;
+ action.timeScale=reverse?-1:1;
+ action.play();
+ return duration;
+}
 function updateGuest(p,dt){
+ updateGuestElevation(p,dt);
+ if(p.state==='waiting'){
+  p.wait-=dt;
+  if(p.wait<=0)routeGuest(p,'dance');
+  return;
+ }
  p.thirst=Math.min(1,p.thirst+dt*(p.state==='dance'?.008:.003));
  p.energy=Math.max(0,p.energy-dt*(p.state==='dance'?.004:.001));
  if(p.state==='walk'){
   const dx=p.x-p.group.position.x,dz=p.z-p.group.position.z,dist=Math.hypot(dx,dz);
   if(dist<.13){
-   if(p.activity==='dance'){actorState(p,'dance');p.wait=7+Math.random()*12;}
-   else{actorState(p,'walk');p.state='service';p.wait=p.activity==='bar'?3+Math.random()*4:6+Math.random()*8;}
-   p.group.rotation.y=p.activity==='bar'?(p.group.position.x<0?-Math.PI/2:Math.PI/2):p.group.rotation.y;
+   if(p.activity==='dance'){actorState(p,'dance');p.state='dance';p.wait=7+Math.random()*12;}
+   else if(p.activity==='bar'){actorState(p,'drink');p.state='drink';p.wait=3+Math.random()*4;}
+   else{
+    // Sofa model faces the room; rear-wall sofas need the opposite orientation.
+    p.group.rotation.y=p.sofaBack?Math.PI:(p.group.position.x<0?Math.PI/2:-Math.PI/2);
+    actorState(p,'sit');
+    p.wait=sitAction(p);
+    p.state='sit_down';
+   }
+   if(p.activity==='bar')p.group.rotation.y=p.group.position.x<0?-Math.PI/2:Math.PI/2;
   }else{
    const step=Math.min(p.speed*dt,dist);
    p.group.position.x+=dx/dist*step;p.group.position.z+=dz/dist*step;p.group.rotation.y=Math.atan2(dx,dz);
@@ -316,17 +480,28 @@ function updateGuest(p,dt){
  }
  p.wait-=dt;
  if(p.wait>0)return;
- if(p.state==='service'){
-  if(p.activity==='bar'){p.thirst=Math.max(0,p.thirst-.75);p.energy=Math.min(1,p.energy+.04);}
-  else p.energy=Math.min(1,p.energy+.55);
+ if(p.state==='sit_down'){
+  p.state='resting';p.wait=3+Math.random()*2;
+  if(p.activeItem?.action)p.activeItem.action.paused=true;
+  return;
+ }
+ if(p.state==='resting'){
+  p.state='sit_up';p.wait=sitAction(p,true);
+  return;
+ }
+ if(p.state==='sit_up'){
+  p.energy=Math.min(1,p.energy+.55);p.visits++;routeGuest(p,'dance');return;
+ }
+ if(p.state==='drink'){
+  p.thirst=Math.max(0,p.thirst-.75);p.energy=Math.min(1,p.energy+.04);
   p.visits++;routeGuest(p,'dance');return;
  }
- // Godot-inspired choice: drink when thirsty, rest when tired, otherwise keep dancing.
  if(p.thirst>.48)routeGuest(p,'bar');
  else if(p.energy<.38)routeGuest(p,'sofa');
  else if(Math.random()<.18)routeGuest(p,Math.random()<.5?'bar':'sofa');
  else routeGuest(p,'dance');
 }
+
 const monitor=document.createElement('div');
 monitor.style.cssText='position:absolute;right:14px;top:60px;z-index:3;color:#baffd8;background:#080916bd;border:1px solid #365b56;border-radius:6px;padding:6px 9px;font:11px monospace;pointer-events:none';
 mount.appendChild(monitor);
@@ -342,6 +517,14 @@ else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
 hemi.intensity+=((running?.4:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.15:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(running?0x050410:0x090b16),.02);
+scene.fog.color.copy(scene.background);
+scene.fog.density+=( (running?.041:.024)-scene.fog.density)*.016;
+for(const layer of hazeLayers){
+ const m=layer.mesh;
+ m.material.opacity+=((running?.42:0)-m.material.opacity)*.018;
+ m.position.x=layer.baseX+Math.sin(t*.11+layer.offset)*.42;
+ m.position.z=layer.baseZ+Math.cos(t*.08+layer.offset)*.38;
+}
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
 animateFixtures(t,dt,running);
 if(running){
@@ -349,7 +532,7 @@ if(running){
  if(guestClock>1.25&&guests.length<MAX_GUESTS){guestClock=0;addGuest();}
  animAccum+=dt;
  for(const p of guests)updateGuest(p,dt);
- if(animAccum>=1/30){for(const p of guests)p.mixer?.update(animAccum);animAccum=0;}
+ if(animAccum>=1/30){for(const p of guests)updateAvatar(p,animAccum);animAccum=0;}
 }
 
 renderer.render(scene,camera)}
