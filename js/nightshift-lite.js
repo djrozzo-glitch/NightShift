@@ -9,6 +9,17 @@ console.info('NIGHTSHIFT LITE BUILD 04: fixed venue assets');
 const mount=$('scene'), scene=new THREE.Scene();
 scene.background=new THREE.Color('#090b16'); scene.fog=new THREE.FogExp2('#0c0b17',.024);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.12;
+// Quality settings apply live, without reloading 3D assets.
+let fxQuality=localStorage.getItem('nightshift-fx-quality')||'medium';
+if(!['low','medium','high'].includes(fxQuality))fxQuality='medium';
+const fxSettings={low:{smoke:10,beams:1,spots:false,brightness:.85},medium:{smoke:24,beams:2,spots:true,brightness:1},high:{smoke:38,beams:3,spots:true,brightness:1.15}};
+$('fxQuality').value=fxQuality;
+$('fxQuality').addEventListener('change',()=>{
+ fxQuality=$('fxQuality').value;
+ localStorage.setItem('nightshift-fx-quality',fxQuality);
+});
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.0));
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.shadowMap.enabled=false;
@@ -34,11 +45,11 @@ smokeGradient.addColorStop(1,'rgba(125,120,155,0)');
 smokeCtx.fillStyle=smokeGradient;smokeCtx.fillRect(0,0,128,128);
 const smokeTexture=new THREE.CanvasTexture(smokeCanvas);
 const hazeLayers=[];
-for(let i=0;i<22;i++){
+for(let i=0;i<38;i++){
  const material=new THREE.SpriteMaterial({map:smokeTexture,color:0xc4c0d7,transparent:true,opacity:0,depthWrite:false,blending:THREE.NormalBlending,fog:true});
  const sprite=new THREE.Sprite(material);
- sprite.position.set(-6+Math.random()*12,.85+Math.random()*1.35,-6+Math.random()*12);
- sprite.scale.set(1.8+Math.random()*1.6,1.1+Math.random()*1.1,1);
+ sprite.position.set(-6+Math.random()*12,.65+Math.random()*1.35,-6+Math.random()*12);
+ sprite.scale.set(2.4+Math.random()*1.8,1.5+Math.random()*1.5,1);
  scene.add(sprite);hazeLayers.push({mesh:sprite,offset:i*1.73,baseX:sprite.position.x,baseZ:sprite.position.z});
 }
 const loader=new GLTFLoader();
