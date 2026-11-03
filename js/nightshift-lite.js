@@ -10,7 +10,7 @@ const mount=$('scene'), scene=new THREE.Scene();
 scene.background=new THREE.Color('#090b16'); scene.fog=new THREE.FogExp2('#0c0b17',.024);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=1.12;
+renderer.toneMappingExposure=1.3;
 // Quality settings apply live, without reloading 3D assets.
 let fxQuality=localStorage.getItem('nightshift-fx-quality')||'medium';
 if(!['low','medium','high'].includes(fxQuality))fxQuality='medium';
@@ -315,6 +315,16 @@ const venueFills=[
 ];
 [[-3,3,-2],[3,3,-2],[-4,2.7,4],[4,2.7,4]].forEach(([x,y,z],i)=>{
  venueFills[i].position.set(x,y,z);scene.add(venueFills[i]);
+});
+// Gentle washes near the walls help separate the crowd from furniture.
+const wallWashes=[
+ new THREE.PointLight(0x9656bb,0,6.5,2),
+ new THREE.PointLight(0x448cba,0,6.5,2),
+ new THREE.PointLight(0x9656bb,0,6.5,2),
+ new THREE.PointLight(0x448cba,0,6.5,2)
+];
+[[-7,2,-3],[7,2,-3],[-7,2,3],[7,2,3]].forEach(([x,y,z],i)=>{
+ wallWashes[i].position.set(x,y,z);scene.add(wallWashes[i]);
 });
 const nameToLabel={rozzo:'rozzo',neonexus:'Neonexus',vanya:'Vanya Velin',lutanina:'Lutanina',zlostniy:'zlostniy',lowq:'lowQ',velvet37:'Velvet 37',raison:'Raison',boriskhodok:'DJ Boris Khodok'};
 const tracks={rozzo:'https://soundcloud.com/irozov/rozzo-waste-my-time-i-dont-1',neonexus:'https://soundcloud.com/amn303/backdoor-radio-mix-neonexus',vanya:'https://soundcloud.com/bcco/bcco-premiere-vanya-velin',lutanina:'https://soundcloud.com/user-880945103/two-rndm-06-02',zlostniy:'https://soundcloud.com/velvet-37/shine-ft-zlostniy',lowq:'https://soundcloud.com/shiftedrecordings/waves-of-light-1',velvet37:'https://soundcloud.com/velvet-37/my-angel-1',raison:'https://soundcloud.com/raison_d_etre/even-sexier-groove',boriskhodok:'https://soundcloud.com/dj-boris-khodok/8-march-mix'};
@@ -856,22 +866,28 @@ function monitorFrame(dt){fpsCount++;fpsClock+=dt;if(fpsClock>=1.5){const fps=Ma
  monitor.textContent='FPS '+fps+' | '+memory+' | GEO '+info.memory.geometries+' | TEX '+info.memory.textures+' | GUESTS '+guests.length;
  fpsClock=0;fpsCount=0;}}
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
-let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const partyActive=running&&!paused&&!ending;const target=partyActive?1:0;
+let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const partyActive=running&&!paused&&!ending;const target=partyActive?1:0;const quality=fxSettings[fxQuality];
 if(!partyActive){djPose='idle';djNextAction=8;
  for(const [state,actor] of Object.entries(djActors))actor.visible=state==='idle';
 }else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
-hemi.intensity+=((partyActive?1.45:2.3)-hemi.intensity)*.025;sun.intensity+=((partyActive?.85:2)-sun.intensity)*.025;
+hemi.intensity+=((partyActive?1.85:2.3)-hemi.intensity)*.025;sun.intensity+=((partyActive?1.05:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(partyActive?0x050410:0x090b16),.02);
 scene.fog.color.copy(scene.background);
-scene.fog.density+=((partyActive?.022:.018)-scene.fog.density)*.016;
-for(const layer of hazeLayers){
+scene.fog.density+=((partyActive?.014:.018)-scene.fog.density)*.016;
+hazeLayers.forEach((layer,i)=>{
  const m=layer.mesh;
- m.material.opacity+=((partyActive?.24:0)-m.material.opacity)*.018;
- m.position.x=layer.baseX+Math.sin(t*.11+layer.offset)*.42;
- m.position.z=layer.baseZ+Math.cos(t*.08+layer.offset)*.38;
-}
-venueFills.forEach((l,i)=>{l.intensity+=((partyActive?3.2:0)-l.intensity)*.025;});
+ m.visible=i<quality.smoke;
+ // Slowly billowing haze, strongest at the dancefloor but transparent enough
+ // to see dancers and the club furniture from an elevated camera.
+ const density=partyActive?(.23+.09*Math.sin(t*.21+layer.offset))*(i%3===0?1.25:1):0;
+ m.material.opacity+=(density-m.material.opacity)*.018;
+ m.position.x=layer.baseX+Math.sin(t*.11+layer.offset)*.56;
+ m.position.z=layer.baseZ+Math.cos(t*.08+layer.offset)*.43;
+ m.position.y=.7+(.5+.5*Math.sin(t*.10+layer.offset))*.95;
+});
+venueFills.forEach((l,i)=>{l.intensity+=((partyActive?3.0*quality.brightness:0)-l.intensity)*.025;});
+wallWashes.forEach((l,i)=>{l.intensity+=((partyActive&&fxQuality!=='low'?1.5*quality.brightness:0)-l.intensity)*.025;});
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
 animateFixtures(t,dt,partyActive);
 if(partyActive){
