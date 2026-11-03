@@ -753,14 +753,21 @@ $('play').onclick=async()=>{
  removeGuests();
  $('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;
  updatePauseButton();
- $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. Ожидается до '+guestCapacity+' гостей.';
+ $('stageStatus').textContent='Загружаю анимации гостей… После загрузки они начнут входить через дверь.';
  scRequested=true;
  musicStatus.textContent='Запускаю музыку… Если браузер запретил автозапуск, нажми Play в плеере.';
  if(scWidget)scWidget.play();
  else musicStatus.textContent='Плеер SoundCloud недоступен. Воспроизведи трек вручную.';
  try{
   await loadGuestsOnDemand();
-  if(running&&!ending){guestsReady=true;guestClock=0;addGuest();}
+  // No invisible guests: a visible walking rig and clip are mandatory.
+  const missingWalk=variants.filter((name,i)=>!actorAssets[i]?.walk?.animations?.length);
+  if(missingWalk.length)throw new Error('Walk GLBs missing: '+missingWalk.join(', '));
+  if(running&&!ending){
+   guestsReady=true;guestClock=0;
+   $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. Ожидается до '+guestCapacity+' гостей.';
+   addGuest();
+  }
  }catch(error){console.error('Guest animations unavailable',error);endParty('Не удалось загрузить персонажей.');}
 };
 $('pause').onclick=togglePause;
