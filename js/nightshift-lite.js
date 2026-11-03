@@ -404,7 +404,8 @@ const wallLoad=loadVenueModel('wall').then(g=>{
 });
 const djActors={};
 const peopleExtras=Promise.all([
- loadGLB('assets/characters/bouncer.glb'),
+ // Keep bouncer GLB next to its external base-color and metallic/roughness textures.
+ loadGLB('godot/characters/bouncer.glb'),
  loadGLB('assets/characters/deejay_idle.glb'),
  loadGLB('assets/characters/deejay_handdsup.glb'),
  loadGLB('assets/characters/deejay_standing.glb')
