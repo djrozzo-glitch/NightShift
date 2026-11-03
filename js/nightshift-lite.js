@@ -281,28 +281,91 @@ const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
 const danceSpot=()=>({x:-3.5+Math.floor(Math.random()*8),z:-5.5+Math.floor(Math.random()*7)});
 const barSpots=[{x:-6.4,z:-4},{x:6.4,z:-4}];
 const sofaSpots=[{x:-6.4,z:5},{x:6.4,z:5},{x:-3,z:6.65-1/3},{x:3,z:6.65-1/3}];
-function actorState(p,state){
- if(p.state===state)return;
- if(p.mesh)p.mesh.visible=false;
- if(p.mixer){p.mixer.stopAllAction();p.mixer.setTime(0);}
- p.cache ||= {};
- let item=p.cache[state];
- if(!item){
-  const asset=actorAssets[p.variant]?.[state]||actorAssets[p.variant]?.dance||actorAssets[p.variant]?.walk;
-  if(!asset){const mesh=new THREE.Mesh(guestFallbackGeometry,guestFallbackMaterial);mesh.position.y=.55;p.group.add(mesh);item={mesh,mixer:null};}
-  else{
-   const mesh=cloneSkeleton(asset.scene);fitCharacterHeight(mesh,1.65);p.group.add(mesh);
-   const mixer=asset.animations.length?new THREE.AnimationMixer(mesh):null;
-   if(mixer)mixer.clipAction(asset.animations[0]).play();
-   item={mesh,mixer};
-  }
-  p.cache[state]=item;
+// Keep the logic state separate from the visible animation.
+// Each avatar keeps one cached, independently skinned model per action, so
+// neither GLTF skeletons nor materials are shared across guests.
+function setAvatarOpacity(item,value){
+ if(!item)return;
+ for(const entry of item.materials){
+  entry.material.opacity=entry.opacity*value;
+  entry.material.transparent=value<.995||entry.transparent;
  }
- p.mesh=item.mesh;p.mesh.visible=true;p.mixer=item.mixer;p.state=state;
- if(p.mixer){const action=p.mixer._actions?.[0];if(action){action.reset();action.setEffectiveTimeScale(1);action.setLoop(THREE.LoopRepeat,Infinity);action.clampWhenFinished=false;action.play();action.time=Math.random()*Math.max(action.getClip().duration,.1);}}
 }
-const guestFallbackGeometry=new THREE.CapsuleGeometry(.22,.72,3,5);
-const guestFallbackMaterial=mat(0x965bd1);
+function prepareAvatar(model){
+ const materials=[];
+ model.traverse(obj=>{
+  if(!obj.isMesh)return;
+  obj.frustumCulled=false; // animated skeletal bounds are often inaccurate
+  if(obj.material){
+   const originals=Array.isArray(obj.material)?obj.material:[obj.material];
+   const copies=originals.map(m=>{
+    const material=m.clone();materials.push({material,opacity:m.opacity,transparent:m.transparent});
+    return material;
+   });
+   obj.material=Array.isArray(obj.material)?copies:copies[0];
+  }
+ });
+ return materials;
+}
+function actorState(p,motion){
+ if(p.motion===motion&&p.mesh)return;
+ p.cache||={};
+ // Never substitute a dancing animation for walking. If an animation
+ // failed to load, use this same character's idle/walk mesh instead.
+ const assets=actorAssets[p.variant]||{};
+ const asset=assets[motion]||assets.walk||assets.dance||assets.sit||assets.drink;
+ if(!asset){
+  console.warn('Missing character GLB',variants[p.variant],motion);
+  return;
+ }
+ let item=p.cache[motion];
+ if(!item){
+  const mesh=cloneSkeleton(asset.scene);
+  fitCharacterHeight(mesh,1.65);
+  const materials=prepareAvatar(mesh);
+  p.group.add(mesh);
+  const mixer=asset.animations?.length?new THREE.AnimationMixer(mesh):null;
+  const action=mixer?mixer.clipAction(asset.animations[0]):null;
+  item={mesh,mixer,action,materials};
+  p.cache[motion]=item;
+ }
+ const previous=p.activeItem;
+ if(previous&&previous!==item){
+  previous.action?.stop();
+  p.fadingItem=previous;
+  p.fadeTime=0;
+  setAvatarOpacity(previous,1);
+ }
+ item.mesh.visible=true;
+ setAvatarOpacity(item,previous&&previous!==item?0:1);
+ if(item.action){
+  item.action.reset();
+  item.action.setEffectiveTimeScale(1);
+  item.action.setLoop(THREE.LoopRepeat,Infinity);
+  item.action.clampWhenFinished=false;
+  item.action.play();
+  if(motion==='dance')item.action.time=Math.random()*Math.max(item.action.getClip().duration,.1);
+ }
+ p.mesh=item.mesh;p.mixer=item.mixer;p.activeItem=item;p.motion=motion;
+}
+function updateAvatar(p,dt){
+ const current=p.activeItem;
+ if(current?.mixer)current.mixer.update(dt);
+ if(p.fadingItem){
+  const fade=p.fadingItem;
+  if(fade.mixer)fade.mixer.update(dt);
+  p.fadeTime+=dt;
+  const alpha=Math.min(1,p.fadeTime/.22);
+  setAvatarOpacity(current,alpha);
+  setAvatarOpacity(fade,1-alpha);
+  if(alpha>=1){
+   fade.mesh.visible=false;
+   setAvatarOpacity(fade,1);
+   fade.mixer?.stopAllAction();
+   p.fadingItem=null;
+  }
+ }
+}
 function routeGuest(p,activity){
  p.activity=activity;p.wait=0;
  const destination=activity==='bar'?pick(barSpots):activity==='sofa'?pick(sofaSpots):danceSpot();
@@ -310,16 +373,17 @@ function routeGuest(p,activity){
  p.z=destination.z+(activity==='dance'?(Math.random()-.5)*.38:0);
  p.sofaBack=activity==='sofa'&&destination.z>6;
  actorState(p,'walk');
+ p.state='walk';
 }
 function addGuest(){
  if(!running||guests.length>=MAX_GUESTS)return;
  const variant=Math.floor(Math.random()*variants.length);
  const group=new THREE.Group();group.position.set((Math.random()-.5)*1.1,.05,7.2);stage.add(group);
- const p={group,mesh:null,mixer:null,state:null,variant,x:0,z:0,speed:1.0+Math.random()*.65,phase:Math.random()*6.28,
+ const p={group,mesh:null,mixer:null,motion:null,state:null,variant,x:0,z:0,speed:1.0+Math.random()*.65,phase:Math.random()*6.28,
  energy:.55+Math.random()*.45,thirst:Math.random()*.3,wait:0,activity:'dance',cache:{},visits:0};
  routeGuest(p,'dance');guests.push(p);$('counter').textContent='GUESTS: '+guests.length+' / '+MAX_GUESTS;
 }
-function removeGuests(){for(const p of guests){for(const state of Object.values(p.cache||{}))state.mixer?.stopAllAction();stage.remove(p.group)}guests.length=0;$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
+function removeGuests(){for(const p of guests){for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
 $('play').onclick=async()=>{if(!opened||running)return;running=true;partyTime=0;guestClock=0;removeGuests();$('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;$('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До '+MAX_GUESTS+' гостей, танцы, бары и диваны.';await loadGuestsOnDemand();if(running)addGuest();};
 $('end').onclick=()=>{running=false;removeGuests();$('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;$('stageStatus').textContent='Вечеринка закончилась. Выбери следующего DJ.';};
@@ -334,7 +398,7 @@ function animateDJ(){
  for(const [state,actor] of Object.entries(djActors))actor.visible=state===djPose;
 }
 function sitAction(p,reverse=false){
- const item=p.cache?.sit,action=item?.mixer?._actions?.[0];
+ const item=p.cache?.sit,action=item?.action;
  if(!action)return 0;
  const duration=Math.max(.25,action.getClip().duration);
  action.enabled=true;action.paused=false;action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;
@@ -349,8 +413,8 @@ function updateGuest(p,dt){
  if(p.state==='walk'){
   const dx=p.x-p.group.position.x,dz=p.z-p.group.position.z,dist=Math.hypot(dx,dz);
   if(dist<.13){
-   if(p.activity==='dance'){actorState(p,'dance');p.wait=7+Math.random()*12;}
-   else if(p.activity==='bar'){actorState(p,'drink');p.wait=3+Math.random()*4;}
+   if(p.activity==='dance'){actorState(p,'dance');p.state='dance';p.wait=7+Math.random()*12;}
+   else if(p.activity==='bar'){actorState(p,'drink');p.state='drink';p.wait=3+Math.random()*4;}
    else{
     // Sofa model faces the room; rear-wall sofas need the opposite orientation.
     p.group.rotation.y=p.sofaBack?Math.PI:(p.group.position.x<0?Math.PI/2:-Math.PI/2);
@@ -369,7 +433,7 @@ function updateGuest(p,dt){
  if(p.wait>0)return;
  if(p.state==='sit_down'){
   p.state='resting';p.wait=3+Math.random()*2;
-  if(p.mixer?._actions?.[0])p.mixer._actions[0].paused=true;
+  if(p.activeItem?.action)p.activeItem.action.paused=true;
   return;
  }
  if(p.state==='resting'){
@@ -419,7 +483,7 @@ if(running){
  if(guestClock>1.25&&guests.length<MAX_GUESTS){guestClock=0;addGuest();}
  animAccum+=dt;
  for(const p of guests)updateGuest(p,dt);
- if(animAccum>=1/30){for(const p of guests)p.mixer?.update(animAccum);animAccum=0;}
+ if(animAccum>=1/30){for(const p of guests)updateAvatar(p,animAccum);animAccum=0;}
 }
 
 renderer.render(scene,camera)}
