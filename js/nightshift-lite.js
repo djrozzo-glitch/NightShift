@@ -5,7 +5,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {clone as cloneSkeleton} from 'three/addons/utils/SkeletonUtils.js';
 
 const $=id=>document.getElementById(id);
-console.info('NIGHTSHIFT LITE BUILD 04: fixed venue assets');
+
 const mount=$('scene'), scene=new THREE.Scene();
 scene.background=new THREE.Color('#090b16'); scene.fog=new THREE.FogExp2('#0c0b17',.024);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
@@ -1176,16 +1176,8 @@ function updateGuest(p,dt){
  else routeGuest(p,'dance');
 }
 
-const monitor=document.createElement('div');
-monitor.style.cssText='position:absolute;right:14px;top:60px;z-index:3;color:#baffd8;background:#080916bd;border:1px solid #365b56;border-radius:6px;padding:6px 9px;font:11px monospace;pointer-events:none';
-mount.appendChild(monitor);
-let fpsCount=0,fpsClock=0;
-function monitorFrame(dt){fpsCount++;fpsClock+=dt;if(fpsClock>=1.5){const fps=Math.round(fpsCount/fpsClock),info=renderer.info;
- const memory=performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576)+'MB JS':'JS heap n/a';
- monitor.textContent='FPS '+fps+' | '+memory+' | GEO '+info.memory.geometries+' | TEX '+info.memory.textures+' | GUESTS '+guests.length;
- fpsClock=0;fpsCount=0;}}
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
-let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const partyActive=running&&!paused&&!ending;const target=partyActive?1:0;const quality=fxSettings[fxQuality];
+let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;controls.update();const partyActive=running&&!paused&&!ending;const target=partyActive?1:0;const quality=fxSettings[fxQuality];
 if(!partyActive){djPose='idle';djNextAction=8;
  for(const [state,actor] of Object.entries(djActors))actor.visible=state==='idle';
 }else animateDJ();
