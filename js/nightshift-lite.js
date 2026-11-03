@@ -395,6 +395,7 @@ const variants=['baggy_m','fashion_f','jungle_f','raver_f','raver_m'];
 const actorAssets={};
 let loaded=0;
 let actorPromise=null;
+let guestsReady=false;
 // Service animations are loaded only when the first party begins, keeping startup light.
 const guestAnimationFiles={
  baggy_m:{walk:'baggy_m_walk.glb',dance:'baggy_m_dance.glb',idle:'baggy_m_idle.glb',drink:'baggy_m_drink.glb',sit:'baggy_m_sit.glb'},
@@ -724,7 +725,7 @@ function cleanGuest(p){
  p.cache={};p.activeItem=null;p.fadingItem=null;p.mesh=null;p.mixer=null;
 }
 function completeParty(){
- ending=false;running=false;paused=false;
+ ending=false;running=false;paused=false;guestsReady=false;
  // No actor can be rendering now. Free both the clones and the cached GLB
  // sources. If the async first-party load is still in flight, release after it
  // settles, without affecting a newer session.
@@ -742,7 +743,7 @@ function completeParty(){
 let endMessage='Вечеринка закончилась. Все гости вышли.';
 function endParty(message='Вечеринка завершена. Все гости вышли.'){
  if(ending||(!running&&!paused))return;
- ending=true;running=false;paused=false;scRequested=false;scStarted=false;
+ ending=true;running=false;paused=false;guestsReady=false;scRequested=false;scStarted=false;
  scWidget?.pause();
  endMessage=message;
  $('play').disabled=true;$('pause').disabled=true;$('end').disabled=true;
@@ -782,7 +783,7 @@ function animateExits(dt){
 }
 $('play').onclick=async()=>{
  if(!opened||running||ending)return;
- running=true;paused=false;partyTime=0;guestClock=0;chatClock=0;
+ running=true;paused=false;guestsReady=false;partyTime=0;guestClock=0;chatClock=0;
  guestCapacity=getGuestCapacity();
  removeGuests();
  $('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;
@@ -792,8 +793,10 @@ $('play').onclick=async()=>{
  musicStatus.textContent='Запускаю музыку… Если браузер запретил автозапуск, нажми Play в плеере.';
  if(scWidget)scWidget.play();
  else musicStatus.textContent='Плеер SoundCloud недоступен. Воспроизведи трек вручную.';
- await loadGuestsOnDemand();
- if(running)addGuest();
+ try{
+  await loadGuestsOnDemand();
+  if(running&&!ending){guestsReady=true;guestClock=0;addGuest();}
+ }catch(error){console.error('Guest animations unavailable',error);endParty('Не удалось загрузить персонажей.');}
 };
 $('pause').onclick=togglePause;
 $('end').onclick=()=>endParty();
@@ -938,7 +941,7 @@ animateFixtures(t,dt,partyActive);
 if(partyActive){
  partyTime+=dt;guestClock+=dt;chatClock+=dt;
  if(chatClock>16){chatClock=0;createChatPair();}
- if(guestClock>1.25&&guests.length<guestCapacity){guestClock=0;addGuest();}
+ if(guestsReady&&guestClock>1.25&&guests.length<guestCapacity){guestClock=0;addGuest();}
  for(const p of guests)updateGuest(p,dt);
  // Advance animated poses every rendered frame. A 30fps mixer with 120fps
  // locomotion previously created visible stepping/jitter in all variants.
