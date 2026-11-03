@@ -555,21 +555,110 @@ function addGuest(){
 }
 function removeGuests(){for(const p of guests){releaseSpot(p);p.chatPartner=null;for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+guestCapacity;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
-function endParty(message='Вечеринка закончилась. Выбери следующего DJ.'){
- if(!running)return;
- running=false;scRequested=false;scStarted=false;
- scWidget?.pause();
- removeGuests();
+function updatePauseButton(){
+ $('pause').disabled=!running||ending;
+ $('pause').textContent=paused?'ПРОДОЛЖИТЬ':'ПАУЗА';
+}
+function togglePause(){
+ if(!running||ending)return;
+ paused=!paused;
+ if(paused){
+  scWidget?.pause();
+  for(const p of guests){
+   p.pausedAnimation={
+    motion:p.motion,
+    time:p.activeItem?.action?.time||0,
+    speed:p.activeItem?.action?.getEffectiveTimeScale?.()||1,
+    wasPaused:!!p.activeItem?.action?.paused
+   };
+   actorState(p,'idle');
+  }
+  $('stageStatus').textContent='Пауза · свет включён, гости отдыхают. Нажми «Продолжить».';
+  musicStatus.textContent='Музыка на паузе.';
+ }else{
+  for(const p of guests){
+   const snapshot=p.pausedAnimation;
+   if(!snapshot)continue;
+   actorState(p,snapshot.motion||'walk');
+   const action=p.activeItem?.action;
+   if(action){
+    action.time=snapshot.time;
+    action.setEffectiveTimeScale(snapshot.speed);
+    action.paused=snapshot.wasPaused;
+    if(snapshot.motion==='sit'){action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;}
+    p.activeItem.mixer.update(0);
+   }
+   p.pausedAnimation=null;
+  }
+  scWidget?.play();
+  $('stageStatus').textContent='Вечеринка продолжается · '+nameToLabel[$('dj').value]+' за пультом.';
+ }
+ updatePauseButton();
+}
+function cleanGuest(p){
+ releaseSpot(p);p.chatPartner=null;
+ for(const item of Object.values(p.cache||{})){
+  item.mixer?.stopAllAction();
+  item.materials?.forEach(m=>m.material.dispose());
+ }
+ stage.remove(p.group);
+}
+function completeParty(){
+ ending=false;running=false;paused=false;
  $('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;
- $('stageStatus').textContent=message;
+ updatePauseButton();
+ $('counter').textContent='GUESTS: 0 / '+guestCapacity;
+ $('stageStatus').textContent=endMessage;
+}
+let endMessage='Вечеринка закончилась. Все гости вышли.';
+function endParty(message='Вечеринка закончилась. Все гости направляются к выходу.'){
+ if(ending||(!running&&!paused))return;
+ ending=true;running=false;paused=false;scRequested=false;scStarted=false;
+ scWidget?.pause();
+ endMessage=message;
+ $('play').disabled=true;$('pause').disabled=true;$('end').disabled=true;
+ $('stageStatus').textContent='Свет включён. Гости направляются к выходу…';
  musicStatus.textContent='Воспроизведение остановлено.';
+ guests.forEach((p,i)=>{
+  releaseSpot(p);p.chatPartner=null;p.pausedAnimation=null;
+  p.entryPending=false;p.state='exit';p.activity='exit';
+  p.exitStep=0;p.exitDelay=i*.13;
+  p.x=0;p.z=6.7;
+  actorState(p,'walk');
+ });
+ reservedSpots.clear();
+ if(!guests.length)completeParty();
+}
+function animateExits(dt){
+ for(let i=guests.length-1;i>=0;i--){
+  const p=guests[i];
+  if(p.exitDelay>0){p.exitDelay-=dt;updateAvatar(p,dt);continue;}
+  const targetX=p.exitStep===0?0:p.exitX;
+  const targetZ=p.exitStep===0?6.7:8.7;
+  const dx=targetX-p.group.position.x,dz=targetZ-p.group.position.z;
+  const dist=Math.hypot(dx,dz);
+  if(dist<.17){
+   if(p.exitStep===0){p.exitStep=1;p.exitX=(i%3-1)*.22;}
+   else{cleanGuest(p);guests.splice(i,1);}
+  }else{
+   const step=Math.min(p.speed*dt,dist);
+   p.group.position.x+=dx/dist*step;p.group.position.z+=dz/dist*step;
+   p.group.rotation.y=Math.atan2(dx,dz);
+   updateGuestElevation(p,dt);
+   updateAvatar(p,dt);
+  }
+ }
+ $('counter').textContent='GUESTS: '+guests.length+' / '+guestCapacity;
+ if(!guests.length)completeParty();
 }
 $('play').onclick=async()=>{
- if(!opened||running)return;
- running=true;partyTime=0;guestClock=0;chatClock=0;removeGuests();
+ if(!opened||running||ending)return;
+ running=true;paused=false;partyTime=0;guestClock=0;chatClock=0;
+ guestCapacity=getGuestCapacity();
+ removeGuests();
  $('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;
- $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До '+MAX_GUESTS+' гостей, танцы, бары и диваны.';
- // Call SoundCloud directly from the user click, BEFORE awaiting guest models.
+ updatePauseButton();
+ $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. Ожидается до '+guestCapacity+' гостей.';
  scRequested=true;
  musicStatus.textContent='Запускаю музыку… Если браузер запретил автозапуск, нажми Play в плеере.';
  if(scWidget)scWidget.play();
@@ -577,6 +666,7 @@ $('play').onclick=async()=>{
  await loadGuestsOnDemand();
  if(running)addGuest();
 };
+$('pause').onclick=togglePause;
 $('end').onclick=()=>endParty();
 let djNextAction=8,djPose='idle';
 function animateDJ(){
