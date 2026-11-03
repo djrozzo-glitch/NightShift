@@ -426,7 +426,7 @@ function actorState(p,motion){
  // Never substitute a dancing animation for walking. If an animation
  // failed to load, use this same character's idle/walk mesh instead.
  const assets=actorAssets[p.variant]||{};
- const asset=assets[motion]||assets.walk||assets.dance||assets.sit||assets.drink;
+ const asset=assets[motion]||assets.walk||assets.idle||assets.dance||assets.sit||assets.drink;
  if(!asset){
   console.warn('Missing character GLB',variants[p.variant],motion);
   return;
@@ -592,10 +592,17 @@ function sitAction(p,reverse=false){
  const item=p.cache?.sit,action=item?.action;
  if(!action)return 0;
  const duration=Math.max(.25,action.getClip().duration);
- action.enabled=true;action.paused=false;action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;
- action.reset();action.time=reverse?duration:0;
- action.timeScale=reverse?-1:1;
+ action.stop();
+ action.reset();
+ action.enabled=true;
+ action.setLoop(THREE.LoopOnce,1);
+ action.clampWhenFinished=true;
+ action.setEffectiveTimeScale(reverse?-1:1);
+ action.time=reverse?Math.max(0,duration-.001):0;
+ action.paused=false;
  action.play();
+ // Evaluate the new sitting/standing pose before it reaches the renderer.
+ item.mixer.update(0);
  return duration;
 }
 function updateGuest(p,dt){
