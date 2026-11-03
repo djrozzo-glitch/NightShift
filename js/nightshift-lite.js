@@ -438,7 +438,8 @@ function actorState(p,motion){
   const materials=prepareAvatar(mesh);
   p.group.add(mesh);
   const mixer=asset.animations?.length?new THREE.AnimationMixer(mesh):null;
-  const action=mixer?mixer.clipAction(asset.animations[0]):null;
+  const preferred=asset.animations?.find(clip=>clip.name.toLowerCase().includes(motion==='drink'?'drink':motion==='sit'?'sit':motion))||asset.animations?.[0];
+  const action=mixer?mixer.clipAction(preferred):null;
   item={mesh,mixer,action,materials};
   p.cache[motion]=item;
  }
@@ -705,6 +706,8 @@ function updateGuest(p,dt){
  p.thirst=Math.min(1,p.thirst+dt*(p.state==='dance'?.008:.003));
  p.energy=Math.max(0,p.energy-dt*(p.state==='dance'?.004:.001));
  if(p.state==='walk'){
+  // Always enforce locomotion while coordinates are changing.
+  if(p.motion!=='walk')actorState(p,'walk');
   // Walk inside from the door before taking the path to the reserved tile.
   const targetX=p.entryPending?p.entryX:p.x;
   const targetZ=p.entryPending?p.entryZ:p.z;
@@ -781,8 +784,9 @@ function monitorFrame(dt){fpsCount++;fpsClock+=dt;if(fpsClock>=1.5){const fps=Ma
  fpsClock=0;fpsCount=0;}}
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
 let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;monitorFrame(dt);controls.update();const partyActive=running&&!paused&&!ending;const target=partyActive?1:0;
-if(!partyActive){djPose='idle';djNextAction=8;}
-else animateDJ();
+if(!partyActive){djPose='idle';djNextAction=8;
+ for(const [state,actor] of Object.entries(djActors))actor.visible=state==='idle';
+}else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
 hemi.intensity+=((partyActive?1.45:2.3)-hemi.intensity)*.025;sun.intensity+=((partyActive?.85:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(partyActive?0x050410:0x090b16),.02);
