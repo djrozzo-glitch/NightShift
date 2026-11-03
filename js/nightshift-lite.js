@@ -278,9 +278,40 @@ const MAX_GUESTS=40;
 let opened=false,running=false,guestClock=0,partyTime=0;
 const guests=[];const clock=new THREE.Clock();
 const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
-const danceSpot=()=>({x:-3.5+Math.floor(Math.random()*8),z:-5.5+Math.floor(Math.random()*7)});
 const barSpots=[{x:-6.4,z:-4},{x:6.4,z:-4}];
 const sofaSpots=[{x:-6.4,z:5},{x:6.4,z:5},{x:-3,z:6.65-1/3},{x:3,z:6.65-1/3}];
+// Reserve destinations while a guest is walking there AND while they use them.
+// A dance tile is never assigned to two guests simultaneously.
+const danceSpots=danceTilePositions.map(([x,z])=>({x,z}));
+const reservedSpots=new Map();
+const spotKey=(activity,spot)=>activity+':'+spot.x+','+spot.z;
+function releaseSpot(p){
+ if(p.reservation&&reservedSpots.get(p.reservation)===p)reservedSpots.delete(p.reservation);
+ p.reservation=null;
+}
+function reserveDestination(p,activity){
+ const candidates=activity==='dance'?danceSpots:activity==='bar'?barSpots:sofaSpots;
+ // Shuffle by starting at a random index, without sorting the shared list.
+ const start=Math.floor(Math.random()*candidates.length);
+ for(let i=0;i<candidates.length;i++){
+  const spot=candidates[(start+i)%candidates.length];
+  const key=spotKey(activity,spot);
+  if(!reservedSpots.has(key)){
+   reservedSpots.set(key,p);p.reservation=key;
+   return spot;
+  }
+ }
+ return null;
+}
+const DANCE_FLOOR_Y=.23;
+const REGULAR_FLOOR_Y=.05;
+function updateGuestElevation(p,dt){
+ // Imported dance-floor GLB sits higher than the checkerboard base.
+ const x=p.group.position.x,z=p.group.position.z;
+ const onDanceFloor=x>=-3.95&&x<=3.95&&z>=-5.95&&z<=.95;
+ const target=onDanceFloor?DANCE_FLOOR_Y:REGULAR_FLOOR_Y;
+ p.group.position.y+= (target-p.group.position.y)*Math.min(1,dt*9);
+}
 // Keep the logic state separate from the visible animation.
 // Each avatar keeps one cached, independently skinned model per action, so
 // neither GLTF skeletons nor materials are shared across guests.
@@ -367,13 +398,25 @@ function updateAvatar(p,dt){
  }
 }
 function routeGuest(p,activity){
+ releaseSpot(p);
+ let destination=reserveDestination(p,activity);
+ // Busy bar/sofas: wait on a free dance tile and try again on the next decision.
+ if(!destination&&activity!=='dance'){
+  activity='dance';
+  destination=reserveDestination(p,'dance');
+ }
+ if(!destination){
+  // All tiles reserved: do not stack another guest onto a taken tile.
+  p.wait=1.5;p.state='waiting';
+  actorState(p,'walk');return false;
+ }
  p.activity=activity;p.wait=0;
- const destination=activity==='bar'?pick(barSpots):activity==='sofa'?pick(sofaSpots):danceSpot();
- p.x=destination.x+(activity==='dance'?(Math.random()-.5)*.38:0);
- p.z=destination.z+(activity==='dance'?(Math.random()-.5)*.38:0);
+ p.x=destination.x;
+ p.z=destination.z;
  p.sofaBack=activity==='sofa'&&destination.z>6;
  actorState(p,'walk');
  p.state='walk';
+ return true;
 }
 function addGuest(){
  if(!running||guests.length>=MAX_GUESTS)return;
@@ -383,7 +426,7 @@ function addGuest(){
  energy:.55+Math.random()*.45,thirst:Math.random()*.3,wait:0,activity:'dance',cache:{},visits:0};
  routeGuest(p,'dance');guests.push(p);$('counter').textContent='GUESTS: '+guests.length+' / '+MAX_GUESTS;
 }
-function removeGuests(){for(const p of guests){for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
+function removeGuests(){for(const p of guests){releaseSpot(p);for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
 $('play').onclick=async()=>{if(!opened||running)return;running=true;partyTime=0;guestClock=0;removeGuests();$('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;$('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До '+MAX_GUESTS+' гостей, танцы, бары и диваны.';await loadGuestsOnDemand();if(running)addGuest();};
 $('end').onclick=()=>{running=false;removeGuests();$('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;$('stageStatus').textContent='Вечеринка закончилась. Выбери следующего DJ.';};
@@ -408,6 +451,12 @@ function sitAction(p,reverse=false){
  return duration;
 }
 function updateGuest(p,dt){
+ updateGuestElevation(p,dt);
+ if(p.state==='waiting'){
+  p.wait-=dt;
+  if(p.wait<=0)routeGuest(p,'dance');
+  return;
+ }
  p.thirst=Math.min(1,p.thirst+dt*(p.state==='dance'?.008:.003));
  p.energy=Math.max(0,p.energy-dt*(p.state==='dance'?.004:.001));
  if(p.state==='walk'){
