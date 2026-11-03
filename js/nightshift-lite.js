@@ -371,15 +371,22 @@ $('musicVolume').addEventListener('input',event=>setMusicVolume(event.target.val
 let scWidget=null,scReady=false,scRequested=false,scStarted=false;
 const musicStatus=$('musicStatus');
 function syncTrack(){
- const url=tracks[$('dj').value];
- $('trackLink').href=url;
- $('trackLink').textContent='♫ '+nameToLabel[$('dj').value]+' — открыть SoundCloud';
+ const artist=currentArtist();
+ const url=artist?.url||'';
+ $('trackLink').href=url||'https://soundcloud.com';
+ $('trackLink').textContent=url?'♫ '+artist.name+' — открыть SoundCloud':'Для '+(artist?.name||'DJ')+' нет ссылки SoundCloud';
  scReady=false;scStarted=false;scRequested=false;
+ if(!url){
+  $('play').disabled=true;
+  musicStatus.textContent='У выбранного DJ нет ссылки на трек. Проверь Google Sheets.';
+  return;
+ }
  if(scWidget){
   scWidget.load(url,{auto_play:false,show_comments:false,show_user:true,show_reposts:false,visual:false});
  }else{
   $('scFrame').src='https://w.soundcloud.com/player/?url='+encodeURIComponent(url)+'&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false';
  }
+ if(opened&&!running&&!ending)$('play').disabled=false;
  musicStatus.textContent='Трек готовится к воспроизведению. Нажми «Начать вечеринку».';
 }
 function initSoundCloud(){
@@ -391,10 +398,12 @@ function initSoundCloud(){
  const E=window.SC.Widget.Events;
  scWidget.bind(E.READY,()=>{
   scReady=true;
+  scWidget.setVolume(playerVolume);
   if(scRequested&&running&&!paused&&!ending)scWidget.play();
  });
  scWidget.bind(E.PLAY,()=>{
   if(paused||ending){scWidget.pause();return;}
+  scWidget.setVolume(playerVolume);
   scStarted=true;
   musicStatus.textContent='♫ Играет '+nameToLabel[$('dj').value]+'. Вечеринка закончится вместе с треком.';
  });
