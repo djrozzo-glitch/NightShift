@@ -27,9 +27,9 @@ const stage=new THREE.Group();scene.add(stage);
 const smokeCanvas=document.createElement('canvas');smokeCanvas.width=128;smokeCanvas.height=128;
 const smokeCtx=smokeCanvas.getContext('2d');
 const smokeGradient=smokeCtx.createRadialGradient(64,64,3,64,64,63);
-smokeGradient.addColorStop(0,'rgba(200,190,220,0.22)');
-smokeGradient.addColorStop(.3,'rgba(177,169,205,0.12)');
-smokeGradient.addColorStop(.65,'rgba(145,140,170,0.035)');
+smokeGradient.addColorStop(0,'rgba(200,190,220,0.45)');
+smokeGradient.addColorStop(.3,'rgba(177,169,205,0.25)');
+smokeGradient.addColorStop(.65,'rgba(145,140,170,0.09)');
 smokeGradient.addColorStop(1,'rgba(125,120,155,0)');
 smokeCtx.fillStyle=smokeGradient;smokeCtx.fillRect(0,0,128,128);
 const smokeTexture=new THREE.CanvasTexture(smokeCanvas);
@@ -151,7 +151,7 @@ function addFixture(holder,obj,name){
   const beams=colors.map((color,i)=>{
    // Broad translucent cones make light visible inside smoke instead of thin laser rods.
    const laser=name==='laser_new';
-   const geometry=new THREE.CylinderGeometry(laser?.035:.09,laser?.12:.55,1,16,1,true);
+   const geometry=new THREE.CylinderGeometry(laser?.12:.55,laser?.035:.09,1,16,1,true);
    const material=new THREE.MeshBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,fog:true});
    const mesh=new THREE.Mesh(geometry,material);
    mesh.renderOrder=2;mesh.frustumCulled=false;stage.add(mesh);return mesh;
@@ -408,7 +408,7 @@ scene.fog.color.copy(scene.background);
 scene.fog.density+=( (running?.041:.024)-scene.fog.density)*.016;
 for(const layer of hazeLayers){
  const m=layer.mesh;
- m.material.opacity+=((running?.24:0)-m.material.opacity)*.018;
+ m.material.opacity+=((running?.42:0)-m.material.opacity)*.018;
  m.position.x=layer.baseX+Math.sin(t*.11+layer.offset)*.42;
  m.position.z=layer.baseZ+Math.cos(t*.08+layer.offset)*.38;
 }
