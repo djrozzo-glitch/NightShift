@@ -144,6 +144,24 @@ root.position.x-=mid.x;root.position.z-=mid.z;root.position.y-=box.min.y;
 }
 let ready3d=false;
 const fixtures=[];
+const beamStart=new THREE.Vector3(),beamEnd=new THREE.Vector3(),beamDirection=new THREE.Vector3(),upVector=new THREE.Vector3(0,1,0);
+const beamMid=new THREE.Vector3();
+const beamGeoLaser=new THREE.CylinderGeometry(.12,.02,1,16,1,true);
+const beamGeoWash=new THREE.CylinderGeometry(.56,.07,1,20,1,true);
+const haloGeoLaser=new THREE.CylinderGeometry(.22,.04,1,16,1,true);
+const haloGeoWash=new THREE.CylinderGeometry(.85,.08,1,20,1,true);
+function makeAtmosBeam(color,laser){
+ const material=new THREE.MeshBasicMaterial({
+  color,transparent:true,opacity:0,depthWrite:false,
+  side:THREE.DoubleSide,blending:THREE.AdditiveBlending,
+  fog:true
+ });
+ const haloMaterial=material.clone();haloMaterial.opacity=0;
+ const mesh=new THREE.Mesh(laser?beamGeoLaser:beamGeoWash,material);
+ const halo=new THREE.Mesh(laser?haloGeoLaser:haloGeoWash,haloMaterial);
+ for(const obj of [mesh,halo]){obj.frustumCulled=false;obj.renderOrder=2;stage.add(obj);}
+ return {mesh,halo};
+}
 function addFixture(holder,obj,name){
  obj.updateMatrixWorld(true);
  const bounds=new THREE.Box3().setFromObject(obj);
@@ -158,43 +176,66 @@ function addFixture(holder,obj,name){
   const glow=new THREE.PointLight(0xcbb9ff,0,8,2);glow.position.y=top-.06;holder.add(glow);
   fixtures.push({name,holder,obj,points,glow,top});
  }else if(name==='laser_new'||name==='light'){
-  const colors=name==='laser_new'?[0x31ff64,0x287cff,0xff334d]:[0xc15dff,0x87abff];
-  const beams=colors.map((color,i)=>{
-   // Broad translucent cones make light visible inside smoke instead of thin laser rods.
-   const laser=name==='laser_new';
-   const geometry=new THREE.CylinderGeometry(laser?.12:.55,laser?.035:.09,1,16,1,true);
-   const material=new THREE.MeshBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,fog:true});
-   const mesh=new THREE.Mesh(geometry,material);
-   mesh.renderOrder=2;mesh.frustumCulled=false;stage.add(mesh);return mesh;
-  });
-  const lamp=new THREE.PointLight(colors[0],0,6,2);lamp.position.y=top-.1;holder.add(lamp);
-  fixtures.push({name,holder,top,beams,lamp});
+  const laser=name==='laser_new';
+  const colors=laser?[0x31ff64,0x287cff,0xff334d]:[0xc15dff,0x87abff];
+  const beams=colors.map(color=>makeAtmosBeam(color,laser));
+  const lamp=new THREE.PointLight(colors[0],0,6,2);
+  lamp.position.y=top-.1;holder.add(lamp);
+  // One real spotlight per fixture creates light on surfaces and dancers,
+  // while the transparent meshes make the haze beam visible.
+  const spot=new THREE.SpotLight(colors[0],0,14,laser?.26:.46,.64,1.4);
+  spot.position.set(holder.position.x,top,holder.position.z);
+  const target=new THREE.Object3D();scene.add(target);
+  spot.target=target;scene.add(spot);
+  fixtures.push({name,holder,top,beams,lamp,spot,target,laser});
  }
 }
-const beamStart=new THREE.Vector3(),beamEnd=new THREE.Vector3(),upVector=new THREE.Vector3(0,1,0);
 function animateFixtures(t,dt,active){
+ const quality=fxSettings[fxQuality];
  for(const fx of fixtures){
   if(fx.name==='discoball'){
-   if(active)fx.obj.rotation.y+=dt*.55;
-   fx.glow.intensity=active?1.5+Math.sin(t*6)*.4:0;
+   if(active)fx.obj.rotation.y+=dt*.52;
+   fx.glow.intensity=active?(1.1+.45*Math.sin(t*4))*quality.brightness:0;
    fx.points.forEach((p,i)=>{
-    const angle=t*.42+i*Math.PI*2/40,radius=2.4+i%5*.59;
-    p.position.set(fx.holder.position.x+Math.cos(angle)*radius,.055,fx.holder.position.z+Math.sin(angle)*radius);
-    p.material.opacity=active?.25+.35*(.5+.5*Math.sin(t*2+i)):0;
+    const angle=t*.36+i*Math.PI*2/40,radius=2.1+i%5*.52;
+    p.position.set(
+     THREE.MathUtils.clamp(fx.holder.position.x+Math.cos(angle)*radius,-7.5,7.5),
+     .055,
+     THREE.MathUtils.clamp(fx.holder.position.z+Math.sin(angle)*radius,-7.5,7.5)
+    );
+    p.material.opacity=active?.2+.25*(.5+.5*Math.sin(t*2+i)):0;
    });
-  }else{
-   fx.lamp.intensity=active?2.6+Math.sin(t*3.2+fx.holder.position.x)*.55:0;
-   fx.lamp.getWorldPosition(beamStart);
-   fx.beams.forEach((beam,i)=>{
-    const a=t*(.8+i*.17)+i*1.7;
-    beamEnd.set(Math.sin(a)*2.8,.08,-2.5+Math.cos(a*.86)*2.0);
-    const dir=beamEnd.clone().sub(beamStart),len=dir.length();
-    beam.position.copy(beamStart).addScaledVector(dir,.5);
-    beam.quaternion.setFromUnitVectors(upVector,dir.normalize());
-    beam.scale.set(1,len,1);
-    beam.material.opacity=active?(fx.name==='laser_new'?.18:.085)*(0.75+.25*Math.sin(t*3.2+i)):0;
-   });
+   continue;
   }
+  // Alternating fan/sweep patterns: smooth scanning, no hard jumps.
+  const phase=t*.57+fx.holder.position.x*.8;
+  const pulse=.78+.22*Math.sin(t*2.9+fx.holder.position.z);
+  fx.lamp.intensity=active?2.5*pulse*quality.brightness:0;
+  fx.lamp.getWorldPosition(beamStart);
+  fx.beams.forEach((part,i)=>{
+   const visible=active&&i<quality.beams;
+   const a=phase+i*(fx.laser?.46:.9);
+   const sweep=fx.laser?2.8:3.4;
+   beamEnd.set(Math.sin(a)*sweep,.12,-2.55+Math.cos(a*.68+i*.35)*2.25);
+   beamDirection.copy(beamEnd).sub(beamStart);
+   const length=beamDirection.length();
+   beamDirection.normalize();
+   beamMid.copy(beamStart).addScaledVector(beamDirection,length*.5);
+   const rotation=new THREE.Quaternion().setFromUnitVectors(upVector,beamDirection);
+   const opacity=(fx.laser?.24:.13)*pulse*quality.brightness;
+   for(const [obj,scale,alpha] of [[part.mesh,1,opacity],[part.halo,1,opacity*.24]]){
+    obj.position.copy(beamMid);
+    obj.quaternion.copy(rotation);
+    obj.scale.set(scale,length,scale);
+    obj.material.opacity=visible?alpha:0;
+    obj.visible=visible;
+   }
+   if(i===0){
+    fx.target.position.copy(beamEnd);
+    fx.spot.position.copy(beamStart);
+    fx.spot.intensity=visible&&quality.spots?(fx.laser?11:14)*pulse*quality.brightness:0;
+   }
+  });
  }
 }
 Promise.all(decor.map(async([name,x,z,size,rotation])=>{
