@@ -410,6 +410,35 @@ function loadGuestsOnDemand(){return actorPromise ||= Promise.all(variants.flatM
   if(g)actorAssets[i][state]=g;loaded++;
  })
 )).then(()=>true);}
+// GLTF assets remain alive unless the shared geometry/textures are disposed.
+// Only call this after ALL guests have left: their animated clones reuse these assets.
+function releaseGuestAssets(){
+ const geometries=new Set(),materials=new Set(),textures=new Set();
+ const captureTexture=value=>{
+  if(value?.isTexture)textures.add(value);
+  else if(Array.isArray(value))value.forEach(captureTexture);
+ };
+ for(const assets of Object.values(actorAssets)){
+  for(const gltf of Object.values(assets)){
+   gltf.scene?.traverse(obj=>{
+    if(obj.geometry)geometries.add(obj.geometry);
+    const mats=Array.isArray(obj.material)?obj.material:[obj.material];
+    for(const material of mats){
+     if(!material)continue;
+     materials.add(material);
+     for(const value of Object.values(material))captureTexture(value);
+    }
+   });
+  }
+ }
+ geometries.forEach(g=>g.dispose());
+ materials.forEach(m=>m.dispose());
+ textures.forEach(t=>t.dispose());
+ for(const key of Object.keys(actorAssets))delete actorAssets[key];
+ actorPromise=null;
+ loaded=0;
+ console.info('NightShift: guest GLBs, geometry, materials and textures released after the party.');
+}
 const MAX_GUESTS=40;
 let opened=false,running=false,paused=false,ending=false,guestClock=0,partyTime=0;
 const guests=[];const clock=new THREE.Clock();
@@ -637,7 +666,7 @@ function addGuest(){
  guests.push(p);
  $('counter').textContent='GUESTS: '+guests.length+' / '+guestCapacity;
 }
-function removeGuests(){for(const p of guests){releaseSpot(p);p.chatPartner=null;for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+guestCapacity;}
+function removeGuests(){for(const p of guests)cleanGuest(p);guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+guestCapacity;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
 function updatePauseButton(){
  $('pause').disabled=!running||ending;
@@ -683,12 +712,28 @@ function cleanGuest(p){
  releaseSpot(p);p.chatPartner=null;
  for(const item of Object.values(p.cache||{})){
   item.mixer?.stopAllAction();
+  item.mixer?.uncacheRoot(item.mesh);
+  item.mesh?.traverse(obj=>{
+   // Skinned avatars own their bone textures; geometries/maps are shared
+   // with the GLB templates and are disposed only after the last guest.
+   if(obj.isSkinnedMesh)obj.skeleton?.dispose();
+  });
   item.materials?.forEach(m=>m.material.dispose());
  }
  stage.remove(p.group);
+ p.cache={};p.activeItem=null;p.fadingItem=null;p.mesh=null;p.mixer=null;
 }
 function completeParty(){
  ending=false;running=false;paused=false;
+ // No actor can be rendering now. Free both the clones and the cached GLB
+ // sources. If the async first-party load is still in flight, release after it
+ // settles, without affecting a newer session.
+ const finishingLoad=actorPromise;
+ if(finishingLoad){
+  finishingLoad.finally(()=>{
+   if(!running&&!ending&&actorPromise===finishingLoad)releaseGuestAssets();
+  });
+ }else releaseGuestAssets();
  $('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;
  updatePauseButton();
  $('counter').textContent='GUESTS: 0 / '+guestCapacity;
