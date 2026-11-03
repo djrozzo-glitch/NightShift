@@ -232,12 +232,21 @@ function makeTextPanel(text,w,h,{fontSize=68,background='#130c22',foreground='#e
 }
 const sign=makeTextPanel('NIGHT SHIFT',2.8,.72,{fontSize:86});
 sign.mesh.position.set(0,2.0,8.05);stage.add(sign.mesh);
+// A second sign faces INTO the venue; mirrored orientation makes the lettering readable from the dancefloor.
+const insideSign=makeTextPanel('NIGHT SHIFT',2.8,.72,{fontSize:86});
+insideSign.mesh.position.set(0,2.0,7.64);
+insideSign.mesh.rotation.y=Math.PI;
+stage.add(insideSign.mesh);
 let clubName=localStorage.getItem('nightshift-lite-club')||'ABLETON GYM';
 function updateClubName(){
- sign.ctx.fillStyle='#130c22';sign.ctx.fillRect(0,0,1024,256);
- sign.ctx.strokeStyle='#a657dd';sign.ctx.lineWidth=18;sign.ctx.strokeRect(9,9,1006,238);
- sign.ctx.fillStyle='#8bffc9';sign.ctx.font='800 84px sans-serif';sign.ctx.textAlign='center';sign.ctx.textBaseline='middle';sign.ctx.fillText(clubName.toUpperCase(),512,128,950);
- sign.texture.needsUpdate=true;
+ for(const panel of [sign,insideSign]){
+  panel.ctx.fillStyle='#130c22';panel.ctx.fillRect(0,0,1024,256);
+  panel.ctx.strokeStyle='#a657dd';panel.ctx.lineWidth=18;panel.ctx.strokeRect(9,9,1006,238);
+  panel.ctx.fillStyle='#8bffc9';panel.ctx.font='800 84px sans-serif';
+  panel.ctx.textAlign='center';panel.ctx.textBaseline='middle';
+  panel.ctx.fillText(clubName.toUpperCase(),512,128,950);
+  panel.texture.needsUpdate=true;
+ }
  $('clubName').value=clubName;
 }
 $('saveClubName').onclick=()=>{const next=$('clubName').value.trim().slice(0,32);if(!next)return;clubName=next;localStorage.setItem('nightshift-lite-club',clubName);updateClubName();};
@@ -245,10 +254,57 @@ updateClubName();
 
 const beams=[new THREE.PointLight(0xdd39ff,0,13,2),new THREE.PointLight(0x377dff,0,12,2)];
 beams[0].position.set(-4,3,-3);beams[1].position.set(4,3,-4);beams.forEach(l=>scene.add(l));
+// Indirect venue lighting keeps the 3D furniture and guests readable at night.
+const venueFills=[
+ new THREE.PointLight(0xbdb4e8,0,15,2),
+ new THREE.PointLight(0x8ac4d9,0,13,2),
+ new THREE.PointLight(0xd4a0b9,0,13,2),
+ new THREE.PointLight(0xaba5d6,0,12,2)
+];
+[[-3,3,-2],[3,3,-2],[-4,2.7,4],[4,2.7,4]].forEach(([x,y,z],i)=>{
+ venueFills[i].position.set(x,y,z);scene.add(venueFills[i]);
+});
 const nameToLabel={rozzo:'rozzo',neonexus:'Neonexus',vanya:'Vanya Velin',lutanina:'Lutanina',zlostniy:'zlostniy',lowq:'lowQ',velvet37:'Velvet 37',raison:'Raison',boriskhodok:'DJ Boris Khodok'};
 const tracks={rozzo:'https://soundcloud.com/irozov/rozzo-waste-my-time-i-dont-1',neonexus:'https://soundcloud.com/amn303/backdoor-radio-mix-neonexus',vanya:'https://soundcloud.com/bcco/bcco-premiere-vanya-velin',lutanina:'https://soundcloud.com/user-880945103/two-rndm-06-02',zlostniy:'https://soundcloud.com/velvet-37/shine-ft-zlostniy',lowq:'https://soundcloud.com/shiftedrecordings/waves-of-light-1',velvet37:'https://soundcloud.com/velvet-37/my-angel-1',raison:'https://soundcloud.com/raison_d_etre/even-sexier-groove',boriskhodok:'https://soundcloud.com/dj-boris-khodok/8-march-mix'};
-function syncTrack(){const url=tracks[$('dj').value];$('trackLink').href=url;$('trackLink').textContent='♫ '+nameToLabel[$('dj').value]+' — открыть SoundCloud';$('scFrame').src='https://w.soundcloud.com/player/?url='+encodeURIComponent(url)+'&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false';}
-$('dj').addEventListener('change',()=>{updateFee();syncTrack()});syncTrack();
+let scWidget=null,scReady=false,scRequested=false,scStarted=false;
+const musicStatus=$('musicStatus');
+function syncTrack(){
+ const url=tracks[$('dj').value];
+ $('trackLink').href=url;
+ $('trackLink').textContent='♫ '+nameToLabel[$('dj').value]+' — открыть SoundCloud';
+ scReady=false;scStarted=false;scRequested=false;
+ if(scWidget){
+  scWidget.load(url,{auto_play:false,show_comments:false,show_user:true,show_reposts:false,visual:false});
+ }else{
+  $('scFrame').src='https://w.soundcloud.com/player/?url='+encodeURIComponent(url)+'&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false';
+ }
+ musicStatus.textContent='Трек готовится к воспроизведению. Нажми «Начать вечеринку».';
+}
+function initSoundCloud(){
+ if(!window.SC?.Widget){
+  musicStatus.textContent='SoundCloud API недоступен. Запусти музыку вручную в плеере.';
+  return;
+ }
+ scWidget=window.SC.Widget($('scFrame'));
+ const E=window.SC.Widget.Events;
+ scWidget.bind(E.READY,()=>{
+  scReady=true;
+  if(scRequested&&running)scWidget.play();
+ });
+ scWidget.bind(E.PLAY,()=>{
+  scStarted=true;
+  musicStatus.textContent='♫ Играет '+nameToLabel[$('dj').value]+'. Вечеринка закончится вместе с треком.';
+ });
+ scWidget.bind(E.FINISH,()=>{
+  if(running&&scStarted)endParty('Трек закончился. Вечеринка завершена.');
+ });
+ scWidget.bind(E.ERROR,()=>{
+  if(running)musicStatus.textContent='Не удалось воспроизвести трек. Проверь SoundCloud или включи его вручную.';
+ });
+}
+$('dj').addEventListener('change',()=>{updateFee();syncTrack()});
+syncTrack();
+initSoundCloud();
 let fees={};
 function csvRows(s){const rows=[];let row=[],field='',quote=false;for(let i=0;i<s.length;i++){const c=s[i];if(c==='"'){if(quote&&s[i+1]==='"'){field+='"';i++}else quote=!quote}else if(c===','&&!quote){row.push(field);field=''}else if((c==='\n'||c==='\r')&&!quote){if(c==='\r'&&s[i+1]==='\n')i++;row.push(field);if(row.some(v=>v.trim()))rows.push(row);row=[];field=''}else field+=c}row.push(field);if(row.some(v=>v.trim()))rows.push(row);return rows}
 function updateFee(){const fee=fees[$('dj').value];$('fee').textContent=Number.isFinite(fee)?'€'+new Intl.NumberFormat('nl-NL',{maximumFractionDigits:2}).format(fee):'—';}
@@ -443,8 +499,29 @@ function addGuest(){
 }
 function removeGuests(){for(const p of guests){releaseSpot(p);for(const state of Object.values(p.cache||{})){state.mixer?.stopAllAction();state.materials?.forEach(m=>m.material.dispose());}stage.remove(p.group)}guests.length=0;reservedSpots.clear();$('counter').textContent='GUESTS: 0 / '+MAX_GUESTS;}
 $('openClub').onclick=()=>{opened=true;$('curtain').style.display='none';$('play').disabled=false;$('stageStatus').textContent='Клуб открыт. Выбери DJ и начинай вечеринку!';};
-$('play').onclick=async()=>{if(!opened||running)return;running=true;partyTime=0;guestClock=0;removeGuests();$('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;$('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До '+MAX_GUESTS+' гостей, танцы, бары и диваны.';await loadGuestsOnDemand();if(running)addGuest();};
-$('end').onclick=()=>{running=false;removeGuests();$('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;$('stageStatus').textContent='Вечеринка закончилась. Выбери следующего DJ.';};
+function endParty(message='Вечеринка закончилась. Выбери следующего DJ.'){
+ if(!running)return;
+ running=false;scRequested=false;scStarted=false;
+ scWidget?.pause();
+ removeGuests();
+ $('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;
+ $('stageStatus').textContent=message;
+ musicStatus.textContent='Воспроизведение остановлено.';
+}
+$('play').onclick=async()=>{
+ if(!opened||running)return;
+ running=true;partyTime=0;guestClock=0;removeGuests();
+ $('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;
+ $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. До '+MAX_GUESTS+' гостей, танцы, бары и диваны.';
+ // Call SoundCloud directly from the user click, BEFORE awaiting guest models.
+ scRequested=true;
+ musicStatus.textContent='Запускаю музыку… Если браузер запретил автозапуск, нажми Play в плеере.';
+ if(scWidget)scWidget.play();
+ else musicStatus.textContent='Плеер SoundCloud недоступен. Воспроизведи трек вручную.';
+ await loadGuestsOnDemand();
+ if(running)addGuest();
+};
+$('end').onclick=()=>endParty();
 let djNextAction=8,djPose='idle';
 function animateDJ(){
  if(!djActors.idle)return;
@@ -530,16 +607,17 @@ let t=0,animAccum=0;function frame(){requestAnimationFrame(frame);let dt=Math.mi
 if(!running){djPose='idle';djNextAction=8;}
 else animateDJ();
 for(const mixer of extraMixers)mixer.update(dt);
-hemi.intensity+=((running?.4:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.15:2)-sun.intensity)*.025;
+hemi.intensity+=((running?1.45:2.3)-hemi.intensity)*.025;sun.intensity+=((running?.85:2)-sun.intensity)*.025;
 scene.background.lerp(new THREE.Color(running?0x050410:0x090b16),.02);
 scene.fog.color.copy(scene.background);
-scene.fog.density+=( (running?.041:.024)-scene.fog.density)*.016;
+scene.fog.density+=((running?.022:.018)-scene.fog.density)*.016;
 for(const layer of hazeLayers){
  const m=layer.mesh;
- m.material.opacity+=((running?.42:0)-m.material.opacity)*.018;
+ m.material.opacity+=((running?.24:0)-m.material.opacity)*.018;
  m.position.x=layer.baseX+Math.sin(t*.11+layer.offset)*.42;
  m.position.z=layer.baseZ+Math.cos(t*.08+layer.offset)*.38;
 }
+venueFills.forEach((l,i)=>{l.intensity+=( (running?3.2:0)-l.intensity)*.025;});
 beams.forEach((l,i)=>{l.intensity=target*(3+2*Math.sin(t*(i+3)));l.position.x=(i?4:-4)+Math.sin(t*.8+i)*2;});
 animateFixtures(t,dt,running);
 if(running){
