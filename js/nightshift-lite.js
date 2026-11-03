@@ -1029,19 +1029,23 @@ function cleanGuest(p){
 }
 function completeParty(){
  ending=false;running=false;paused=false;guestsReady=false;
- // No actor can be rendering now. Free both the clones and the cached GLB
- // sources. If the async first-party load is still in flight, release after it
- // settles, without affecting a newer session.
+ // A progressive load might still be in flight when the last person exits.
+ // Do not let a new party reuse assets while the old set is being disposed.
  const finishingLoad=actorPromise;
- if(finishingLoad){
-  finishingLoad.finally(()=>{
-   if(!running&&!ending&&actorPromise===finishingLoad)releaseGuestAssets();
-  });
- }else releaseGuestAssets();
- $('dj').disabled=false;$('play').disabled=false;$('end').disabled=true;
+ $('dj').disabled=true;$('play').disabled=true;$('end').disabled=true;
  updatePauseButton();
  $('counter').textContent='GUESTS: 0 / '+guestCapacity;
  $('stageStatus').textContent=endMessage;
+ const finalize=()=>{
+  if(running||ending||actorPromise!==finishingLoad)return;
+  releaseGuestAssets();
+  $('dj').disabled=false;$('play').disabled=false;
+ };
+ if(finishingLoad)finishingLoad.then(finalize,finalize);
+ else{
+  releaseGuestAssets();
+  $('dj').disabled=false;$('play').disabled=false;
+ }
 }
 let endMessage='Вечеринка закончилась. Все гости вышли.';
 function endParty(message='Вечеринка завершена. Все гости вышли.'){
@@ -1221,6 +1225,11 @@ function updateGuest(p,dt){
  else routeGuest(p,'dance');
 }
 
+// Begin core preload once the venue models have finished loading, even
+// before opening the club. It overlaps selection time rather than party time.
+Promise.all([wallLoad,peopleExtras]).then(()=>{
+ if(!actorPromise)startGuestPreload();
+}).catch(error=>console.warn('Guest preload postponed:',error));
 const resize=new ResizeObserver(()=>{const w=mount.clientWidth,h=mount.clientHeight;if(w&&h){camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);}});resize.observe(mount);
 let t=0;function frame(){requestAnimationFrame(frame);let dt=Math.min(clock.getDelta(),.05);t+=dt;controls.update();const partyActive=running&&!paused&&!ending;const target=partyActive?1:0;const quality=fxSettings[fxQuality];
 if(!partyActive){djPose='idle';djNextAction=8;
