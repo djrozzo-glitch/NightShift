@@ -139,6 +139,7 @@ var guest_info_label: Label
 var guest_thought := ""
 var guest_thought_clock := 0.0
 var guest_spawn_clock := 0.0
+var guest_chat_clock := 0.0
 var guest_count := 0
 var night_mood_total := 0.0
 var night_mood_samples := 0
@@ -837,6 +838,95 @@ func _path_around_guests(start: Vector2i, goal: Vector2i, self_guest: Dictionary
 		cell = previous[cell]
 	return result
 
+func _guest_step_aside(guest: Dictionary) -> bool:
+	var here: Vector2i = guest["cell"]
+	var destination: Vector2i = guest["destination"]
+	var best_path: Array[Vector2i] = []
+	var best_score := INF
+	for offset in WALK_DIRS:
+		var side: Vector2i = here + offset
+		if not _walkable(side) or _destination_taken(side, guest):
+			continue
+		if _guest_too_close(_cell_position(side), guest, 0.72):
+			continue
+		var rest := _path_around_guests(side, destination, guest)
+		if side != destination and rest.is_empty():
+			continue
+		var candidate: Array[Vector2i] = [side]
+		candidate.append_array(rest)
+		var score := float(candidate.size()) + (3.0 if guest["path"].has(side) else 0.0)
+		if score < best_score:
+			best_score = score
+			best_path = candidate
+	if best_path.is_empty():
+		return false
+	guest["path"] = best_path
+	guest["blocked_time"] = 0.0
+	guest["yield_time"] = 0.0
+	return true
+
+
+func _guest_chat_spot_ok(guest: Dictionary) -> bool:
+	var state := str(guest.get("state", ""))
+	if not state.begins_with("walk_") or state == "walk_exit":
+		return false
+	if bool(guest.get("leaving", false)) or bool(guest.get("seated", false)):
+		return false
+	if float(guest.get("chat_cooldown", 0.0)) > 0.0:
+		return false
+	var cell: Vector2i = guest["cell"]
+	if not _walkable(cell) or dance_tiles.has(cell) or cell == GUEST_ENTRY:
+		return false
+	var person := guest["node"] as Node3D
+	if not is_instance_valid(person) or person.position.distance_squared_to(_cell_position(cell)) > 0.045:
+		return false
+	var open_sides := 0
+	for offset in WALK_DIRS:
+		if _walkable(cell + offset) and not dance_tiles.has(cell + offset):
+			open_sides += 1
+	return open_sides >= 3
+
+
+func _try_start_guest_chat() -> void:
+	if guests.size() < 2 or randf() > 0.35:
+		return
+	var candidates := guests.duplicate()
+	candidates.shuffle()
+	for first in candidates:
+		if not _guest_chat_spot_ok(first):
+			continue
+		for second in candidates:
+			if second == first or not _guest_chat_spot_ok(second):
+				continue
+			var a: Vector2i = first["cell"]
+			var b: Vector2i = second["cell"]
+			if absi(a.x - b.x) + absi(a.y - b.y) != 1:
+				continue
+			var congested := false
+			for other in guests:
+				if other == first or other == second or bool(other.get("seated", false)):
+					continue
+				var other_node := other["node"] as Node3D
+				if is_instance_valid(other_node) and (other_node.position.distance_to(_cell_position(a)) < 1.15 or other_node.position.distance_to(_cell_position(b)) < 1.15):
+					congested = true
+					break
+			if congested:
+				continue
+			var duration := randf_range(2.5, 4.5)
+			for member in [first, second]:
+				member["chat_previous_state"] = member["state"]
+				member["state"] = "chatting"
+				member["wait"] = duration
+				member["dance"] = false
+				member["chat_cooldown"] = randf_range(18.0, 30.0)
+				member["blocked_time"] = 0.0
+			var first_node := first["node"] as Node3D
+			var second_node := second["node"] as Node3D
+			first_node.rotation.y = atan2(second_node.position.x - first_node.position.x, second_node.position.z - first_node.position.z)
+			second_node.rotation.y = atan2(first_node.position.x - second_node.position.x, first_node.position.z - second_node.position.z)
+			return
+
+
 func _make_dance_tile(cell: Vector2i, parent: Node3D) -> Node3D:
 	# Reuse the imported floor.glb and the existing grid model fitting.
 	# _model also updates floor_heights from the actual visible mesh top.
@@ -1142,7 +1232,7 @@ func _spawn_guest() -> bool:
 	guest_layer.add_child(person)
 	person.position = _cell_position(GUEST_ENTRY)
 	var appearance := _guest_visual(person)
-	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(30, 90), "thirst": randf_range(0.25, 0.65), "wc_need": randf_range(0.0, 0.35), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0, "time_inside": 0.0, "leaving": false})
+	guests.append({"node": person, "visual": appearance["visual"], "arms": appearance["arms"], "legs": appearance["legs"], "imported": appearance["imported"], "motions": appearance["motions"], "motion": "walk", "character": appearance.get("character", ""), "full_name": _generate_raver_name(str(appearance.get("character", ""))), "path": path, "dance": false, "phase": randf() * TAU, "speed": randf_range(1.25, 1.85), "state": "walk_dance", "cell": GUEST_ENTRY, "wait": randf_range(8.0, 16.0), "visits": 0, "wallet": randi_range(30, 90), "thirst": randf_range(0.25, 0.65), "wc_need": randf_range(0.0, 0.35), "mood": 85.0, "energy": randf_range(0.65, 1.0), "destination": destination, "service_object": -1, "blocked_time": 0.0, "repath_cooldown": 0.0, "time_inside": 0.0, "leaving": false, "chat_cooldown": randf_range(8.0, 19.0)})
 	guest_count += 1
 	night_ticket_income += ticket_price
 	cash += ticket_price
@@ -1667,11 +1757,12 @@ func _process(delta: float) -> void:
 	for guest in guests:
 		# Guest needs evolve during the night and influence where they go.
 		guest["time_inside"] = float(guest.get("time_inside", 0.0)) + step
+		guest["chat_cooldown"] = maxf(0.0, float(guest.get("chat_cooldown", 0.0)) - step)
 		if str(guest.get("state", "")) != "walk_exit" and not bool(guest.get("leaving", false)):
 			var exhausted := float(guest["energy"]) < 0.16
 			var unhappy := float(guest.get("mood", 85.0)) < 35.0 and float(guest["time_inside"]) > 30.0
 			var finished := float(guest["time_inside"]) > 110.0 + float(guest["energy"]) * 60.0
-			if (exhausted or unhappy or finished) and str(guest.get("state", "")) not in ["sitting", "resting", "standing"]:
+			if (exhausted or unhappy or finished) and str(guest.get("state", "")) not in ["sitting", "resting", "standing", "chatting"]:
 				var exit_path := _path_to(guest["cell"], GUEST_ENTRY)
 				if not exit_path.is_empty():
 					guest["path"] = exit_path
@@ -1686,10 +1777,14 @@ func _process(delta: float) -> void:
 		guest["wc_need"] = minf(1.0, float(guest.get("wc_need", 0.0)) + step * 0.002 + (step * 0.0005 if bool(guest["dance"]) else 0.0))
 		guest["mood"] = _guest_mood(guest)
 		var state: String = guest["state"]
-		if state in ["dancing", "ordering", "resting", "sitting", "standing", "using_wc"]:
+		if state in ["dancing", "ordering", "resting", "sitting", "standing", "using_wc", "chatting"]:
 			guest["wait"] = float(guest["wait"]) - step
 			if float(guest["wait"]) <= 0.0:
-				if state == "using_wc":
+				if state == "chatting":
+					guest["state"] = str(guest.get("chat_previous_state", "walk_dance"))
+					guest["chat_previous_state"] = ""
+					guest["blocked_time"] = 0.0
+				elif state == "using_wc":
 					guest["visual"].visible = true
 					guest["wc_need"] = 0.0
 					if not _guest_route(guest, "dance"):
@@ -1778,6 +1873,8 @@ func _process(delta: float) -> void:
 			var motions: Dictionary = guest["motions"]
 			if bool(guest["dance"]):
 				desired_motion = "dance"
+			elif str(guest["state"]) == "chatting":
+				desired_motion = "idle" if motions.has("idle") else "walk"
 			elif str(guest["state"]) in ["sitting", "resting", "standing"]:
 				desired_motion = "sit" if motions.has("sit") else "idle"
 			elif str(guest["state"]) == "ordering":
@@ -1797,7 +1894,7 @@ func _process(delta: float) -> void:
 			visual.rotation.z = sin(phase * 0.5) * 0.11
 			continue
 		visual.rotation.z = 0.0
-		if str(guest["state"]) in ["ordering", "resting", "sitting", "standing", "using_wc"]:
+		if str(guest["state"]) in ["ordering", "resting", "sitting", "standing", "using_wc", "chatting"]:
 			continue
 		var path: Array = guest["path"]
 		if path.is_empty():
@@ -1820,16 +1917,22 @@ func _process(delta: float) -> void:
 					var detour := _path_around_guests(guest["cell"], guest["destination"], guest)
 					if not detour.is_empty():
 						guest["path"] = detour
-					elif float(guest["blocked_time"]) > 4.0:
-						# Resolve deadlocks in tight aisles: briefly let the
-						# stuck guest yield rather than freezing in place.
-						guest["yield_time"] = 0.8
+					elif float(guest["blocked_time"]) > 2.5:
+						# Try a free neighbouring tile before allowing a
+						# short collision-tolerant escape in a one-wide corridor.
+						if not _guest_step_aside(guest) and float(guest["blocked_time"]) > 5.0:
+							guest["yield_time"] = 0.65
 					guest["repath_cooldown"] = randf_range(0.7, 1.3)
 				continue
 			guest["blocked_time"] = 0.0
 			guest["yield_time"] = maxf(0.0, float(guest.get("yield_time", 0.0)) - step)
 			person.position = next_position
 			person.rotation.y = atan2(direction.x, direction.z)
+
+	guest_chat_clock += step
+	if guest_chat_clock >= 1.5:
+		guest_chat_clock = 0.0
+		_try_start_guest_chat()
 
 	# Remove guests only after iteration so service reservations and paths remain stable.
 	for index in range(guests.size() - 1, -1, -1):
