@@ -547,6 +547,8 @@ func _register_object(node: Node3D, kind: String, x: int, y: int, turn: int) -> 
 	for cell in cells:
 		occupied[cell] = true
 		object_at_cell[cell] = id
+	if kind == "dj":
+		_refresh_build_catalog()
 	return id
 
 func _refresh_economy() -> void:
@@ -2370,18 +2372,19 @@ func _refresh_build_catalog() -> void:
 		if not is_instance_valid(button):
 			continue
 		var required_level := int(LEVEL_UNLOCKS.get(kind, 1))
-		var locked := club_level < required_level
+		var already_built := kind == "dj" and _count_kind("dj") > 0
+		var locked := club_level < required_level or already_built
 		var label := str(BUILD_NAMES.get(kind, kind.capitalize()))
 		var price := _build_price(kind)
 		button.text = ""
 		var caption := catalog_captions.get(kind) as Label
 		if is_instance_valid(caption):
-			caption.text = "%s\n%s" % [label, "🔒 LVL %d" % required_level if locked else "€%d" % price]
+			caption.text = "%s\n%s" % [label, "✓ BUILT" if already_built else ("🔒 LVL %d" % required_level if locked else "€%d" % price)]
 			caption.add_theme_color_override("font_color", Color("#8d859f") if locked else Color("#f1e6f8"))
 		var icon := catalog_icons.get(kind) as TextureRect
 		if is_instance_valid(icon):
 			icon.modulate = Color(0.46, 0.43, 0.54, 0.65) if locked else Color.WHITE
-		button.tooltip_text = "%s · Unlocks at level %d" % [label, required_level] if locked else "%s · €%d" % [label, price]
+		button.tooltip_text = "Only one DJ Booth per club" if already_built else ("%s · Unlocks at level %d" % [label, required_level] if locked else "%s · €%d" % [label, price])
 		button.disabled = locked
 
 
@@ -2499,6 +2502,8 @@ func _remove_object(id: int) -> Dictionary:
 		node.get_parent().remove_child(node)
 		node.queue_free()
 	placed_objects.erase(id)
+	if str(record["kind"]) == "dj":
+		_refresh_build_catalog()
 	return {"kind": record["kind"], "x": record["x"], "y": record["y"], "turn": record["turn"], "paid": record.get("paid", false)}
 
 func _erase_hovered() -> void:
@@ -2583,6 +2588,8 @@ func _footprint(x: int, y: int, kind: String, turn: int) -> Array[Vector2i]:
 	return cells
 
 func _can_place(x: int, y: int, kind: String = "speaker", turn: int = 0) -> bool:
+	if kind == "dj" and _count_kind("dj") >= 1:
+		return false
 	if kind == "poster":
 		var on_wall := x == 0 or x == grid_width - 1 or y == 0 or y == SIZE - 1
 		var entrance_gap := y == SIZE - 1 and x in [7, 8]
@@ -2823,6 +2830,9 @@ func _toggle_help() -> void:
 
 func _choose_kind(kind: String) -> void:
 	_cancel_move()
+	if kind == "dj" and _count_kind("dj") >= 1:
+		_notify("Only one DJ Booth is allowed. Move the existing booth instead.")
+		return
 	if night_active:
 		return
 	if club_level < int(LEVEL_UNLOCKS.get(kind, 1)):
@@ -3660,7 +3670,7 @@ func _build_overlay() -> void:
 			icon.offset_top = 5
 			icon.offset_bottom = 72
 			# Atlas artwork is not uniformly centered within each PNG.
-			var artwork_offsets := {"speaker": 4.0, "bar": -3.0, "sofa": 4.0, "wc": 4.0, "plant_big": 5.0, "laser": 3.0, "poster": 3.0}
+			var artwork_offsets := {"speaker": 4.0, "bar": 7.0, "sofa": 4.0, "wc": 4.0, "stool": 9.0, "discoball": 9.0, "plant_big": 5.0, "laser": 3.0, "poster": 3.0}
 			icon.position.x += float(artwork_offsets.get(kind, 0.0))
 			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			button.add_child(icon)
@@ -3694,8 +3704,8 @@ func _build_overlay() -> void:
 		erase_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		erase_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		erase_icon.set_anchors_preset(Control.PRESET_CENTER_TOP)
-		erase_icon.offset_left = -39
-		erase_icon.offset_right = 39
+		erase_icon.offset_left = -30
+		erase_icon.offset_right = 48
 		erase_icon.offset_top = 5
 		erase_icon.offset_bottom = 72
 		erase_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
