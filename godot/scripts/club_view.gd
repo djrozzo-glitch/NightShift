@@ -3076,13 +3076,6 @@ func _fit_progression_panel() -> void:
 	progression_panel.size.y = minf(510.0, available)
 
 
-func _perk_bold_font() -> Font:
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Inter", "Arial", "Helvetica", "Sans"])
-	font.font_weight = 700
-	return font
-
-
 func _perk_card_style(state: String) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.set_corner_radius_all(12)
@@ -3133,7 +3126,7 @@ func _refresh_progression() -> void:
 		perk_buttons[i].add_theme_color_override("font_hover_color", Color("#ffffff"))
 		perk_buttons[i].add_theme_color_override("font_disabled_color", Color("#8fe4c3") if owned else Color("#a6a0be"))
 		perk_buttons[i].add_theme_font_size_override("font_size", 13)
-		perk_buttons[i].add_theme_font_override("font", _perk_bold_font())
+		# Keep the active theme font: SystemFont can have a null font-data face on some platforms.
 	if expansion_details != null:
 		expansion_details.text = "✓ EAST WING UNLOCKED\nYour club is now 22×16. Build more dance tiles, add bars and improve the venue to welcome more guests." if expanded else "▣ EXPAND YOUR CLUB  ·  16×16 → 22×16\nUnlock a larger floor for more guests and more revenue.\n%s  €%d / €%d cash\n%s  Reputation %d / 65\n%s  Level %d / 4\n%s" % ["✓" if cash >= EXPANSION_PRICE else "○", cash, EXPANSION_PRICE, "✓" if reputation >= 65 else "○", reputation, "✓" if club_level >= 4 else "○", club_level, "Ready! Click BUY EAST WING below." if _can_expand_club() else "Complete the requirements to unlock the purchase."]
 	if expansion_button != null:
@@ -3661,11 +3654,14 @@ func _build_overlay() -> void:
 			icon.texture = load(icon_path) as Texture2D
 			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			icon.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-			icon.offset_left = 8
+			icon.set_anchors_preset(Control.PRESET_CENTER_TOP)
+			icon.offset_left = -39
+			icon.offset_right = 39
 			icon.offset_top = 5
-			icon.offset_right = -8
 			icon.offset_bottom = 72
+			# Atlas artwork is not uniformly centered within each PNG.
+			var artwork_offsets := {"speaker": 4.0, "bar": -3.0, "sofa": 4.0, "wc": 4.0, "plant_big": 5.0, "laser": 3.0, "poster": 3.0}
+			icon.position.x += float(artwork_offsets.get(kind, 0.0))
 			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			button.add_child(icon)
 			catalog_icons[kind] = icon
@@ -3697,10 +3693,10 @@ func _build_overlay() -> void:
 		erase_icon.texture = load(erase_path) as Texture2D
 		erase_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		erase_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		erase_icon.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-		erase_icon.offset_left = 8
+		erase_icon.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		erase_icon.offset_left = -39
+		erase_icon.offset_right = 39
 		erase_icon.offset_top = 5
-		erase_icon.offset_right = -8
 		erase_icon.offset_bottom = 72
 		erase_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		erase_button.add_child(erase_icon)
