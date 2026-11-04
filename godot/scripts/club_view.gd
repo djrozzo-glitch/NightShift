@@ -2372,8 +2372,8 @@ func _refresh_build_catalog() -> void:
 		if not is_instance_valid(button):
 			continue
 		var required_level := int(LEVEL_UNLOCKS.get(kind, 1))
-		var already_built := kind == "dj" and _count_kind("dj") > 0
-		var locked := club_level < required_level or already_built
+		var already_built: bool = kind == "dj" and _count_kind("dj") > 0
+		var locked: bool = club_level < required_level or already_built
 		var label := str(BUILD_NAMES.get(kind, kind.capitalize()))
 		var price := _build_price(kind)
 		button.text = ""
