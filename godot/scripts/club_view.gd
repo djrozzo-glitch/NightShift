@@ -3062,7 +3062,7 @@ func _align_club_name_ok(name_field: LineEdit, ok_button: Button) -> void:
 func _fit_progression_panel() -> void:
 	if progression_panel == null:
 		return
-	var viewport_height := get_viewport_rect().size.y
+	var viewport_height := get_viewport().get_visible_rect().size.y
 	var available := maxf(220.0, viewport_height - progression_panel.position.y - 36.0)
 	progression_panel.size.y = minf(510.0, available)
 
