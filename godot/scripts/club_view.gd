@@ -61,6 +61,7 @@ var total_xp := 0
 var perk_points := 0
 var unlocked_perks: Array[String] = []
 var progression_panel: PanelContainer
+var upgrades_panel: PanelContainer
 var analytics_panel: PanelContainer
 var xp_bar: ProgressBar
 var rep_bar: ProgressBar
@@ -2787,6 +2788,8 @@ func _enable_erase() -> void:
 	_update_hover(get_viewport().get_mouse_position())
 
 func _toggle_build_panel() -> void:
+	if upgrades_panel != null:
+		upgrades_panel.visible = false
 	if analytics_panel != null:
 		analytics_panel.visible = false
 	build_panel.visible = not build_panel.visible
@@ -3322,12 +3325,16 @@ func _navigate_hud(index: int) -> void:
 			club_actions_panel.visible = not club_actions_panel.visible
 		build_panel.visible = false
 		progression_panel.visible = false
+		if upgrades_panel != null:
+			upgrades_panel.visible = false
 		if analytics_panel != null:
 			analytics_panel.visible = false
 		return
 	_close_hud_popups()
 	if analytics_panel != null and index != 5:
 		analytics_panel.visible = false
+	if upgrades_panel != null and index != 4:
+		upgrades_panel.visible = false
 	match index:
 		1:
 			_toggle_build_panel()
@@ -3338,9 +3345,12 @@ func _navigate_hud(index: int) -> void:
 		3:
 			_notify("FINANCES: the night report shows revenue and expenses")
 		4:
-			progression_panel.visible = true
+			upgrades_panel.visible = not upgrades_panel.visible
+			progression_panel.visible = false
 			build_panel.visible = false
 			build_toggle.text = "BUILD  [B]"
+			if upgrades_panel.visible:
+				_refresh_upgrade_buttons()
 		5:
 			analytics_panel.visible = not analytics_panel.visible
 			progression_panel.visible = false
@@ -3563,16 +3573,16 @@ func _build_overlay() -> void:
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
 	progression_panel.position = Vector2(20, 254)
-	progression_panel.anchor_bottom = 1.0
-	progression_panel.offset_bottom = -18
+	progression_panel.anchor_bottom = 0.0
+	progression_panel.offset_bottom = 0.0
 	progression_panel.custom_minimum_size = Vector2(440, 0)
-	progression_panel.size.x = 440
+	progression_panel.size = Vector2(440, 520)
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
 	theme_root.add_child(progression_panel)
 	progression_panel.add_to_group("nightshift_ui_blocker")
 	var progression_scroll := ScrollContainer.new()
-	progression_scroll.custom_minimum_size = Vector2(410, 420)
+	progression_scroll.custom_minimum_size = Vector2(410, 490)
 	progression_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	progression_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	progression_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -3586,10 +3596,11 @@ func _build_overlay() -> void:
 	var progress_heading := Label.new()
 	progress_heading.text = "CLUB PROGRESSION"
 	UIStyle.decorate_label(progress_heading, 17)
-	progress_heading.add_theme_color_override("font_color", Color("#f0c4ed"))
+	progress_heading.add_theme_color_override("font_color", Color("#f2a5ef"))
 	progress_content.add_child(progress_heading)
 	progression_details = Label.new()
 	UIStyle.decorate_label(progression_details, 14)
+	progression_details.add_theme_color_override("font_color", Color("#f4efff"))
 	progress_content.add_child(progression_details)
 	xp_bar = ProgressBar.new()
 	UIStyle.decorate_progress(xp_bar)
@@ -3605,7 +3616,7 @@ func _build_overlay() -> void:
 	var perks_heading := Label.new()
 	perks_heading.text = "MANAGER PERKS"
 	UIStyle.decorate_label(perks_heading, 15)
-	perks_heading.add_theme_color_override("font_color", Color("#b6c5e2"))
+	perks_heading.add_theme_color_override("font_color", Color("#e6a7ef"))
 	progress_content.add_child(perks_heading)
 	var tabs := TabContainer.new()
 	tabs.custom_minimum_size = Vector2(306, 235)
@@ -3649,22 +3660,46 @@ func _build_overlay() -> void:
 	goal_panel.add_child(goal_content)
 	expansion_details = Label.new()
 	UIStyle.decorate_label(expansion_details, 12, true)
+	expansion_details.add_theme_color_override("font_color", Color("#b8b4d1"))
 	expansion_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	goal_content.add_child(expansion_details)
 	expansion_button = Button.new()
 	UIStyle.decorate_button(expansion_button)
 	expansion_button.pressed.connect(_buy_expansion)
 	goal_content.add_child(expansion_button)
+	# Equipment upgrades have their own top-level HUD destination.
+	upgrades_panel = PanelContainer.new()
+	upgrades_panel.position = Vector2(20, 254)
+	upgrades_panel.custom_minimum_size = Vector2(440, 0)
+	upgrades_panel.size = Vector2(440, 520)
+	upgrades_panel.visible = false
+	UIStyle.decorate_panel(upgrades_panel)
+	theme_root.add_child(upgrades_panel)
+	upgrades_panel.add_to_group("nightshift_ui_blocker")
+	var upgrades_scroll := ScrollContainer.new()
+	upgrades_scroll.custom_minimum_size = Vector2(410, 490)
+	upgrades_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	upgrades_panel.add_child(upgrades_scroll)
+	var upgrades_content := VBoxContainer.new()
+	upgrades_content.custom_minimum_size.x = 384
+	upgrades_content.add_theme_constant_override("separation", 12)
+	upgrades_scroll.add_child(upgrades_content)
 	var upgrades_title := Label.new()
-	upgrades_title.text = "EQUIPMENT UPGRADES  ·  LVL 4–10"
-	UIStyle.decorate_label(upgrades_title, 14, true)
-	goal_content.add_child(upgrades_title)
+	upgrades_title.text = "✦  EQUIPMENT UPGRADES"
+	UIStyle.decorate_label(upgrades_title, 19)
+	upgrades_title.add_theme_color_override("font_color", Color("#f2a5ef"))
+	upgrades_content.add_child(upgrades_title)
+	var upgrades_subtitle := Label.new()
+	upgrades_subtitle.text = "IMPROVE YOUR VENUE  ·  LEVELS 4–10"
+	UIStyle.decorate_section(upgrades_subtitle)
+	upgrades_content.add_child(upgrades_subtitle)
 	for upgrade in EQUIPMENT_UPGRADES:
 		var upgrade_button := Button.new()
 		UIStyle.decorate_button(upgrade_button)
+		upgrade_button.custom_minimum_size.y = 56
 		upgrade_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		upgrade_button.pressed.connect(_buy_equipment_upgrade.bind(str(upgrade["id"])))
-		goal_content.add_child(upgrade_button)
+		upgrades_content.add_child(upgrade_button)
 		upgrade_buttons[str(upgrade["id"])] = upgrade_button
 	# Analytics is its own navigation destination, independent of Progression.
 	analytics_panel = PanelContainer.new()
