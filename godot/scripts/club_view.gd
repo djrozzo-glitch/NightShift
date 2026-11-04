@@ -1076,6 +1076,16 @@ func _guest_visual(parent: Node3D) -> Dictionary:
 			var imported := _guest_animated_model(variants[motion], visual)
 			if imported != null:
 				imported.visible = motion == "walk"
+				if motion == "sit":
+					# Hold the first frame until the actual seating event.
+					for animation_node in imported.find_children("*", "AnimationPlayer", true, false):
+						var sit_player := animation_node as AnimationPlayer
+						if not sit_player.current_animation.is_empty():
+							var sit_clip := sit_player.get_animation(sit_player.current_animation)
+							if sit_clip != null:
+								sit_clip.loop_mode = Animation.LOOP_NONE
+							sit_player.seek(0.0, true)
+							sit_player.pause()
 				imported_nodes[motion] = imported
 		if imported_nodes.has("walk") and imported_nodes.has("dance"):
 			return {"visual": visual, "arms": [], "legs": [], "imported": true, "motions": imported_nodes, "motion": "walk", "character": character_name}
@@ -1275,6 +1285,53 @@ func _sofa_seat(approach_cell: Vector2i, object_id: int) -> Dictionary:
 func toward_seat_offset(angle: float, distance: float) -> Vector3:
 	return Vector3(sin(angle), 0.0, cos(angle)) * distance
 
+func _guest_motion_opacity(model: Node3D, opacity: float) -> void:
+	if not is_instance_valid(model):
+		return
+	# GeometryInstance3D transparency fades the imported meshes without
+	# altering any GLB materials or shared resources.
+	for child in model.find_children("*", "MeshInstance3D", true, false):
+		(child as MeshInstance3D).transparency = 1.0 - clampf(opacity, 0.0, 1.0)
+
+
+func _switch_guest_motion(guest: Dictionary, next_motion: String) -> void:
+	var motions: Dictionary = guest["motions"]
+	if not motions.has(next_motion) or str(guest.get("motion", "")) == next_motion:
+		return
+	var previous := str(guest.get("motion", ""))
+	# Finish an interrupted blend so only two motion models are visible.
+	for key in motions:
+		var model := motions[key] as Node3D
+		model.visible = str(key) == previous or str(key) == next_motion
+		_guest_motion_opacity(model, 1.0 if str(key) == previous else 0.0)
+	guest["motion"] = next_motion
+	guest["motion_from"] = previous
+	guest["motion_blend"] = 0.0
+	guest["motion_blend_duration"] = 0.28 if next_motion == "sit" or previous == "sit" else 0.18
+
+
+func _advance_guest_motion_blend(guest: Dictionary, delta: float) -> void:
+	var previous := str(guest.get("motion_from", ""))
+	if previous.is_empty():
+		return
+	var motions: Dictionary = guest["motions"]
+	var current := str(guest["motion"])
+	if not motions.has(previous) or not motions.has(current):
+		guest["motion_from"] = ""
+		return
+	var duration := maxf(0.01, float(guest.get("motion_blend_duration", 0.18)))
+	var elapsed := minf(duration, float(guest.get("motion_blend", 0.0)) + delta)
+	guest["motion_blend"] = elapsed
+	var t := smoothstep(0.0, 1.0, elapsed / duration)
+	_guest_motion_opacity(motions[previous] as Node3D, 1.0 - t)
+	_guest_motion_opacity(motions[current] as Node3D, t)
+	if elapsed >= duration:
+		(motions[previous] as Node3D).visible = false
+		_guest_motion_opacity(motions[previous] as Node3D, 1.0)
+		_guest_motion_opacity(motions[current] as Node3D, 1.0)
+		guest["motion_from"] = ""
+
+
 func _sit_animation_player(guest: Dictionary) -> AnimationPlayer:
 	var motions: Dictionary = guest["motions"]
 	if not motions.has("sit"):
@@ -1299,8 +1356,10 @@ func _play_sit(guest: Dictionary, backwards: bool) -> float:
 	if animation == null:
 		return 0.0
 	animation.loop_mode = Animation.LOOP_NONE
+	player.speed_scale = maxf(1.0, night_speed)
 	if backwards:
 		player.play_backwards(animation_name)
+		player.seek(animation.length, true)
 	else:
 		player.play(animation_name)
 		player.seek(0.0, true)
@@ -1532,6 +1591,7 @@ func _process_guest_exit(delta: float) -> void:
 			var motions: Dictionary = guest["motions"]
 			for motion_name in motions:
 				(motions[motion_name] as Node3D).visible = motion_name == "walk"
+				_guest_motion_opacity(motions[motion_name] as Node3D, 1.0)
 	for index in range(guests.size() - 1, -1, -1):
 		if bool(guests[index].get("leaving", false)):
 			var departing := guests[index]["node"] as Node3D
@@ -1548,6 +1608,13 @@ func _set_guest_pause_visuals(paused: bool) -> void:
 		if not bool(guest.get("imported", false)):
 			continue
 		var motions: Dictionary = guest["motions"]
+		# Pausing cancels any in-progress visual blend cleanly.
+		var fading := str(guest.get("motion_from", ""))
+		if not fading.is_empty() and motions.has(fading):
+			_guest_motion_opacity(motions[fading] as Node3D, 1.0)
+		guest["motion_from"] = ""
+		if motions.has(str(guest.get("motion", ""))):
+			_guest_motion_opacity(motions[str(guest["motion"])] as Node3D, 1.0)
 		if paused:
 			var still := "idle" if motions.has("idle") else str(guest.get("motion", "walk"))
 			for motion_name in motions:
@@ -1630,6 +1697,11 @@ func _process(delta: float) -> void:
 						guest["dance"] = true
 						guest["wait"] = 5.0
 				elif state == "sitting":
+					# Freeze on the seated pose; do not loop back to standing.
+					var finished_sit := _sit_animation_player(guest)
+					if finished_sit != null:
+						finished_sit.seek(finished_sit.current_animation_length, true)
+						finished_sit.pause()
 					guest["state"] = "resting"
 					guest["wait"] = randf_range(5.0, 7.0)
 				elif state == "resting" and bool(guest.get("seated", false)):
@@ -1718,12 +1790,8 @@ func _process(delta: float) -> void:
 			if not motions.has(desired_motion):
 				desired_motion = "idle" if motions.has("idle") else "walk"
 			if guest["motion"] != desired_motion:
-				if desired_motion == "sit" and str(guest["state"]) == "sitting":
-					# Sit was started on arrival; do not restart and truncate it.
-					pass
-				for motion_name in motions:
-					(motions[motion_name] as Node3D).visible = motion_name == desired_motion
-				guest["motion"] = desired_motion
+				_switch_guest_motion(guest, desired_motion)
+			_advance_guest_motion_blend(guest, delta)
 		if guest["dance"]:
 			person.rotation.y += step * 0.5
 			visual.rotation.z = sin(phase * 0.5) * 0.11
