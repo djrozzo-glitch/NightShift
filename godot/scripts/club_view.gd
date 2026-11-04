@@ -3053,6 +3053,32 @@ func _buy_expansion() -> void:
 	_notify("EAST WING OPEN!  Six new columns of club space.")
 
 
+func _perk_card_style(state: String) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.set_corner_radius_all(12)
+	style.set_border_width_all(1)
+	style.content_margin_left = 18
+	style.content_margin_right = 12
+	style.content_margin_top = 10
+	style.content_margin_bottom = 10
+	match state:
+		"owned":
+			style.bg_color = Color("#12332f")
+			style.border_color = Color("#42bba2")
+		"locked":
+			style.bg_color = Color("#17162a")
+			style.border_color = Color("#3f3659")
+		"hover":
+			style.bg_color = Color("#4c1d65")
+			style.border_color = Color("#ff7bec")
+			style.shadow_color = Color(0.95, 0.16, 0.78, 0.38)
+			style.shadow_size = 8
+		_:
+			style.bg_color = Color("#29163d")
+			style.border_color = Color("#d35ad5")
+	return style
+
+
 func _refresh_progression() -> void:
 	_refresh_build_catalog()
 	_refresh_upgrade_buttons()
@@ -3069,13 +3095,13 @@ func _refresh_progression() -> void:
 		var option: Dictionary = PERK_OPTIONS[i]
 		var owned := unlocked_perks.has(str(option["id"]))
 		var available := not owned and perk_points > 0
-		var marker := "✓  OWNED" if owned else ("✦  UNLOCK  ·  1 POINT" if available else "◇  NEED 1 PERK POINT")
+		var marker := "✓  OWNED" if owned else ("✦  AVAILABLE  ·  1 POINT" if available else "◇  LOCKED  ·  NEED 1 POINT")
 		perk_buttons[i].text = "%s\n%s  ·  %s" % [str(option["name"]).to_upper(), str(option["effect"]), marker]
-		perk_buttons[i].add_theme_stylebox_override("disabled", UIStyle.perk_style(owned))
+		perk_buttons[i].add_theme_stylebox_override("disabled", _perk_card_style("owned" if owned else "locked"))
 		perk_buttons[i].disabled = not available
 		perk_buttons[i].add_theme_color_override("font_color", Color("#fff0fb"))
 		perk_buttons[i].add_theme_color_override("font_hover_color", Color("#ffffff"))
-		perk_buttons[i].add_theme_color_override("font_disabled_color", Color("#8fdcc6") if owned else Color("#aaa4c2"))
+		perk_buttons[i].add_theme_color_override("font_disabled_color", Color("#8fe4c3") if owned else Color("#a6a0be"))
 		perk_buttons[i].add_theme_font_size_override("font_size", 14)
 	if expansion_details != null:
 		expansion_details.text = "✓ EAST WING UNLOCKED\nYour club is now 22×16. Build more dance tiles, add bars and improve the venue to welcome more guests." if expanded else "▣ EXPAND YOUR CLUB  ·  16×16 → 22×16\nUnlock a larger floor for more guests and more revenue.\n%s  €%d / €%d cash\n%s  Reputation %d / 65\n%s  Level %d / 4\n%s" % ["✓" if cash >= EXPANSION_PRICE else "○", cash, EXPANSION_PRICE, "✓" if reputation >= 65 else "○", reputation, "✓" if club_level >= 4 else "○", club_level, "Ready! Click BUY EAST WING below." if _can_expand_club() else "Complete the requirements to unlock the purchase."]
@@ -3512,11 +3538,25 @@ func _build_overlay() -> void:
 	theme_root.add_child(club_name_edit)
 	var confirm_name := Button.new()
 	confirm_name.text = "✓ OK"
-	confirm_name.position = Vector2(274, 103)
-	confirm_name.custom_minimum_size = Vector2(64, 32)
-	confirm_name.size = Vector2(64, 32)
-	confirm_name.add_theme_font_size_override("font_size", 12)
+	confirm_name.position = Vector2(272, 108)
+	confirm_name.custom_minimum_size = Vector2(52, 24)
+	confirm_name.size = Vector2(52, 24)
 	UIStyle.decorate_button(confirm_name, true)
+	# Override the large glass texture margins: they forced a much taller OK button.
+	var ok_style := UIStyle.button_style(false, true)
+	ok_style.content_margin_left = 5.0
+	ok_style.content_margin_right = 5.0
+	ok_style.content_margin_top = 2.0
+	ok_style.content_margin_bottom = 2.0
+	ok_style.shadow_size = 3
+	confirm_name.add_theme_stylebox_override("normal", ok_style)
+	var ok_hover := UIStyle.button_style(true, true)
+	ok_hover.content_margin_left = 5.0
+	ok_hover.content_margin_right = 5.0
+	ok_hover.content_margin_top = 2.0
+	ok_hover.content_margin_bottom = 2.0
+	confirm_name.add_theme_stylebox_override("hover", ok_hover)
+	confirm_name.add_theme_font_size_override("font_size", 11)
 	confirm_name.pressed.connect(func() -> void:
 		club_name = club_name_edit.text.strip_edges()
 		if club_name.is_empty():
@@ -3662,7 +3702,7 @@ func _build_overlay() -> void:
 	perks_heading.add_theme_color_override("font_color", Color("#e6a7ef"))
 	progress_content.add_child(perks_heading)
 	var tabs := TabContainer.new()
-	tabs.custom_minimum_size = Vector2(306, 235)
+	tabs.custom_minimum_size = Vector2(306, 270)
 	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tabs.add_theme_color_override("font_selected_color", Color("#f7c0ef"))
 	tabs.add_theme_color_override("font_unselected_color", Color("#aaa4c2"))
@@ -3676,18 +3716,22 @@ func _build_overlay() -> void:
 		tabs.add_child(branch_scroll)
 		var branch_list := VBoxContainer.new()
 		branch_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		branch_list.add_theme_constant_override("separation", 8)
+		branch_list.add_theme_constant_override("separation", 10)
 		branch_scroll.add_child(branch_list)
 		for option in PERK_OPTIONS:
 			if option["branch"] != branch:
 				continue
 			var perk_button := Button.new()
-			perk_button.custom_minimum_size = Vector2(292, 72)
+			perk_button.custom_minimum_size = Vector2(292, 76)
 			perk_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			perk_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			perk_button.add_theme_font_size_override("font_size", 14)
 			UIStyle.decorate_button(perk_button)
 			perk_button.add_theme_font_size_override("font_size", 14)
+			# Card styles need separate owned/available/locked visuals.
+			perk_button.add_theme_stylebox_override("normal", _perk_card_style("available"))
+			perk_button.add_theme_stylebox_override("hover", _perk_card_style("hover"))
+			perk_button.add_theme_stylebox_override("pressed", _perk_card_style("hover"))
 			perk_button.pressed.connect(_buy_perk.bind(str(option["id"])))
 			branch_list.add_child(perk_button)
 			perk_buttons.append(perk_button)
