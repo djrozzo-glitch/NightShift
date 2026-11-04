@@ -353,6 +353,8 @@ const DISCO_COLORS := [Color("#a75bff"), Color("#40c9ff"), Color("#ff4bba"), Col
 var laser_spots: Array[SpotLight3D] = []
 var laser_beams: Array[MeshInstance3D] = []
 const LASER_COLORS := [Color("#31ff64"), Color("#287cff"), Color("#ffffff"), Color("#ff334d")]
+const LASER_STROBE_BPM := 124.0
+const LASER_STROBE_DUTY := 0.24
 
 func _load_models() -> void:
 	# Keep the logical object kinds ("bar" and "wc") unchanged: existing
@@ -1970,6 +1972,19 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		inner.material_override = _disco_beam_material(0.19)
 		beam.add_child(inner)
 	spot.add_child(beam)
+	if kind == "laser":
+		# Five rays share the same lens. Pivot the duplicates around the
+		# emission point, not around the center of the long beam cylinder.
+		for ray_index in range(1, 5):
+			var fan_pivot := Node3D.new()
+			fan_pivot.name = "LaserFan%d" % ray_index
+			fan_pivot.rotation_degrees.y = float(ray_index - 2) * 8.0 if ray_index < 2 else float(ray_index - 1) * 8.0
+			spot.add_child(fan_pivot)
+			var fan_beam := beam.duplicate() as MeshInstance3D
+			fan_beam.name = "LaserRay%d" % ray_index
+			fan_pivot.add_child(fan_beam)
+			fan_beam.visible = night_active
+			beam_meshes.append(fan_beam)
 	beam.visible = night_active and kind == "laser"
 	beam_meshes.append(beam)
 	stage_lights.append(spot)
@@ -2118,6 +2133,10 @@ func _animate_stage_lights(delta: float) -> void:
 		var phase := lighting_clock * 2.1 + float(index) * 0.85
 		glow.light_energy = 1.15 + 1.65 * (0.5 + 0.5 * sin(phase))
 		glow.light_color = Color.from_hsv(fmod(0.72 + float(index) * 0.075 + lighting_clock * 0.018, 1.0), 0.8, 1.0)
+	# 124 BPM gated strobe: one short flash per beat, synced to game time.
+	# The entire fan flashes together and respects pause / night speed.
+	var laser_beat_phase := fposmod(lighting_clock * LASER_STROBE_BPM / 60.0, 1.0)
+	var laser_flash := laser_beat_phase < LASER_STROBE_DUTY
 	# Cycle laser colors every four seconds, with a stagger per fixture.
 	for index in range(laser_spots.size()):
 		var color_index := (int(floor(lighting_clock / 4.0)) + index) % LASER_COLORS.size()
@@ -2125,8 +2144,27 @@ func _animate_stage_lights(delta: float) -> void:
 		var laser := laser_spots[index]
 		if is_instance_valid(laser):
 			laser.light_color = laser_color
+			laser.light_energy = 5.0 if laser_flash else 0.0
+			for fan in laser.get_children():
+				if fan is Node3D and fan.name.begins_with("LaserFan"):
+					for ray_node in fan.get_children():
+						if ray_node is MeshInstance3D:
+							ray_node.visible = laser_flash
+							var fan_mat := ray_node.material_override as StandardMaterial3D
+							if fan_mat != null:
+								var fan_color := laser_color
+								fan_color.a = 0.95
+								fan_mat.albedo_color = fan_color
+							var fan_halo := ray_node.get_node_or_null("LaserHalo") as MeshInstance3D
+							if fan_halo != null:
+								var fan_halo_mat := fan_halo.material_override as StandardMaterial3D
+								if fan_halo_mat != null:
+									var halo_color := laser_color
+									halo_color.a = 0.12
+									fan_halo_mat.albedo_color = halo_color
 		var beam := laser_beams[index]
 		if is_instance_valid(beam):
+			beam.visible = laser_flash
 			var material := beam.material_override as StandardMaterial3D
 			if material != null:
 				var beam_color := laser_color
