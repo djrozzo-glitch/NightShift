@@ -3053,12 +3053,18 @@ func _buy_expansion() -> void:
 	_notify("EAST WING OPEN!  Six new columns of club space.")
 
 
+func _align_club_name_ok(name_field: LineEdit, ok_button: Button) -> void:
+	if not is_instance_valid(name_field) or not is_instance_valid(ok_button):
+		return
+	ok_button.position = Vector2(name_field.position.x + name_field.size.x + 8.0, name_field.position.y + (name_field.size.y - ok_button.size.y) * 0.5)
+
+
 func _fit_progression_panel() -> void:
 	if progression_panel == null:
 		return
 	var viewport_height := get_viewport_rect().size.y
-	var available := maxf(300.0, viewport_height - progression_panel.position.y - 24.0)
-	progression_panel.size.y = minf(570.0, available)
+	var available := maxf(220.0, viewport_height - progression_panel.position.y - 36.0)
+	progression_panel.size.y = minf(510.0, available)
 
 
 func _perk_bold_font() -> Font:
@@ -3074,8 +3080,8 @@ func _perk_card_style(state: String) -> StyleBoxFlat:
 	style.set_border_width_all(1)
 	style.content_margin_left = 18
 	style.content_margin_right = 12
-	style.content_margin_top = 5
-	style.content_margin_bottom = 5
+	style.content_margin_top = 2
+	style.content_margin_bottom = 2
 	match state:
 		"owned":
 			style.bg_color = Color("#12332f")
@@ -3554,7 +3560,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(club_name_edit)
 	var confirm_name := Button.new()
 	confirm_name.text = "✓ OK"
-	confirm_name.position = Vector2(272, 94)
+	confirm_name.position = Vector2(272, 104)
 	confirm_name.custom_minimum_size = Vector2(52, 24)
 	confirm_name.size = Vector2(52, 24)
 	UIStyle.decorate_button(confirm_name, true)
@@ -3584,6 +3590,9 @@ func _build_overlay() -> void:
 	)
 	theme_root.add_child(confirm_name)
 	confirm_name.add_to_group("nightshift_ui_blocker")
+	# Position using actual control sizes after Godot applies theme minimums.
+	call_deferred("_align_club_name_ok", club_name_edit, confirm_name)
+	club_name_edit.resized.connect(_align_club_name_ok.bind(club_name_edit, confirm_name))
 	if not missing_models.is_empty():
 		var warning := Label.new()
 		warning.text = "Missing GLB: " + ", ".join(missing_models)
@@ -3675,7 +3684,7 @@ func _build_overlay() -> void:
 	progression_panel.anchor_bottom = 0.0
 	progression_panel.offset_bottom = 0.0
 	progression_panel.custom_minimum_size = Vector2(440, 0)
-	progression_panel.size = Vector2(440, 570)
+	progression_panel.size = Vector2(440, 510)
 	# Keep the complete panel inside the viewport, including its bottom border.
 	get_viewport().size_changed.connect(_fit_progression_panel)
 	call_deferred("_fit_progression_panel")
@@ -3721,7 +3730,7 @@ func _build_overlay() -> void:
 	perks_heading.add_theme_color_override("font_color", Color("#e6a7ef"))
 	progress_content.add_child(perks_heading)
 	var tabs := TabContainer.new()
-	tabs.custom_minimum_size = Vector2(306, 220)
+	tabs.custom_minimum_size = Vector2(306, 205)
 	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tabs.add_theme_color_override("font_selected_color", Color("#f7c0ef"))
 	tabs.add_theme_color_override("font_unselected_color", Color("#aaa4c2"))
@@ -3729,19 +3738,16 @@ func _build_overlay() -> void:
 	tabs.add_theme_font_size_override("font_size", 13)
 	progress_content.add_child(tabs)
 	for branch in ["MUSIC", "BAR", "COMMUNITY"]:
-		var branch_scroll := ScrollContainer.new()
-		branch_scroll.name = branch.capitalize()
-		branch_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		tabs.add_child(branch_scroll)
 		var branch_list := VBoxContainer.new()
+		branch_list.name = branch.capitalize()
 		branch_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		branch_list.add_theme_constant_override("separation", 10)
-		branch_scroll.add_child(branch_list)
+		branch_list.add_theme_constant_override("separation", 5)
+		tabs.add_child(branch_list)
 		for option in PERK_OPTIONS:
 			if option["branch"] != branch:
 				continue
 			var perk_button := Button.new()
-			perk_button.custom_minimum_size = Vector2(292, 54)
+			perk_button.custom_minimum_size = Vector2(292, 48)
 			perk_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			perk_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			perk_button.add_theme_font_size_override("font_size", 14)
