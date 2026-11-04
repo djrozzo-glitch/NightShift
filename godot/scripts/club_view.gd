@@ -156,6 +156,8 @@ var dj_card_status: Label
 var dj_player: AudioStreamPlayer
 var dj_track_paths: Array[String] = []
 var dj_track_index := -1
+var dj_volume_slider: HSlider
+var dj_volume_label: Label
 const STAFF_COST := 120
 var night_elapsed := 0.0
 var night_speed := 1.0
@@ -294,11 +296,10 @@ var dj_animation_clock := 0.0
 const GUEST_ENTRY := Vector2i(7, 14)
 const WALK_DIRS := [Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1)]
 const DJ_ROSTER := [
-	{"name": "Vanya Velin", "fee": 400},
-	{"name": "Velvet 37", "fee": 300},
-	{"name": "rozzo", "fee": 350, "bpm": 125.0},
-	{"name": "lowQ", "fee": 250},
-	{"name": "Basement Resident", "fee": 100}
+	{"name": "rozzo", "style": "Deep Tech", "fee": 400, "folder": "rozzo (deep tech)", "bpm": 125.0},
+	{"name": "lowQ", "style": "Jungle", "fee": 300, "folder": "lowQ (jungle)"},
+	{"name": "rozzo", "style": "UK Garage", "fee": 350, "folder": "rozzo (uk garage)"},
+	{"name": "Sigma Lib", "style": "Techno", "fee": 250, "folder": "Sigma Lib (techno)"}
 ]
 
 func _ready() -> void:
@@ -2437,59 +2438,73 @@ func _refresh_prices() -> void:
 func _refresh_dj_card() -> void:
 	if dj_card_title == null or dj_picker == null or dj_picker.selected < 0:
 		return
-	var dj_name := str(DJ_ROSTER[dj_picker.selected]["name"])
-	dj_card_title.text = "%s  ·  %s" % [dj_name, "DEEP TECH" if dj_name == "rozzo" else "GUEST DJ"]
-	if dj_card_status != null:
-		dj_card_status.text = "Random local MP3 plays when the night starts." if dj_name == "rozzo" else "Book this DJ to start the night."
+	var dj: Dictionary = DJ_ROSTER[dj_picker.selected]
+	dj_card_title.text = "%s  ·  %s" % [str(dj["name"]), str(dj["style"]).to_upper()]
+	if dj_card_status != null and not night_active:
+		dj_card_status.text = "Tracks play in random order when the night starts."
 
 
 func _play_dj_music() -> void:
 	if dj_player == null:
 		return
 	dj_player.stop()
+	dj_player.stream_paused = false
 	dj_track_paths.clear()
 	dj_track_index = -1
 	if dj_picker == null or dj_picker.selected < 0:
 		return
-	var dj_name := str(DJ_ROSTER[dj_picker.selected]["name"])
-	# Place MP3 files in godot/audio/rozzo/; additional DJs can get folders later.
-	var folder := "res://audio/rozzo" if dj_name == "rozzo" else ""
-	if folder.is_empty():
-		_refresh_dj_card()
-		return
+	var dj: Dictionary = DJ_ROSTER[dj_picker.selected]
+	var folder := "res://audio/" + str(dj["folder"])
 	var directory := DirAccess.open(folder)
 	if directory == null:
-		dj_card_status.text = "Add MP3 tracks to godot/audio/rozzo/"
+		if dj_card_status != null:
+			dj_card_status.text = "Audio folder missing: " + str(dj["folder"])
 		return
 	directory.list_dir_begin()
 	var filename := directory.get_next()
 	while not filename.is_empty():
-		if not directory.current_is_dir() and filename.get_extension().to_lower() == "mp3":
+		if not directory.current_is_dir() and filename.get_extension().to_lower() in ["mp3", "ogg", "wav"]:
 			dj_track_paths.append(folder.path_join(filename))
 		filename = directory.get_next()
 	directory.list_dir_end()
+	if dj_track_paths.is_empty():
+		if dj_card_status != null:
+			dj_card_status.text = "No audio tracks in " + str(dj["folder"])
+		return
 	dj_track_paths.shuffle()
 	_play_next_dj_track()
 
 
 func _play_next_dj_track() -> void:
-	if not night_active or dj_track_paths.is_empty() or dj_player == null:
+	if not night_active or night_paused or dj_track_paths.is_empty() or dj_player == null:
 		return
-	dj_track_index = (dj_track_index + 1) % dj_track_paths.size()
-	var path := dj_track_paths[dj_track_index]
-	var stream := load(path) as AudioStream
-	if stream == null:
-		dj_card_status.text = "Cannot play: " + path.get_file()
+	# Shuffle each full playlist; avoid replaying the final track immediately.
+	if dj_track_index + 1 >= dj_track_paths.size():
+		var previous := dj_track_paths[dj_track_index] if dj_track_index >= 0 else ""
+		dj_track_paths.shuffle()
+		if dj_track_paths.size() > 1 and dj_track_paths[0] == previous:
+			dj_track_paths.swap(0, 1)
+		dj_track_index = -1
+	for attempt in range(dj_track_paths.size()):
+		dj_track_index = (dj_track_index + 1) % dj_track_paths.size()
+		var path := dj_track_paths[dj_track_index]
+		var stream := load(path) as AudioStream
+		if stream == null:
+			push_warning("NightShift: cannot load audio " + path)
+			continue
+		dj_player.stream = stream
+		dj_player.play()
+		if dj_card_status != null:
+			dj_card_status.text = "▶  " + path.get_file().get_basename()
 		return
-	dj_player.stream = stream
-	dj_player.play()
 	if dj_card_status != null:
-		dj_card_status.text = "▶  " + path.get_file().get_basename()
+		dj_card_status.text = "Cannot load audio tracks"
 
 
 func _stop_dj_music() -> void:
 	if dj_player != null:
 		dj_player.stop()
+		dj_player.stream_paused = false
 	_refresh_dj_card()
 
 
@@ -3981,7 +3996,7 @@ func _build_overlay() -> void:
 	night_controls.add_child(dj_label)
 	dj_picker = OptionButton.new()
 	for dj in DJ_ROSTER:
-		dj_picker.add_item("%s  •  €%d" % [dj["name"], dj["fee"]])
+		dj_picker.add_item("%s (%s)  •  €%d" % [dj["name"], dj["style"], dj["fee"]])
 	dj_picker.selected = 0
 	dj_picker.item_selected.connect(func(_index: int) -> void:
 		_refresh_readiness()
@@ -4072,6 +4087,29 @@ func _build_overlay() -> void:
 	dj_player.name = "ClubDJPlayer"
 	add_child(dj_player)
 	dj_player.finished.connect(_play_next_dj_track)
+	var volume_row := HBoxContainer.new()
+	volume_row.add_theme_constant_override("separation", 8)
+	dj_card_content.add_child(volume_row)
+	var volume_caption := Label.new()
+	volume_caption.text = "VOLUME"
+	UIStyle.decorate_label(volume_caption, 12, true)
+	volume_row.add_child(volume_caption)
+	dj_volume_slider = HSlider.new()
+	dj_volume_slider.min_value = 0.0
+	dj_volume_slider.max_value = 100.0
+	dj_volume_slider.step = 1.0
+	dj_volume_slider.value = 70.0
+	dj_volume_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	volume_row.add_child(dj_volume_slider)
+	dj_volume_label = Label.new()
+	UIStyle.decorate_label(dj_volume_label, 12)
+	dj_volume_label.text = "70%"
+	volume_row.add_child(dj_volume_label)
+	dj_player.volume_linear = 0.7
+	dj_volume_slider.value_changed.connect(func(value: float) -> void:
+		dj_player.volume_linear = value / 100.0
+		dj_volume_label.text = "%d%%" % int(value)
+	)
 	_refresh_dj_card()
 	_refresh_prices()
 	start_night_button = Button.new()
@@ -4094,6 +4132,10 @@ func _build_overlay() -> void:
 	night_pause_button.pressed.connect(func() -> void:
 		night_paused = not night_paused
 		_set_guest_pause_visuals(night_paused)
+		if dj_player != null:
+			dj_player.stream_paused = night_paused
+		if dj_card_status != null and dj_player != null and dj_player.playing:
+			dj_card_status.text = ("Ⅱ  " if night_paused else "▶  ") + dj_track_paths[dj_track_index].get_file().get_basename() if dj_track_index >= 0 and dj_track_index < dj_track_paths.size() else dj_card_status.text
 		night_pause_button.text = "RESUME" if night_paused else "PAUSE"
 	)
 	speed_controls.add_child(night_pause_button)
