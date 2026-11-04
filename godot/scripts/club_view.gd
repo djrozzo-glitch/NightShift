@@ -3326,7 +3326,7 @@ func _navigate_hud(index: int) -> void:
 			analytics_panel.visible = false
 		return
 	_close_hud_popups()
-	if analytics_panel != null and index != 7:
+	if analytics_panel != null and index != 5:
 		analytics_panel.visible = false
 	match index:
 		1:
@@ -3336,26 +3336,18 @@ func _navigate_hud(index: int) -> void:
 			build_panel.visible = false
 			build_toggle.text = "BUILD  [B]"
 		3:
-			if dj_picker != null:
-				dj_picker.grab_focus()
-				dj_picker.show_popup()
-		4:
 			_notify("FINANCES: the night report shows revenue and expenses")
-		5:
+		4:
 			progression_panel.visible = true
 			build_panel.visible = false
 			build_toggle.text = "BUILD  [B]"
-		6:
-			_notify("STAFF: staffing costs are included in each night")
-		7:
+		5:
 			analytics_panel.visible = not analytics_panel.visible
 			progression_panel.visible = false
 			build_panel.visible = false
 			build_toggle.text = "BUILD  [B]"
 			if analytics_panel.visible:
 				_refresh_club_analytics()
-		8:
-			_toggle_help()
 
 
 func _build_overlay() -> void:
@@ -3388,7 +3380,7 @@ func _build_overlay() -> void:
 	brand.add_theme_color_override("font_shadow_color", Color(0.85, 0.15, 0.90, 0.7))
 	brand.add_theme_constant_override("shadow_offset_x", 2)
 	top_row.add_child(brand)
-	var nav_items := ["⌂ CLUB", "▦ BUILD", "★ PROGRESSION", "♫ BOOKING", "€ FINANCES", "✦ UPGRADES", "♙ STAFF", "▥ ANALYTICS", "⚙ SETTINGS"]
+	var nav_items := ["⌂ CLUB", "▦ BUILD", "★ PROGRESSION", "€ FINANCES", "✦ UPGRADES", "▥ ANALYTICS"]
 	for index in range(nav_items.size()):
 		var nav := Button.new()
 		nav.text = nav_items[index]
@@ -3571,20 +3563,23 @@ func _build_overlay() -> void:
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
 	progression_panel.position = Vector2(20, 254)
-	progression_panel.custom_minimum_size = Vector2(344, 0)
-	progression_panel.size = Vector2(344, 420)
+	progression_panel.anchor_bottom = 1.0
+	progression_panel.offset_bottom = -18
+	progression_panel.custom_minimum_size = Vector2(440, 0)
+	progression_panel.size.x = 440
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
 	theme_root.add_child(progression_panel)
 	progression_panel.add_to_group("nightshift_ui_blocker")
 	var progression_scroll := ScrollContainer.new()
-	progression_scroll.custom_minimum_size = Vector2(318, 420)
+	progression_scroll.custom_minimum_size = Vector2(410, 420)
+	progression_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	progression_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	progression_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	progression_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
 	progression_panel.add_child(progression_scroll)
 	var progress_content := VBoxContainer.new()
-	progress_content.custom_minimum_size.x = 292
+	progress_content.custom_minimum_size.x = 384
 	progress_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	progress_content.add_theme_constant_override("separation", 12)
 	progression_scroll.add_child(progress_content)
@@ -3742,6 +3737,18 @@ func _build_overlay() -> void:
 		_refresh_poster_text()
 	)
 	UIStyle.decorate_option(dj_picker)
+	dj_picker.custom_minimum_size.y = 44
+	dj_picker.add_theme_font_size_override("font_size", 14)
+	dj_picker.add_theme_color_override("font_color", Color("#f5e9fb"))
+	dj_picker.add_theme_color_override("font_hover_color", Color("#ffffff"))
+	dj_picker.add_theme_stylebox_override("normal", UIStyle.button_style(false, false))
+	dj_picker.add_theme_stylebox_override("hover", UIStyle.button_style(true, false))
+	var dj_popup := dj_picker.get_popup()
+	dj_popup.add_theme_stylebox_override("panel", UIStyle.panel_style())
+	dj_popup.add_theme_stylebox_override("hover", UIStyle.button_style(true, false))
+	dj_popup.add_theme_color_override("font_color", Color("#f3eafa"))
+	dj_popup.add_theme_color_override("font_hover_color", Color("#ffffff"))
+	dj_popup.add_theme_font_size_override("font_size", 14)
 	night_controls.add_child(dj_picker)
 	# Price controls: locked during the party, retained in club saves.
 	var pricing_heading := Label.new()
@@ -3831,6 +3838,7 @@ func _build_overlay() -> void:
 	night_pause_button.text = "PAUSE"
 	night_pause_button.disabled = true
 	UIStyle.decorate_button(night_pause_button)
+	night_pause_button.custom_minimum_size.y = 36
 	night_pause_button.pressed.connect(func() -> void:
 		night_paused = not night_paused
 		_set_guest_pause_visuals(night_paused)
@@ -3841,6 +3849,7 @@ func _build_overlay() -> void:
 	night_speed_button.text = "1× SPEED"
 	night_speed_button.disabled = true
 	UIStyle.decorate_button(night_speed_button)
+	night_speed_button.custom_minimum_size.y = 36
 	night_speed_button.pressed.connect(func() -> void:
 		night_speed = 2.0 if night_speed == 1.0 else (4.0 if night_speed == 2.0 else 1.0)
 		night_speed_button.text = "%d× SPEED" % int(night_speed)
