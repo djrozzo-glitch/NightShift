@@ -1885,7 +1885,7 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 	# The new projector lens sits near the upper edge of the housing.
 	# Use its scaled visual bounds so the beam tracks model dimensions.
 	var laser_lens_height := maxf(0.20, _visual_bounds(node).end.y - 0.10)
-	spot.position = Vector3(0.0, laser_lens_height, 0.0) if kind == "laser" else Vector3(0.0, 0.77, -0.19)
+	spot.position = Vector3(0.0, laser_lens_height, _visual_bounds(node).end.z - 0.02) if kind == "laser" else Vector3(0.0, 0.77, -0.19)
 	spot.spot_range = 14.0 if kind == "light" else 11.0
 	spot.spot_angle = 25.0 if kind == "light" else 13.0
 	spot.light_color = Color("#c15dff") if kind == "light" else LASER_COLORS[0]
@@ -1908,9 +1908,10 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		# Follow the spotlight's animated direction instead of the static fixture.
 		spot.add_child(fog)
 		fog.visible = night_active
-	# Aim the beam from the projector toward the room, slightly upward.
+	# The laser lens faces local +Z. Its direction must follow the placed
+	# fixture rotation rather than the world-space dance floor center.
 	if kind == "laser":
-		spot.look_at(Vector3(0.0, 2.4, 0.0), Vector3.UP)
+		spot.rotation = Vector3(0.0, PI, 0.0)
 	else:
 		# The fixture's local +Z is the front of its lens.
 		var forward := fixture.global_basis * Vector3(0.0, 0.0, 3.0)
@@ -2065,8 +2066,9 @@ func _animate_stage_lights(delta: float) -> void:
 			continue
 		var phase := lighting_clock * (0.8 + float(index % 4) * 0.17) + float(index) * 1.7
 		if laser_spots.has(spot):
-			var aim := Vector3(sin(phase) * 1.8, 2.4 + sin(phase * 0.7) * 0.45, cos(phase * 0.8) * 1.8)
-			spot.look_at(aim, Vector3.UP)
+			# Animate only around the fixture's own forward axis. Rotating the
+			# placed laser (including a 90-degree turn) rotates its entire fan.
+			spot.rotation = Vector3(sin(phase * 0.7) * 0.04, PI + sin(phase) * 0.10, 0.0)
 		else:
 			# Rotate the beam with the placed fixture, never toward club center.
 			var fixture := spot.get_parent() as Node3D
