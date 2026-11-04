@@ -1265,9 +1265,9 @@ func _sofa_seat(approach_cell: Vector2i, object_id: int) -> Dictionary:
 		var distance := cushion.distance_squared_to(approach)
 		if distance < best_distance:
 			best_distance = distance
-			# Character sit animation is offset 0.5 forward on arrival.
-			# Keep the animation anchor inside the actual cushion footprint.
-			var anchor := cushion - front * 0.5
+			# The sit animation moves the character 0.5 toward the aisle.
+			# Shift the final seated position one tile into the cushion.
+			var anchor := cushion - front * 1.5
 			anchor.y = approach.y + 0.06
 			best = {"position": anchor, "rotation": rotation}
 	return best
