@@ -2380,6 +2380,78 @@ func _animate_stage_lights(delta: float) -> void:
 					halo_material.albedo_color = halo_color
 
 
+func _event_choice_cash(choice: Dictionary) -> int:
+	# Monetary stakes scale gently with the club, and costs cannot exceed cash.
+	var multiplier := 1.0 + 0.07 * float(mini(club_level - 1, 9))
+	return maxi(-maxi(0, cash), roundi(float(choice["cash"]) * multiplier))
+
+
+func _event_choice_summary(choice: Dictionary) -> String:
+	var amount := _event_choice_cash(choice)
+	return "CASH %+d€    REP %+d    XP +%d" % [amount, int(choice["rep"]), int(choice["xp"])]
+
+
+func _show_night_event() -> void:
+	if night_event_triggered or not night_active or night_paused or night_event_layer == null:
+		return
+	var available: Array[Dictionary] = []
+	for encounter in NightEvents.EVENTS:
+		if not night_recent_event_ids.has(str(encounter["id"])):
+			available.append(encounter)
+	if available.is_empty():
+		for encounter in NightEvents.EVENTS:
+			available.append(encounter)
+	if available.is_empty():
+		return
+	active_night_event = available.pick_random()
+	night_event_triggered = true
+	night_event_cooldown = 1
+	night_event_title.text = str(active_night_event["title"])
+	night_event_description.text = str(active_night_event["description"])
+	var choices: Array = active_night_event["choices"]
+	for i in range(night_event_buttons.size()):
+		var choice: Dictionary = choices[i]
+		night_event_buttons[i].text = "%s\n%s" % [str(choice["label"]), _event_choice_summary(choice)]
+	night_event_layer.visible = true
+	_set_night_paused(true)
+	night_pause_button.disabled = true
+	night_speed_button.disabled = true
+
+
+func _resolve_night_event(index: int) -> void:
+	if not night_active or active_night_event.is_empty() or index < 0 or index > 1:
+		return
+	var choice: Dictionary = active_night_event["choices"][index]
+	var change := _event_choice_cash(choice)
+	cash += change
+	night_event_cash_delta += change
+	night_event_rep_delta += int(choice["rep"])
+	night_event_xp_delta += int(choice["xp"])
+	night_event_result = "%s: %s" % [str(active_night_event["title"]), str(choice["label"])]
+	night_recent_event_ids.append(str(active_night_event["id"]))
+	if night_recent_event_ids.size() > 12:
+		night_recent_event_ids.pop_front()
+	active_night_event.clear()
+	night_event_layer.visible = false
+	night_pause_button.disabled = false
+	night_speed_button.disabled = false
+	_set_night_paused(false)
+	_refresh_economy()
+	_update_night_stats()
+	_notify("EVENT  |  CASH %+d€  ·  REP %+d  ·  XP +%d" % [change, int(choice["rep"]), int(choice["xp"])])
+
+
+func _set_night_paused(paused: bool) -> void:
+	night_paused = paused
+	_set_guest_pause_visuals(paused)
+	if dj_player != null:
+		dj_player.stream_paused = paused
+	if dj_card_status != null and dj_track_index >= 0 and dj_track_index < dj_track_paths.size():
+		dj_card_status.text = ("Ⅱ  " if paused else "▶  ") + dj_track_paths[dj_track_index].get_file().get_basename()
+	if night_pause_button != null:
+		night_pause_button.text = "RESUME" if paused else "PAUSE"
+
+
 func _start_night() -> void:
 	_refresh_readiness()
 	if night_active or not _readiness_issues().is_empty() or dj_picker.selected < 0:
