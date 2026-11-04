@@ -1188,8 +1188,18 @@ func _service_destination(kind: String, start: Vector2i, guest: Dictionary) -> D
 					break
 			if reserved:
 				continue
+		# Sofas have a back and armrests: approach only from the
+		# open cushion side, rotated with the furniture's grid pivot.
+		var approach_directions: Array = WALK_DIRS
+		if kind == "sofa":
+			var sofa_node := record["node"] as Node3D
+			var front := sofa_node.global_basis * Vector3.RIGHT
+			var front_cell := Vector2i(roundi(front.x), roundi(front.z))
+			if front_cell == Vector2i.ZERO:
+				continue
+			approach_directions = [front_cell]
 		for furniture_cell in record["cells"]:
-			for direction in WALK_DIRS:
+			for direction in approach_directions:
 				var candidate: Vector2i = furniture_cell + direction
 				if not _walkable(candidate) or _destination_taken(candidate, guest):
 					continue
@@ -1235,31 +1245,31 @@ func _guest_route(guest: Dictionary, kind: String) -> bool:
 	return true
 
 func _sofa_seat(approach_cell: Vector2i, object_id: int) -> Dictionary:
+	if not placed_objects.has(object_id):
+		return {}
+	var record: Dictionary = placed_objects[object_id]
+	if str(record["kind"]) != "sofa":
+		return {}
+	var sofa_node := record["node"] as Node3D
+	if not is_instance_valid(sofa_node):
+		return {}
 	var approach := _cell_position(approach_cell)
-	var best_distance := INF
+	# The two cushion anchors sit along the sofa's two-cell length (+Z).
+	# The front is local +X, so neither armrest nor the back is a seat.
+	var front := (sofa_node.global_basis * Vector3.RIGHT).normalized()
+	var rotation := atan2(front.x, front.z)
 	var best: Dictionary = {}
-	for record_id in placed_objects:
-		if int(record_id) != object_id:
-			continue
-		var record: Dictionary = placed_objects[record_id]
-		if str(record["kind"]) != "sofa":
-			continue
-		var sofa_node: Node3D = record["node"]
-		var center := sofa_node.global_position + sofa_node.global_basis * Vector3(0.0, 0.0, 0.5)
-		var distance := center.distance_squared_to(approach)
-		if distance >= best_distance:
-			continue
-		best_distance = distance
-		# Sit on the cushion rather than at the centre of the occupied grid.
-		# Choose the side facing the aisle, independent of the sofa rotation.
-		var toward_aisle := approach - center
-		toward_aisle.y = 0.0
-		if toward_aisle.length_squared() < 0.001:
-			continue
-		toward_aisle = toward_aisle.normalized()
-		var seat := center + toward_aisle * 0.62
-		seat.y = approach.y + 0.06
-		best = {"position": seat, "rotation": atan2(toward_aisle.x, toward_aisle.z)}
+	var best_distance := INF
+	for local_z in [0.15, 0.85]:
+		var cushion := sofa_node.to_global(Vector3(0.0, 0.0, local_z))
+		var distance := cushion.distance_squared_to(approach)
+		if distance < best_distance:
+			best_distance = distance
+			# Character sit animation is offset 0.5 forward on arrival.
+			# Keep the animation anchor inside the actual cushion footprint.
+			var anchor := cushion - front * 0.5
+			anchor.y = approach.y + 0.06
+			best = {"position": anchor, "rotation": rotation}
 	return best
 
 func toward_seat_offset(angle: float, distance: float) -> Vector3:
