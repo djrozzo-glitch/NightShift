@@ -1,32 +1,32 @@
 extends RefCounted
 ## NightShift UI design tokens and reusable Godot Control styling.
-const BG := Color("#10121d")
-const PANEL := Color("#171a29")
-const EDGE := Color("#38334d")
+const BG := Color("#080b1b")
+const PANEL := Color(0.055, 0.063, 0.13, 0.94)
+const EDGE := Color("#54417f")
 const TEXT := Color("#f3effa")
 const MUTED := Color("#a6a1b9")
-const ACCENT := Color("#d05ac3")
+const ACCENT := Color("#eb4bdb")
 
 static func panel_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = PANEL
 	style.border_color = EDGE
 	style.set_border_width_all(1)
-	style.set_corner_radius_all(10)
+	style.set_corner_radius_all(14)
 	style.content_margin_left = 18
 	style.content_margin_right = 18
 	style.content_margin_top = 14
 	style.content_margin_bottom = 14
 	style.shadow_color = Color(0, 0, 0, 0.35)
-	style.shadow_size = 8
+	style.shadow_size = 12
 	return style
 
 static func button_style(hovered: bool = false, pressed: bool = false) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#833b7e") if pressed else (Color("#33283f") if hovered else Color("#202235"))
+	style.bg_color = Color("#9b2bb0") if pressed else (Color("#3c205b") if hovered else Color("#14172d"))
 	style.border_color = ACCENT if hovered or pressed else EDGE
 	style.set_border_width_all(1)
-	style.set_corner_radius_all(8)
+	style.set_corner_radius_all(10)
 	style.content_margin_left = 12
 	style.content_margin_right = 12
 	style.content_margin_top = 8
@@ -75,7 +75,7 @@ static func decorate_option(option: OptionButton) -> void:
 
 static func decorate_progress(bar: ProgressBar) -> void:
 	var track := StyleBoxFlat.new()
-	track.bg_color = Color("#302b43")
+	track.bg_color = Color("#201b3a")
 	track.set_corner_radius_all(5)
 	var fill := StyleBoxFlat.new()
 	fill.bg_color = ACCENT
