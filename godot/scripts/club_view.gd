@@ -3068,9 +3068,15 @@ func _refresh_progression() -> void:
 	for i in range(perk_buttons.size()):
 		var option: Dictionary = PERK_OPTIONS[i]
 		var owned := unlocked_perks.has(str(option["id"]))
-		perk_buttons[i].text = "%s  %s\n     %s" % ["✓" if owned else "✦", option["name"], option["effect"]]
+		var available := not owned and perk_points > 0
+		var marker := "✓  OWNED" if owned else ("✦  UNLOCK  ·  1 POINT" if available else "◇  NEED 1 PERK POINT")
+		perk_buttons[i].text = "%s\n%s  ·  %s" % [str(option["name"]).to_upper(), str(option["effect"]), marker]
 		perk_buttons[i].add_theme_stylebox_override("disabled", UIStyle.perk_style(owned))
-		perk_buttons[i].disabled = owned or perk_points <= 0
+		perk_buttons[i].disabled = not available
+		perk_buttons[i].add_theme_color_override("font_color", Color("#fff0fb"))
+		perk_buttons[i].add_theme_color_override("font_hover_color", Color("#ffffff"))
+		perk_buttons[i].add_theme_color_override("font_disabled_color", Color("#8fdcc6") if owned else Color("#aaa4c2"))
+		perk_buttons[i].add_theme_font_size_override("font_size", 14)
 	if expansion_details != null:
 		expansion_details.text = "✓ EAST WING UNLOCKED\nYour club is now 22×16. Build more dance tiles, add bars and improve the venue to welcome more guests." if expanded else "▣ EXPAND YOUR CLUB  ·  16×16 → 22×16\nUnlock a larger floor for more guests and more revenue.\n%s  €%d / €%d cash\n%s  Reputation %d / 65\n%s  Level %d / 4\n%s" % ["✓" if cash >= EXPANSION_PRICE else "○", cash, EXPANSION_PRICE, "✓" if reputation >= 65 else "○", reputation, "✓" if club_level >= 4 else "○", club_level, "Ready! Click BUY EAST WING below." if _can_expand_club() else "Complete the requirements to unlock the purchase."]
 	if expansion_button != null:
@@ -3344,11 +3350,11 @@ func _navigate_hud(index: int) -> void:
 			help_panel.visible = false
 		return
 	_close_hud_popups()
-	if analytics_panel != null and index != 5:
+	if analytics_panel != null and index != 4:
 		analytics_panel.visible = false
-	if help_panel != null and index != 6:
+	if help_panel != null and index != 5:
 		help_panel.visible = false
-	if upgrades_panel != null and index != 4:
+	if upgrades_panel != null and index != 3:
 		upgrades_panel.visible = false
 	match index:
 		1:
@@ -3358,22 +3364,20 @@ func _navigate_hud(index: int) -> void:
 			build_panel.visible = false
 			build_toggle.text = "BUILD  [B]"
 		3:
-			_notify("FINANCES: the night report shows revenue and expenses")
-		4:
 			upgrades_panel.visible = not upgrades_panel.visible
 			progression_panel.visible = false
 			build_panel.visible = false
 			build_toggle.text = "BUILD  [B]"
 			if upgrades_panel.visible:
 				_refresh_upgrade_buttons()
-		5:
+		4:
 			analytics_panel.visible = not analytics_panel.visible
 			progression_panel.visible = false
 			build_panel.visible = false
 			build_toggle.text = "BUILD  [B]"
 			if analytics_panel.visible:
 				_refresh_club_analytics()
-		6:
+		5:
 			help_panel.visible = not help_panel.visible
 			build_panel.visible = false
 			progression_panel.visible = false
@@ -3409,7 +3413,7 @@ func _build_overlay() -> void:
 	brand.add_theme_color_override("font_shadow_color", Color(0.85, 0.15, 0.90, 0.7))
 	brand.add_theme_constant_override("shadow_offset_x", 2)
 	top_row.add_child(brand)
-	var nav_items := ["⌂ CLUB", "▦ BUILD", "★ PROGRESSION", "€ FINANCES", "✦ UPGRADES", "▥ ANALYTICS", "? HELP"]
+	var nav_items := ["⌂ CLUB", "▦ BUILD", "★ PROGRESSION", "✦ UPGRADES", "▥ ANALYTICS", "? HELP"]
 	for index in range(nav_items.size()):
 		var nav := Button.new()
 		nav.text = nav_items[index]
@@ -3483,7 +3487,7 @@ func _build_overlay() -> void:
 	new_confirmation.confirmed.connect(_new_club)
 	var header_panel := PanelContainer.new()
 	header_panel.position = Vector2(16, 72)
-	header_panel.custom_minimum_size = Vector2(440, 122)
+	header_panel.custom_minimum_size = Vector2(440, 145)
 	UIStyle.decorate_panel(header_panel)
 	header_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	theme_root.add_child(header_panel)
@@ -3497,7 +3501,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(title)
 	club_name_edit = LineEdit.new()
 	club_name_edit.position = Vector2(34, 104)
-	club_name_edit.size = Vector2(240, 32)
+	club_name_edit.size = Vector2(230, 32)
 	club_name_edit.text = club_name
 	club_name_edit.max_length = 28
 	club_name_edit.placeholder_text = "Name your club"
@@ -3508,8 +3512,10 @@ func _build_overlay() -> void:
 	theme_root.add_child(club_name_edit)
 	var confirm_name := Button.new()
 	confirm_name.text = "✓ OK"
-	confirm_name.position = Vector2(282, 104)
-	confirm_name.custom_minimum_size = Vector2(76, 32)
+	confirm_name.position = Vector2(274, 103)
+	confirm_name.custom_minimum_size = Vector2(64, 32)
+	confirm_name.size = Vector2(64, 32)
+	confirm_name.add_theme_font_size_override("font_size", 12)
 	UIStyle.decorate_button(confirm_name, true)
 	confirm_name.pressed.connect(func() -> void:
 		club_name = club_name_edit.text.strip_edges()
@@ -3529,7 +3535,7 @@ func _build_overlay() -> void:
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
 		theme_root.add_child(warning)
 	economy_label = RichTextLabel.new()
-	economy_label.position = Vector2(34, 143)
+	economy_label.position = Vector2(34, 153)
 	economy_label.custom_minimum_size = Vector2(420, 27)
 	economy_label.size = Vector2(420, 27)
 	economy_label.bbcode_enabled = true
@@ -3657,6 +3663,9 @@ func _build_overlay() -> void:
 	progress_content.add_child(perks_heading)
 	var tabs := TabContainer.new()
 	tabs.custom_minimum_size = Vector2(306, 235)
+	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tabs.add_theme_color_override("font_selected_color", Color("#f7c0ef"))
+	tabs.add_theme_color_override("font_unselected_color", Color("#aaa4c2"))
 	tabs.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	tabs.add_theme_font_size_override("font_size", 13)
 	progress_content.add_child(tabs)
@@ -3673,7 +3682,8 @@ func _build_overlay() -> void:
 			if option["branch"] != branch:
 				continue
 			var perk_button := Button.new()
-			perk_button.custom_minimum_size = Vector2(292, 62)
+			perk_button.custom_minimum_size = Vector2(292, 72)
+			perk_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			perk_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			perk_button.add_theme_font_size_override("font_size", 14)
 			UIStyle.decorate_button(perk_button)
