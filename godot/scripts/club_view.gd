@@ -2493,7 +2493,9 @@ func _play_next_dj_track() -> void:
 		var previous := dj_track_paths[dj_track_index] if dj_track_index >= 0 else ""
 		dj_track_paths.shuffle()
 		if dj_track_paths.size() > 1 and dj_track_paths[0] == previous:
-			dj_track_paths.swap(0, 1)
+			var first_track := dj_track_paths[0]
+			dj_track_paths[0] = dj_track_paths[1]
+			dj_track_paths[1] = first_track
 		dj_track_index = -1
 	for attempt in range(dj_track_paths.size()):
 		dj_track_index = (dj_track_index + 1) % dj_track_paths.size()
