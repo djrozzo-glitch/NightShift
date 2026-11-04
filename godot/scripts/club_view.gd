@@ -2748,18 +2748,13 @@ func _play_dj_music() -> void:
 		return
 	var dj: Dictionary = DJ_ROSTER[dj_picker.selected]
 	var folder := "res://audio/" + str(dj["folder"])
-	var directory := DirAccess.open(folder)
-	if directory == null:
-		if dj_card_status != null:
-			dj_card_status.text = "Audio folder missing: " + str(dj["folder"])
-		return
-	directory.list_dir_begin()
-	var filename := directory.get_next()
-	while not filename.is_empty():
-		if not directory.current_is_dir() and filename.get_extension().to_lower() in ["mp3", "ogg", "wav"]:
+	# ResourceLoader lists original resource names in both the editor and
+	# exported .pck files, unlike DirAccess (which can see remapped imports).
+	for filename in ResourceLoader.list_directory(folder):
+		if filename.ends_with("/"):
+			continue
+		if filename.get_extension().to_lower() in ["mp3", "ogg", "wav"]:
 			dj_track_paths.append(folder.path_join(filename))
-		filename = directory.get_next()
-	directory.list_dir_end()
 	if dj_track_paths.is_empty():
 		if dj_card_status != null:
 			dj_card_status.text = "No audio tracks in " + str(dj["folder"])
