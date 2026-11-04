@@ -1,5 +1,6 @@
 extends Node3D
 const UIStyle = preload("res://scripts/ui_style.gd")
+const NightEvents = preload("res://scripts/night_events.gd")
 ## First migration milestone: a playable 3D camera and procedural club shell.
 ## Controls: left-drag rotate, shift+left-drag pan, wheel zoom, R reset.
 
@@ -182,6 +183,19 @@ var night_unhappy_departures := 0
 var night_time_label: Label
 var night_speed_button: Button
 var night_pause_button: Button
+var night_event_layer: CanvasLayer
+var night_event_title: Label
+var night_event_description: Label
+var night_event_buttons: Array[Button] = []
+var active_night_event: Dictionary = {}
+var night_event_time := -1.0
+var night_event_triggered := false
+var night_event_cooldown := 0
+var night_recent_event_ids: Array[String] = []
+var night_event_cash_delta := 0
+var night_event_rep_delta := 0
+var night_event_xp_delta := 0
+var night_event_result := ""
 var night_history: Array[Dictionary] = []
 var transition_overlay: ColorRect
 var lighting_fade_tween: Tween
@@ -724,12 +738,16 @@ func _night_staff_cost() -> int:
 	return STAFF_COST + maxi(0, _count_kind("bar") - 1) * 8 + maxi(0, _count_kind("wc") - 1) * 8
 
 
+func _night_revenue() -> int:
+	return night_ticket_income + night_drink_income + night_event_cash_delta
+
+
 func _night_total_expenses() -> int:
 	return night_dj_fee + night_operating_cost + night_supply_cost
 
 
 func _night_advice() -> String:
-	if night_ticket_income + night_drink_income < _night_total_expenses():
+	if _night_revenue() < _night_total_expenses():
 		return "LOSS: try a cheaper resident DJ, adjust ticket price or grow attendance."
 	if night_bar_queue_peak >= 5 and night_bar_missed > 0:
 		return "BAR QUEUES: add a bar or improve access to existing bars."
@@ -1727,6 +1745,9 @@ func _process(delta: float) -> void:
 	var step := delta * night_speed
 	_animate_dj_performers(delta)
 	night_elapsed += step
+	if night_event_time >= 0.0 and not night_event_triggered and night_elapsed >= night_event_time:
+		_show_night_event()
+		return
 	if night_elapsed >= NIGHT_DURATION:
 		_end_night()
 		return
@@ -2368,6 +2389,19 @@ func _start_night() -> void:
 	cash -= fee
 	night_dj_fee = fee
 	night_elapsed = 0.0
+	night_event_triggered = false
+	night_event_cash_delta = 0
+	night_event_rep_delta = 0
+	night_event_xp_delta = 0
+	night_event_result = ""
+	active_night_event.clear()
+	if night_event_layer != null:
+		night_event_layer.visible = false
+	night_event_time = -1.0
+	if night_event_cooldown > 0:
+		night_event_cooldown -= 1
+	elif randf() < 0.52:
+		night_event_time = randf_range(55.0, NIGHT_DURATION - 55.0)
 	night_mood_total = 0.0
 	night_mood_samples = 0
 	night_mood_last = 100.0
@@ -2434,16 +2468,16 @@ func _end_night() -> void:
 	var costs := _night_total_expenses()
 	cash -= night_operating_cost + night_supply_cost
 	# Reputation reflects turnout, bar service and the night's finances.
-	var revenue := night_ticket_income + night_drink_income
+	var revenue := _night_revenue()
 	var profit := revenue - costs
 	var turnout_score := clampf(float(guest_count) / maxf(24.0, float(_club_capacity()) * 1.3), 0.0, 1.0)
 	var service_score := float(night_drinks_sold) / float(maxi(1, guest_count))
 	var average_mood := night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last
 	var price_pressure := maxf(0.0, float(ticket_price) - _fair_ticket_price()) * 0.10 + maxf(0.0, float(drink_price) - (7.0 + float(club_level - 1) * 0.8)) * 0.12
 	var reputation_delta := roundi((1.0 if _upgrade_owned("dj_console") and profit > 0 else 0.0) + _club_prestige() * 0.11 + (turnout_score - 0.45) * 5.0 + (service_score - 0.3) * 4.0 + (average_mood - 65.0) * 0.12 + (2.0 if profit > 0 else -3.0) - price_pressure - float(night_unhappy_departures) * 0.5)
-	last_rep_change = clampi(reputation_delta, -7, 7)
+	last_rep_change = clampi(clampi(reputation_delta, -7, 7) + night_event_rep_delta, -10, 10)
 	reputation = clampi(reputation + last_rep_change, 0, 100)
-	last_xp_gain = maxi(10, roundi(float(guest_count) * 2.0 + float(night_drinks_sold) * 1.2 + average_mood * 0.22 + (12.0 if profit > 0 else 0.0)))
+	last_xp_gain = maxi(10, roundi(float(guest_count) * 2.0 + float(night_drinks_sold) * 1.2 + average_mood * 0.22 + (12.0 if profit > 0 else 0.0)) + night_event_xp_delta)
 	var levels_gained := _award_xp(last_xp_gain)
 	var milestone_awards := _award_night_milestones(profit)
 	_record_night_analytics(profit, average_mood)
@@ -2469,7 +2503,9 @@ func _record_night_analytics(profit: int, mood: float) -> void:
 		"drinks_sold": night_drinks_sold, "missed": night_bar_missed,
 		"bar_queue": night_bar_queue_peak, "wc_queue": night_wc_queue_peak,
 		"unhappy": night_unhappy_departures, "ticket_price": ticket_price,
-		"drink_price": drink_price, "upkeep": _upgrade_upkeep() + _night_furniture_upkeep()
+		"drink_price": drink_price, "event": night_event_result, "event_cash": night_event_cash_delta,
+		"event_rep": night_event_rep_delta, "event_xp": night_event_xp_delta,
+		"upkeep": _upgrade_upkeep() + _night_furniture_upkeep()
 	}
 	night_history.append(snapshot)
 	if night_history.size() > 20:
@@ -2525,12 +2561,12 @@ func _refresh_club_analytics() -> void:
 func _update_night_stats() -> void:
 	if night_report_details == null:
 		return
-	var revenue := night_ticket_income + night_drink_income
+	var revenue := _night_revenue()
 	var expenses := _night_total_expenses()
 	var profit := revenue - expenses
 	var mood := _average_guest_mood() if night_active else (night_mood_total / float(night_mood_samples) if night_mood_samples > 0 else night_mood_last)
 	night_report_heading.text = "NIGHT %d  |  %s" % [night_number, "LIVE STATS" if night_active else "REPORT"]
-	var break_even := maxi(0, expenses - night_drink_income)
+	var break_even := maxi(0, expenses - night_drink_income - night_event_cash_delta)
 	var tickets_needed := ceili(float(break_even) / float(maxi(1, ticket_price)))
 	var good := "#65e7ac"
 	var bad := "#ff778e"
@@ -2552,6 +2588,7 @@ func _update_night_stats() -> void:
 		"[color=%s]NIGHT FINANCES[/color]" % accent,
 		"TICKETS     [color=%s]+€%d[/color]" % [good, night_ticket_income],
 		"BAR SALES   [color=%s]+€%d[/color]" % [good, night_drink_income],
+		"EVENTS      [color=%s]%+d€[/color]" % [good if night_event_cash_delta >= 0 else bad, night_event_cash_delta],
 		"REVENUE     [color=%s][b]€%d[/b][/color]" % [good, revenue],
 		"DJ BOOKING  [color=%s]-€%d[/color]" % [bad, night_dj_fee],
 		"STAFF & UTILITIES  [color=%s]-€%d[/color]" % [bad, night_operating_cost],
@@ -2564,6 +2601,9 @@ func _update_night_stats() -> void:
 		"REPUTATION  [color=%s]%d/100[/color]" % [good if reputation >= 70 else bad, reputation]
 	]
 	if not night_active:
+		if not night_event_result.is_empty():
+			lines.append("EVENT  [color=%s]%s[/color]" % [accent, night_event_result])
+			lines.append("CHOICE BONUS  [color=%s]REP %+d  ·  XP +%d[/color]" % [good if night_event_rep_delta >= 0 else bad, night_event_rep_delta, night_event_xp_delta])
 		lines.append("NIGHT XP  [color=%s]+%d[/color]    REP  [color=%s]%+d[/color]" % [good, last_xp_gain, good if last_rep_change >= 0 else bad, last_rep_change])
 		lines.append("")
 		lines.append("[color=%s]MANAGER INSIGHT[/color]" % accent)
@@ -3393,7 +3433,7 @@ func _save_club() -> void:
 	for cell in dance_tiles:
 		tile_data.append({"x": cell.x, "y": cell.y, "paid": bool(dance_tiles[cell].get("paid", false))})
 	var data := {
-		"version": 5, "night_history": night_history, "upgrades": owned_upgrades, "expanded": expanded, "club_name": club_name, "cash": cash, "reputation": reputation,
+		"version": 6, "night_history": night_history, "recent_events": night_recent_event_ids, "event_cooldown": night_event_cooldown, "upgrades": owned_upgrades, "expanded": expanded, "club_name": club_name, "cash": cash, "reputation": reputation,
 		"level": club_level, "xp": club_xp, "total_xp": total_xp,
 		"perk_points": perk_points, "perks": unlocked_perks,
 		"milestones": completed_milestones, "profit_streak": profitable_night_streak,
@@ -3501,6 +3541,10 @@ func _load_club() -> void:
 	for perk in data.get("perks", []):
 		unlocked_perks.append(str(perk))
 	night_number = maxi(0, int(data.get("night_number", 0)))
+	night_recent_event_ids.clear()
+	for event_id in data.get("recent_events", []):
+		night_recent_event_ids.append(str(event_id))
+	night_event_cooldown = maxi(0, int(data.get("event_cooldown", 0)))
 	night_history.clear()
 	var stored_history: Variant = data.get("night_history", [])
 	if stored_history is Array:
@@ -3572,6 +3616,8 @@ func _new_club() -> void:
 	laser_spots.clear()
 	beam_meshes.clear()
 	laser_beams.clear()
+	night_recent_event_ids.clear()
+	night_event_cooldown = 0
 	club_name = "NEW CLUB"
 	club_name_edit.text = club_name
 	_refresh_club_sign()
