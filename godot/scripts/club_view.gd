@@ -3299,30 +3299,54 @@ func _new_club() -> void:
 	_notify("NEW CLUB  |  €%d budget. Build DJ booth, 2 speakers, bar and restroom." % STARTING_CAPITAL)
 
 
+var club_actions_panel: PanelContainer
+
+func _club_action(action: String) -> void:
+	_close_hud_popups()
+	match action:
+		"SAVE CLUB": _save_club()
+		"LOAD CLUB": _load_club()
+		"NEW CLUB": _show_new_club_confirmation()
+
+
+func _close_hud_popups() -> void:
+	if club_actions_panel != null:
+		club_actions_panel.visible = false
+
 func _navigate_hud(index: int) -> void:
+	if index == 0:
+		if club_actions_panel != null:
+			club_actions_panel.visible = not club_actions_panel.visible
+		build_panel.visible = false
+		progression_panel.visible = false
+		return
+	_close_hud_popups()
 	match index:
-		0:
-			build_panel.visible = false
-			progression_panel.visible = false
 		1:
+			_toggle_build_panel()
+		2:
+			progression_panel.visible = not progression_panel.visible
+			build_panel.visible = false
+			build_toggle.text = "BUILD  [B]"
+		3:
 			if dj_picker != null:
 				dj_picker.grab_focus()
 				dj_picker.show_popup()
-		2:
-			_notify("FINANCES: open the night report after each party for revenue and expenses")
-		3:
-			progression_panel.visible = true
-			build_panel.visible = false
-			build_toggle.text = "BUILD  [B]"
 		4:
-			_notify("STAFF: bar and restroom staffing costs are included in each night")
+			_notify("FINANCES: the night report shows revenue and expenses")
 		5:
 			progression_panel.visible = true
 			build_panel.visible = false
 			build_toggle.text = "BUILD  [B]"
-			_notify("ANALYTICS: scroll down in PROGRESSION for the last 20 nights")
 		6:
-			_notify("SETTINGS: use CLUB MENU to save, load or start a new club")
+			_notify("STAFF: staffing costs are included in each night")
+		7:
+			progression_panel.visible = true
+			build_panel.visible = false
+			build_toggle.text = "BUILD  [B]"
+			_notify("ANALYTICS: scroll to the last 20 nights")
+		8:
+			_toggle_help()
 
 
 func _build_overlay() -> void:
@@ -3349,20 +3373,39 @@ func _build_overlay() -> void:
 	top_bar.add_child(top_row)
 	var brand := Label.new()
 	brand.text = "NIGHTSHIFT //"
-	brand.custom_minimum_size.x = 208
+	brand.custom_minimum_size.x = 188
 	brand.add_theme_color_override("font_color", Color("#f2a5ff"))
 	brand.add_theme_font_size_override("font_size", 26)
 	brand.add_theme_color_override("font_shadow_color", Color(0.85, 0.15, 0.90, 0.7))
 	brand.add_theme_constant_override("shadow_offset_x", 2)
 	top_row.add_child(brand)
-	var nav_items := ["⌂ CLUB", "♫ BOOKING", "€ FINANCES", "✦ UPGRADES", "♙ STAFF", "▥ ANALYTICS", "⚙ SETTINGS"]
+	var nav_items := ["⌂ CLUB", "▦ BUILD", "★ PROGRESSION", "♫ BOOKING", "€ FINANCES", "✦ UPGRADES", "♙ STAFF", "▥ ANALYTICS", "⚙ SETTINGS"]
 	for index in range(nav_items.size()):
 		var nav := Button.new()
 		nav.text = nav_items[index]
-		nav.custom_minimum_size = Vector2(94, 34)
+		nav.custom_minimum_size = Vector2(78, 34)
+		nav.add_theme_font_size_override("font_size", 11)
 		UIStyle.decorate_button(nav, index == 0)
 		nav.pressed.connect(_navigate_hud.bind(index))
 		top_row.add_child(nav)
+	# Custom glass menu replaces the native PopupMenu and old left-side Club Menu.
+	club_actions_panel = PanelContainer.new()
+	club_actions_panel.position = Vector2(240, 64)
+	club_actions_panel.custom_minimum_size = Vector2(218, 0)
+	club_actions_panel.visible = false
+	UIStyle.decorate_panel(club_actions_panel)
+	theme_root.add_child(club_actions_panel)
+	club_actions_panel.add_to_group("nightshift_ui_blocker")
+	var actions := VBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	club_actions_panel.add_child(actions)
+	for action in ["SAVE CLUB", "LOAD CLUB", "NEW CLUB"]:
+		var action_button := Button.new()
+		action_button.text = action
+		action_button.custom_minimum_size = Vector2(180, 42)
+		UIStyle.decorate_button(action_button)
+		actions.add_child(action_button)
+		action_button.pressed.connect(_club_action.bind(action))
 	# Full-screen blackout above the scene, but below UI controls.
 	# Mouse input passes through so it cannot interfere with camera/UI.
 	var fade_layer := CanvasLayer.new()
@@ -3401,26 +3444,6 @@ func _build_overlay() -> void:
 	rotate_object_button.pressed.connect(_rotate_moving_object)
 	theme_root.add_child(rotate_object_button)
 	rotate_object_button.add_to_group("nightshift_ui_blocker")
-	# Compact management dropdown; all actions stay in the game.
-	var manage_button := MenuButton.new()
-	manage_button.text = "☰  CLUB MENU"
-	manage_button.position = Vector2(20, 251)
-	manage_button.custom_minimum_size = Vector2(166, 38)
-	UIStyle.decorate_button(manage_button)
-	theme_root.add_child(manage_button)
-	manage_button.add_to_group("nightshift_ui_blocker")
-	var popup := manage_button.get_popup()
-	popup.add_theme_font_size_override("font_size", 13)
-	popup.add_theme_stylebox_override("panel", UIStyle.panel_style())
-	popup.add_item("Save Club", 0)
-	popup.add_item("Load Club", 1)
-	popup.add_item("New Club", 2)
-	popup.id_pressed.connect(func(id: int) -> void:
-		match id:
-			0: _save_club()
-			1: _load_club()
-			2: _show_new_club_confirmation()
-	)
 	var new_confirmation := ConfirmationDialog.new()
 	new_confirmation.name = "NewClubConfirmation"
 	new_confirmation.title = "Start a new club?"
@@ -3474,6 +3497,7 @@ func _build_overlay() -> void:
 	UIStyle.decorate_label(status_label, 13, true)
 	theme_root.add_child(status_label)
 	build_toggle = Button.new()
+	build_toggle.visible = false
 	build_toggle.text = "BUILD  [B]"
 	build_toggle.position = Vector2(20, 292)
 	build_toggle.custom_minimum_size = Vector2(166, 38)
@@ -3482,7 +3506,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(build_toggle)
 	build_toggle.add_to_group("nightshift_ui_blocker")
 	build_panel = PanelContainer.new()
-	build_panel.position = Vector2(20, 392)
+	build_panel.position = Vector2(20, 254)
 	build_panel.visible = false
 	UIStyle.decorate_panel(build_panel)
 	theme_root.add_child(build_panel)
@@ -3520,6 +3544,7 @@ func _build_overlay() -> void:
 	_show_catalog_info("dance_tile")
 	var progression_toggle := Button.new()
 	progression_toggle.text = "★ PROGRESSION"
+	progression_toggle.visible = false
 	progression_toggle.position = Vector2(20, 342)
 	progression_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(progression_toggle, true)
@@ -3531,7 +3556,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(progression_toggle)
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
-	progression_panel.position = Vector2(20, 392)
+	progression_panel.position = Vector2(20, 254)
 	progression_panel.custom_minimum_size = Vector2(344, 0)
 	progression_panel.size = Vector2(344, 420)
 	progression_panel.visible = false
@@ -3856,18 +3881,20 @@ func _build_overlay() -> void:
 	_refresh_readiness()
 	var help_button := Button.new()
 	help_button.text = "?  HELP"
+	help_button.visible = false
 	help_button.position = Vector2(200, 342)
 	UIStyle.decorate_button(help_button)
 	help_button.pressed.connect(_toggle_help)
 	theme_root.add_child(help_button)
 	help_label = Label.new()
 	help_label.text = "Drag: rotate   Shift+drag: pan\nWheel/pinch or +/-: zoom\nR: rotate furniture / reset camera\nB: build   X: erase   Ctrl/Cmd+Z: undo"
-	help_label.position = Vector2(320, 342)
+	help_label.position = Vector2(20, 254)
 	help_label.visible = false
 	UIStyle.decorate_label(help_label, 13, true)
 	theme_root.add_child(help_label)
 	# Navigation must be drawn last so content cannot overlap the logo.
 	theme_root.move_child(top_bar, theme_root.get_child_count() - 1)
+	theme_root.move_child(club_actions_panel, theme_root.get_child_count() - 1)
 
 func _make_sign_board(parent: Node3D, name: String, size: Vector2, position: Vector3) -> Node3D:
 	var board := Node3D.new()
