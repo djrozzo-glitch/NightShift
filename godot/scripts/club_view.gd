@@ -186,7 +186,7 @@ var analytics_history: Label
 var analytics_insight: Label
 var night_report_panel: PanelContainer
 var night_report_heading: Label
-var night_report_details: Label
+var night_report_details: RichTextLabel
 const MAX_GUESTS := 48
 const EXPANDED_GUEST_LIMIT := 72
 const OBJECT_UPKEEP := {"sofa": 2, "table": 1, "stool": 1, "plant2": 1, "plant_big": 3, "rail": 1, "poster": 1, "discoball": 12}
@@ -2309,39 +2309,49 @@ func _update_night_stats() -> void:
 	night_report_heading.text = "NIGHT %d  |  %s" % [night_number, "LIVE STATS" if night_active else "REPORT"]
 	var break_even := maxi(0, expenses - night_drink_income)
 	var tickets_needed := ceili(float(break_even) / float(maxi(1, ticket_price)))
+	var good := "#65e7ac"
+	var bad := "#ff778e"
+	var neutral := "#d8c5ef"
+	var accent := "#f2a5ef"
+	var muted := "#aaa4c2"
 	var lines: Array[String] = [
-		"MOOD  %d%%     GUESTS  %d" % [roundi(mood), guest_count],
-		"CAPACITY  %d     PEAK  %d" % [_club_capacity(), night_capacity_peak],
-		"GUESTS LEFT  %d     UNHAPPY  %d" % [night_guests_left, night_unhappy_departures],
-		"VISIBLE GUEST LIMIT  %d" % _visible_guest_limit(),
-		"DANCE TILES  %d     BARS  %d" % [dance_tiles.size(), _count_kind("bar")],
-		"DRINKS SOLD  %d     MISSED  %d" % [night_drinks_sold, night_bar_missed],
-		"WC VISITS  %d     WC WAITS  %d" % [night_wc_visits, night_wc_waits],
-		"BAR QUEUE PEAK  %d     WC QUEUE PEAK  %d" % [night_bar_queue_peak, night_wc_queue_peak],
+		"[color=%s]GUEST EXPERIENCE[/color]" % accent,
+		"MOOD   [color=%s][b]%d%%[/b][/color]     GUESTS   [color=%s][b]%d[/b][/color]" % [good if mood >= 75.0 else bad, roundi(mood), neutral, guest_count],
+		"CAPACITY   [color=%s]%d[/color]     PEAK   [color=%s]%d[/color]" % [neutral, _club_capacity(), neutral, night_capacity_peak],
+		"LEFT   [color=%s]%d[/color]     UNHAPPY   [color=%s]%d[/color]" % [bad if night_guests_left > 0 else good, night_guests_left, bad if night_unhappy_departures > 0 else good, night_unhappy_departures],
 		"",
-		"TICKETS                 +€%d" % night_ticket_income,
-		"BAR SALES              +€%d" % night_drink_income,
-		"TOTAL REVENUE      €%d" % revenue,
-		"DJ BOOKING           -€%d" % night_dj_fee,
-		"STAFF + UTILITIES   -€%d" % night_operating_cost,
-		"DRINK SUPPLIES      -€%d" % night_supply_cost,
-		"NET PROFIT            %s€%d" % ["+" if profit >= 0 else "-", absi(profit)],
-		"BREAK-EVEN TICKETS  %d at €%d" % [tickets_needed, ticket_price],
+		"[color=%s]VENUE & SERVICE[/color]" % accent,
+		"DANCE TILES  [color=%s]%d[/color]    BARS  [color=%s]%d[/color]" % [neutral, dance_tiles.size(), neutral, _count_kind("bar")],
+		"DRINKS SOLD  [color=%s]%d[/color]    MISSED  [color=%s]%d[/color]" % [good, night_drinks_sold, bad if night_bar_missed > 0 else good, night_bar_missed],
+		"WC VISITS  [color=%s]%d[/color]    WAITS  [color=%s]%d[/color]" % [neutral, night_wc_visits, bad if night_wc_waits > 0 else good, night_wc_waits],
+		"BAR QUEUE  [color=%s]%d[/color]    WC QUEUE  [color=%s]%d[/color]" % [bad if night_bar_queue_peak > 3 else neutral, night_bar_queue_peak, bad if night_wc_queue_peak > 3 else neutral, night_wc_queue_peak],
 		"",
-		"LEVEL %d  XP %d/%d" % [club_level, club_xp, _xp_needed(club_level)],
-		"REPUTATION %d/100" % reputation
+		"[color=%s]NIGHT FINANCES[/color]" % accent,
+		"TICKETS     [color=%s]+€%d[/color]" % [good, night_ticket_income],
+		"BAR SALES   [color=%s]+€%d[/color]" % [good, night_drink_income],
+		"REVENUE     [color=%s][b]€%d[/b][/color]" % [good, revenue],
+		"DJ BOOKING  [color=%s]-€%d[/color]" % [bad, night_dj_fee],
+		"STAFF & UTILITIES  [color=%s]-€%d[/color]" % [bad, night_operating_cost],
+		"SUPPLIES    [color=%s]-€%d[/color]" % [bad, night_supply_cost],
+		"NET PROFIT  [color=%s][b]%s€%d[/b][/color]" % [good if profit >= 0 else bad, "+" if profit >= 0 else "-", absi(profit)],
+		"BREAK-EVEN  [color=%s]%d tickets at €%d[/color]" % [muted, tickets_needed, ticket_price],
+		"",
+		"[color=%s]CLUB PROGRESS[/color]" % accent,
+		"LEVEL  [color=%s]%d[/color]    XP  [color=%s]%d/%d[/color]" % [neutral, club_level, neutral, club_xp, _xp_needed(club_level)],
+		"REPUTATION  [color=%s]%d/100[/color]" % [good if reputation >= 70 else bad, reputation]
 	]
 	if not night_active:
-		lines.append("NIGHT XP +%d    REP %+d" % [last_xp_gain, last_rep_change])
+		lines.append("NIGHT XP  [color=%s]+%d[/color]    REP  [color=%s]%+d[/color]" % [good, last_xp_gain, good if last_rep_change >= 0 else bad, last_rep_change])
 		lines.append("")
-		lines.append(_night_advice())
+		lines.append("[color=%s]MANAGER INSIGHT[/color]" % accent)
+		lines.append("[color=%s]%s[/color]" % [muted, _night_advice()])
 		lines.append("")
 		var active_milestones := _active_milestones()
-		lines.append("NEXT MILESTONES  ·  %d/%d COMPLETED" % [completed_milestones.size(), CLUB_MILESTONES.size()])
+		lines.append("[color=%s]NEXT MILESTONES  ·  %d/%d[/color]" % [accent, completed_milestones.size(), CLUB_MILESTONES.size()])
 		if active_milestones.is_empty():
-			lines.append("✓ ALL MILESTONES COMPLETE")
+			lines.append("[color=%s]✓ ALL MILESTONES COMPLETE[/color]" % good)
 		for milestone in active_milestones:
-			lines.append("○  %s  +€%d" % [str(milestone["name"]), int(milestone["reward"])])
+			lines.append("[color=%s]○  %s  +€%d[/color]" % [neutral, str(milestone["name"]), int(milestone["reward"])])
 	night_report_details.text = "\n".join(lines)
 
 func _build_price(kind: String) -> int:
@@ -3746,7 +3756,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(night_panel)
 	night_panel.add_to_group("nightshift_ui_blocker")
 	var night_controls := VBoxContainer.new()
-	night_controls.add_theme_constant_override("separation", 10)
+	night_controls.add_theme_constant_override("separation", 7)
 	night_panel.add_child(night_controls)
 	var heading := Label.new()
 	heading.text = "▣  CLUB OPENING"
@@ -3754,7 +3764,7 @@ func _build_overlay() -> void:
 	heading.add_theme_color_override("font_color", Color("#e2a2d9"))
 	night_controls.add_child(heading)
 	readiness_label = Label.new()
-	readiness_label.custom_minimum_size = Vector2(255, 40)
+	readiness_label.custom_minimum_size = Vector2(255, 26)
 	UIStyle.decorate_label(readiness_label, 14)
 	readiness_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	night_controls.add_child(readiness_label)
@@ -3916,7 +3926,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(right_scroll)
 	right_scroll.add_to_group("nightshift_ui_blocker")
 	var right_stack := VBoxContainer.new()
-	right_stack.add_theme_constant_override("separation", 12)
+	right_stack.add_theme_constant_override("separation", 8)
 	right_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right_scroll.add_child(right_stack)
 	theme_root.remove_child(night_panel)
@@ -3938,7 +3948,7 @@ func _build_overlay() -> void:
 	# Give the report its own wheel-controlled viewport; it must not enlarge the HUD.
 	var report_scroll := ScrollContainer.new()
 	report_scroll.name = "NightReportScroll"
-	report_scroll.custom_minimum_size = Vector2(0, 260)
+	report_scroll.custom_minimum_size = Vector2(0, 210)
 	report_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	report_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	report_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
@@ -3950,10 +3960,16 @@ func _build_overlay() -> void:
 	report_scroll.add_child(report_content)
 	night_report_heading = Label.new()
 	UIStyle.decorate_label(night_report_heading, 17)
-	night_report_heading.add_theme_color_override("font_color", Color("#e2a2d9"))
+	night_report_heading.add_theme_color_override("font_color", Color("#f2a5ef"))
 	report_content.add_child(night_report_heading)
-	night_report_details = Label.new()
-	UIStyle.decorate_label(night_report_details, 13)
+	night_report_details = RichTextLabel.new()
+	night_report_details.bbcode_enabled = true
+	night_report_details.fit_content = true
+	night_report_details.scroll_active = false
+	night_report_details.selection_enabled = false
+	night_report_details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	night_report_details.add_theme_font_size_override("normal_font_size", 13)
+	night_report_details.add_theme_color_override("default_color", Color("#eae6f5"))
 	report_content.add_child(night_report_details)
 	_refresh_readiness()
 	var help_button := Button.new()
