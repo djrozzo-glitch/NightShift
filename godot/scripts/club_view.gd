@@ -353,8 +353,6 @@ const DISCO_COLORS := [Color("#a75bff"), Color("#40c9ff"), Color("#ff4bba"), Col
 var laser_spots: Array[SpotLight3D] = []
 var laser_beams: Array[MeshInstance3D] = []
 const LASER_COLORS := [Color("#31ff64"), Color("#287cff"), Color("#ffffff"), Color("#ff334d")]
-const LASER_STROBE_BPM := 124.0
-const LASER_STROBE_DUTY := 0.24
 
 func _load_models() -> void:
 	# Keep the logical object kinds ("bar" and "wc") unchanged: existing
@@ -1919,19 +1917,18 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		spot.look_at(spot.global_position + forward + Vector3.UP * 0.8, Vector3.UP)
 	var beam := MeshInstance3D.new()
 	var cone := CylinderMesh.new()
-	cone.top_radius = 0.012 if kind == "laser" else 0.035
-	cone.bottom_radius = 0.62 if kind == "light" else 0.012
+	cone.top_radius = 0.008 if kind == "laser" else 0.035
+	cone.bottom_radius = 0.62 if kind == "light" else 0.008
 	cone.height = 7.0 if kind == "laser" else 3.8
-	if kind == "light":
-		cone.cap_top = false
-		cone.cap_bottom = false
+	cone.cap_top = false
+	cone.cap_bottom = false
 	beam.mesh = cone
 	beam.rotation_degrees.x = 90.0
 	beam.position = Vector3(0.0, 0.0, -3.5 if kind == "laser" else -1.9)
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(0.6, 0.25, 1.0, 0.09) if kind == "light" else Color(0.19, 1.0, 0.39, 0.95)
+	mat.albedo_color = Color(0.6, 0.25, 1.0, 0.09) if kind == "light" else Color(0.19, 1.0, 0.39, 0.32)
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if kind == "light":
 		beam.material_override = _disco_beam_material(0.12)
@@ -1942,15 +1939,17 @@ func _attach_fixture_lighting(node: Node3D, kind: String) -> void:
 		var halo := MeshInstance3D.new()
 		halo.name = "LaserHalo"
 		var halo_mesh := CylinderMesh.new()
-		halo_mesh.top_radius = 0.055
-		halo_mesh.bottom_radius = 0.055
+		halo_mesh.top_radius = 0.095
+		halo_mesh.bottom_radius = 0.095
 		halo_mesh.height = 7.0
+		halo_mesh.cap_top = false
+		halo_mesh.cap_bottom = false
 		halo.mesh = halo_mesh
 		var halo_mat := StandardMaterial3D.new()
 		halo_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		halo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		halo_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		halo_mat.albedo_color = Color(0.19, 1.0, 0.39, 0.12)
+		halo_mat.albedo_color = Color(0.19, 1.0, 0.39, 0.065)
 		halo.material_override = halo_mat
 		beam.add_child(halo)
 	if kind == "light":
@@ -2133,10 +2132,7 @@ func _animate_stage_lights(delta: float) -> void:
 		var phase := lighting_clock * 2.1 + float(index) * 0.85
 		glow.light_energy = 1.15 + 1.65 * (0.5 + 0.5 * sin(phase))
 		glow.light_color = Color.from_hsv(fmod(0.72 + float(index) * 0.075 + lighting_clock * 0.018, 1.0), 0.8, 1.0)
-	# 124 BPM gated strobe: one short flash per beat, synced to game time.
-	# The entire fan flashes together and respects pause / night speed.
-	var laser_beat_phase := fposmod(lighting_clock * LASER_STROBE_BPM / 60.0, 1.0)
-	var laser_flash := laser_beat_phase < LASER_STROBE_DUTY
+	# Continuous soft laser rays during the night; no BPM strobe.
 	# Cycle laser colors every four seconds, with a stagger per fixture.
 	for index in range(laser_spots.size()):
 		var color_index := (int(floor(lighting_clock / 4.0)) + index) % LASER_COLORS.size()
@@ -2144,38 +2140,38 @@ func _animate_stage_lights(delta: float) -> void:
 		var laser := laser_spots[index]
 		if is_instance_valid(laser):
 			laser.light_color = laser_color
-			laser.light_energy = 5.0 if laser_flash else 0.0
+			laser.light_energy = 2.0
 			for fan in laser.get_children():
 				if fan is Node3D and fan.name.begins_with("LaserFan"):
 					for ray_node in fan.get_children():
 						if ray_node is MeshInstance3D:
-							ray_node.visible = laser_flash
+							ray_node.visible = true
 							var fan_mat := ray_node.material_override as StandardMaterial3D
 							if fan_mat != null:
 								var fan_color := laser_color
-								fan_color.a = 0.95
+								fan_color.a = 0.32
 								fan_mat.albedo_color = fan_color
 							var fan_halo := ray_node.get_node_or_null("LaserHalo") as MeshInstance3D
 							if fan_halo != null:
 								var fan_halo_mat := fan_halo.material_override as StandardMaterial3D
 								if fan_halo_mat != null:
 									var halo_color := laser_color
-									halo_color.a = 0.12
+									halo_color.a = 0.065
 									fan_halo_mat.albedo_color = halo_color
 		var beam := laser_beams[index]
 		if is_instance_valid(beam):
-			beam.visible = laser_flash
+			beam.visible = true
 			var material := beam.material_override as StandardMaterial3D
 			if material != null:
 				var beam_color := laser_color
-				beam_color.a = 0.95
+				beam_color.a = 0.32
 				material.albedo_color = beam_color
 			var halo := beam.get_node_or_null("LaserHalo") as MeshInstance3D
 			if halo != null:
 				var halo_material := halo.material_override as StandardMaterial3D
 				if halo_material != null:
 					var halo_color := laser_color
-					halo_color.a = 0.12
+					halo_color.a = 0.065
 					halo_material.albedo_color = halo_color
 
 
