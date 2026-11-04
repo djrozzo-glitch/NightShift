@@ -2787,6 +2787,8 @@ func _enable_erase() -> void:
 	_update_hover(get_viewport().get_mouse_position())
 
 func _toggle_build_panel() -> void:
+	if analytics_panel != null:
+		analytics_panel.visible = false
 	build_panel.visible = not build_panel.visible
 	if progression_panel != null:
 		progression_panel.visible = false
