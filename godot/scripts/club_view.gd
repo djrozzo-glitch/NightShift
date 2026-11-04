@@ -61,6 +61,7 @@ var total_xp := 0
 var perk_points := 0
 var unlocked_perks: Array[String] = []
 var progression_panel: PanelContainer
+var help_panel: PanelContainer
 var upgrades_panel: PanelContainer
 var analytics_panel: PanelContainer
 var xp_bar: ProgressBar
@@ -3071,7 +3072,7 @@ func _refresh_progression() -> void:
 		perk_buttons[i].add_theme_stylebox_override("disabled", UIStyle.perk_style(owned))
 		perk_buttons[i].disabled = owned or perk_points <= 0
 	if expansion_details != null:
-		expansion_details.text = "EAST WING  ·  16×16 → 22×16\nCOST €%d  ·  REP %d/65  ·  LVL %d/4\n%s" % [EXPANSION_PRICE, reputation, club_level, "Expanded! Build in the new wing." if expanded else ("Ready to purchase" if _can_expand_club() else "Earn money and reputation to unlock")]
+		expansion_details.text = "✓ EAST WING UNLOCKED\nYour club is now 22×16. Build more dance tiles, add bars and improve the venue to welcome more guests." if expanded else "▣ EXPAND YOUR CLUB  ·  16×16 → 22×16\nUnlock a larger floor for more guests and more revenue.\n%s  €%d / €%d cash\n%s  Reputation %d / 65\n%s  Level %d / 4\n%s" % ["✓" if cash >= EXPANSION_PRICE else "○", cash, EXPANSION_PRICE, "✓" if reputation >= 65 else "○", reputation, "✓" if club_level >= 4 else "○", club_level, "Ready! Click BUY EAST WING below." if _can_expand_club() else "Complete the requirements to unlock the purchase."]
 	if expansion_button != null:
 		expansion_button.visible = not expanded
 		expansion_button.disabled = not _can_expand_club()
@@ -3339,10 +3340,14 @@ func _navigate_hud(index: int) -> void:
 			upgrades_panel.visible = false
 		if analytics_panel != null:
 			analytics_panel.visible = false
+		if help_panel != null:
+			help_panel.visible = false
 		return
 	_close_hud_popups()
 	if analytics_panel != null and index != 5:
 		analytics_panel.visible = false
+	if help_panel != null and index != 6:
+		help_panel.visible = false
 	if upgrades_panel != null and index != 4:
 		upgrades_panel.visible = false
 	match index:
@@ -3368,6 +3373,10 @@ func _navigate_hud(index: int) -> void:
 			build_toggle.text = "BUILD  [B]"
 			if analytics_panel.visible:
 				_refresh_club_analytics()
+		6:
+			help_panel.visible = not help_panel.visible
+			build_panel.visible = false
+			progression_panel.visible = false
 
 
 func _build_overlay() -> void:
@@ -3400,7 +3409,7 @@ func _build_overlay() -> void:
 	brand.add_theme_color_override("font_shadow_color", Color(0.85, 0.15, 0.90, 0.7))
 	brand.add_theme_constant_override("shadow_offset_x", 2)
 	top_row.add_child(brand)
-	var nav_items := ["⌂ CLUB", "▦ BUILD", "★ PROGRESSION", "€ FINANCES", "✦ UPGRADES", "▥ ANALYTICS"]
+	var nav_items := ["⌂ CLUB", "▦ BUILD", "★ PROGRESSION", "€ FINANCES", "✦ UPGRADES", "▥ ANALYTICS", "? HELP"]
 	for index in range(nav_items.size()):
 		var nav := Button.new()
 		nav.text = nav_items[index]
@@ -3474,7 +3483,7 @@ func _build_overlay() -> void:
 	new_confirmation.confirmed.connect(_new_club)
 	var header_panel := PanelContainer.new()
 	header_panel.position = Vector2(16, 72)
-	header_panel.custom_minimum_size = Vector2(440, 162)
+	header_panel.custom_minimum_size = Vector2(440, 122)
 	UIStyle.decorate_panel(header_panel)
 	header_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	theme_root.add_child(header_panel)
@@ -3488,7 +3497,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(title)
 	club_name_edit = LineEdit.new()
 	club_name_edit.position = Vector2(34, 104)
-	club_name_edit.size = Vector2(270, 32)
+	club_name_edit.size = Vector2(240, 32)
 	club_name_edit.text = club_name
 	club_name_edit.max_length = 28
 	club_name_edit.placeholder_text = "Name your club"
@@ -3497,6 +3506,22 @@ func _build_overlay() -> void:
 		_refresh_club_sign()
 	)
 	theme_root.add_child(club_name_edit)
+	var confirm_name := Button.new()
+	confirm_name.text = "✓ OK"
+	confirm_name.position = Vector2(282, 104)
+	confirm_name.custom_minimum_size = Vector2(76, 32)
+	UIStyle.decorate_button(confirm_name, true)
+	confirm_name.pressed.connect(func() -> void:
+		club_name = club_name_edit.text.strip_edges()
+		if club_name.is_empty():
+			club_name = "MY CLUB"
+		club_name_edit.text = club_name
+		club_name_edit.release_focus()
+		_refresh_club_sign()
+		_notify("Club name updated")
+	)
+	theme_root.add_child(confirm_name)
+	confirm_name.add_to_group("nightshift_ui_blocker")
 	if not missing_models.is_empty():
 		var warning := Label.new()
 		warning.text = "Missing GLB: " + ", ".join(missing_models)
@@ -3514,11 +3539,13 @@ func _build_overlay() -> void:
 	_refresh_economy()
 	notice_label = Label.new()
 	notice_label.position = Vector2(34, 174)
+	notice_label.visible = false
 	UIStyle.decorate_label(notice_label, 13, true)
 	notice_label.add_theme_color_override("font_color", Color("#64e8aa"))
 	theme_root.add_child(notice_label)
 	status_label = Label.new()
 	status_label.position = Vector2(34, 197)
+	status_label.visible = false
 	status_label.text = "▣  MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
 	UIStyle.decorate_label(status_label, 13, true)
 	theme_root.add_child(status_label)
@@ -3583,16 +3610,16 @@ func _build_overlay() -> void:
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
 	progression_panel.position = Vector2(20, 254)
-	progression_panel.anchor_bottom = 0.0
-	progression_panel.offset_bottom = 0.0
+	progression_panel.anchor_bottom = 1.0
+	progression_panel.offset_bottom = -14
 	progression_panel.custom_minimum_size = Vector2(440, 0)
-	progression_panel.size = Vector2(440, 520)
+	progression_panel.size.x = 440
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
 	theme_root.add_child(progression_panel)
 	progression_panel.add_to_group("nightshift_ui_blocker")
 	var progression_scroll := ScrollContainer.new()
-	progression_scroll.custom_minimum_size = Vector2(410, 490)
+	progression_scroll.custom_minimum_size.x = 410
 	progression_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	progression_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	progression_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -3604,8 +3631,8 @@ func _build_overlay() -> void:
 	progress_content.add_theme_constant_override("separation", 12)
 	progression_scroll.add_child(progress_content)
 	var progress_heading := Label.new()
-	progress_heading.text = "CLUB PROGRESSION"
-	UIStyle.decorate_label(progress_heading, 17)
+	progress_heading.text = "✦  CLUB PROGRESSION"
+	UIStyle.decorate_label(progress_heading, 20)
 	progress_heading.add_theme_color_override("font_color", Color("#f2a5ef"))
 	progress_content.add_child(progress_heading)
 	progression_details = Label.new()
@@ -3616,7 +3643,7 @@ func _build_overlay() -> void:
 	UIStyle.decorate_progress(xp_bar)
 	progress_content.add_child(xp_bar)
 	var reputation_heading := Label.new()
-	reputation_heading.text = "REPUTATION"
+	reputation_heading.text = "♧  REPUTATION"
 	UIStyle.decorate_section(reputation_heading)
 	progress_content.add_child(reputation_heading)
 	rep_bar = ProgressBar.new()
@@ -3624,7 +3651,7 @@ func _build_overlay() -> void:
 	UIStyle.decorate_progress(rep_bar)
 	progress_content.add_child(rep_bar)
 	var perks_heading := Label.new()
-	perks_heading.text = "MANAGER PERKS"
+	perks_heading.text = "✧  MANAGER PERKS"
 	UIStyle.decorate_label(perks_heading, 15)
 	perks_heading.add_theme_color_override("font_color", Color("#e6a7ef"))
 	progress_content.add_child(perks_heading)
@@ -3670,7 +3697,7 @@ func _build_overlay() -> void:
 	goal_panel.add_child(goal_content)
 	expansion_details = Label.new()
 	UIStyle.decorate_label(expansion_details, 12, true)
-	expansion_details.add_theme_color_override("font_color", Color("#b8b4d1"))
+	expansion_details.add_theme_color_override("font_color", Color("#e5d7f0"))
 	expansion_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	goal_content.add_child(expansion_details)
 	expansion_button = Button.new()
@@ -3980,11 +4007,26 @@ func _build_overlay() -> void:
 	help_button.pressed.connect(_toggle_help)
 	theme_root.add_child(help_button)
 	help_label = Label.new()
-	help_label.text = "Drag: rotate   Shift+drag: pan\nWheel/pinch or +/-: zoom\nR: rotate furniture / reset camera\nB: build   X: erase   Ctrl/Cmd+Z: undo"
-	help_label.position = Vector2(20, 254)
-	help_label.visible = false
-	UIStyle.decorate_label(help_label, 13, true)
-	theme_root.add_child(help_label)
+	help_label.text = "CAMERA\nDrag: orbit   Shift+drag: pan   Wheel: zoom\n\nBUILDING\nB: build   X: erase   R: rotate item\nDrag placed furniture to move it. ESC: cancel\nCtrl/Cmd+Z: undo\n\nRUNNING YOUR CLUB\nBook a DJ, set ticket and drink prices, then Start Night.\nExpand your club in Progression and buy equipment upgrades in Upgrades.\nCheck Analytics for recent results and manager advice.\n\nCLUB MENU\nSave, load or start a new club."
+	help_label.position = Vector2.ZERO
+	help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UIStyle.decorate_label(help_label, 14)
+	help_panel = PanelContainer.new()
+	help_panel.position = Vector2(20, 254)
+	help_panel.custom_minimum_size = Vector2(440, 0)
+	help_panel.visible = false
+	UIStyle.decorate_panel(help_panel)
+	theme_root.add_child(help_panel)
+	help_panel.add_to_group("nightshift_ui_blocker")
+	var help_content := VBoxContainer.new()
+	help_content.add_theme_constant_override("separation", 12)
+	help_panel.add_child(help_content)
+	var help_heading := Label.new()
+	help_heading.text = "?  HELP & GAME GUIDE"
+	UIStyle.decorate_label(help_heading, 19)
+	help_heading.add_theme_color_override("font_color", Color("#f2a5ef"))
+	help_content.add_child(help_heading)
+	help_content.add_child(help_label)
 	# Navigation must be drawn last so content cannot overlap the logo.
 	theme_root.move_child(top_bar, theme_root.get_child_count() - 1)
 	theme_root.move_child(club_actions_panel, theme_root.get_child_count() - 1)
