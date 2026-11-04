@@ -61,6 +61,7 @@ var total_xp := 0
 var perk_points := 0
 var unlocked_perks: Array[String] = []
 var progression_panel: PanelContainer
+var analytics_panel: PanelContainer
 var xp_bar: ProgressBar
 var rep_bar: ProgressBar
 var progression_details: Label
@@ -111,7 +112,7 @@ const CLUB_MILESTONES := [
 	{"id": "level_8", "name": "SCENE LEADER", "reward": 850},
 	{"id": "profit_1500", "name": "THE BIG LEAGUES", "reward": 1000}
 ]
-var economy_label: Label
+var economy_label: RichTextLabel
 var notice_label: Label
 var readiness_label: Label
 var dj_picker: OptionButton
@@ -547,7 +548,7 @@ func _register_object(node: Node3D, kind: String, x: int, y: int, turn: int) -> 
 func _refresh_economy() -> void:
 	_refresh_readiness()
 	if economy_label != null:
-		economy_label.text = "CASH  €%d     REP  %d/100     LEVEL  %d  |  XP %d/%d" % [cash, reputation, club_level, club_xp, _xp_needed(club_level)]
+		economy_label.text = "[color=#ec6ce8]▣[/color] CASH [b]€%d[/b]   [color=#ec6ce8]♧[/color] REP [b]%d/100[/b]   [color=#ec6ce8]◆[/color] LVL [b]%d[/b]   [color=#ec6ce8]◇[/color] XP [b]%d/%d[/b]" % [cash, reputation, club_level, club_xp, _xp_needed(club_level)]
 	_refresh_progression()
 
 func _count_kind(kind: String) -> int:
@@ -2287,14 +2288,14 @@ func _refresh_club_analytics() -> void:
 		total_guests += int(record.get("guests", 0))
 		total_mood += int(record.get("mood", 0))
 	var count := night_history.size()
-	analytics_summary.text = "LAST %d NIGHTS\nNET PROFIT  %s€%d\nAVG GUESTS  %.1f  |  AVG MOOD  %d%%" % [count, "+" if total_profit >= 0 else "-", absi(total_profit), float(total_guests) / float(count), roundi(float(total_mood) / float(count))]
+	analytics_summary.text = "◈  LAST %d NIGHTS\n€  NET PROFIT  %s€%d\n♧  AVG GUESTS  %.1f  |  ◇ AVG MOOD  %d%%" % [count, "+" if total_profit >= 0 else "-", absi(total_profit), float(total_guests) / float(count), roundi(float(total_mood) / float(count))]
 	var lines: Array[String] = []
 	for index in range(night_history.size() - 1, maxi(-1, night_history.size() - 9), -1):
 		var entry: Dictionary = night_history[index]
 		var net := int(entry.get("profit", 0))
 		lines.append("N%02d  %s€%d  |  %d guests  |  %d%% mood" % [int(entry.get("night", 0)), "+" if net >= 0 else "-", absi(net), int(entry.get("guests", 0)), int(entry.get("mood", 0))])
 	analytics_history.text = "\n".join(lines)
-	analytics_insight.text = "MANAGER INSIGHT\n" + _analytics_recommendation()
+	analytics_insight.text = "✦  MANAGER INSIGHT\n" + _analytics_recommendation()
 
 
 func _update_night_stats() -> void:
@@ -3319,8 +3320,12 @@ func _navigate_hud(index: int) -> void:
 			club_actions_panel.visible = not club_actions_panel.visible
 		build_panel.visible = false
 		progression_panel.visible = false
+		if analytics_panel != null:
+			analytics_panel.visible = false
 		return
 	_close_hud_popups()
+	if analytics_panel != null and index != 7:
+		analytics_panel.visible = false
 	match index:
 		1:
 			_toggle_build_panel()
@@ -3341,10 +3346,12 @@ func _navigate_hud(index: int) -> void:
 		6:
 			_notify("STAFF: staffing costs are included in each night")
 		7:
-			progression_panel.visible = true
+			analytics_panel.visible = not analytics_panel.visible
+			progression_panel.visible = false
 			build_panel.visible = false
 			build_toggle.text = "BUILD  [B]"
-			_notify("ANALYTICS: scroll to the last 20 nights")
+			if analytics_panel.visible:
+				_refresh_club_analytics()
 		8:
 			_toggle_help()
 
@@ -3482,18 +3489,23 @@ func _build_overlay() -> void:
 		warning.position = Vector2(280, 193)
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
 		theme_root.add_child(warning)
-	economy_label = Label.new()
+	economy_label = RichTextLabel.new()
 	economy_label.position = Vector2(34, 143)
-	UIStyle.decorate_label(economy_label, 15)
+	economy_label.custom_minimum_size = Vector2(420, 27)
+	economy_label.size = Vector2(420, 27)
+	economy_label.bbcode_enabled = true
+	economy_label.scroll_active = false
+	economy_label.add_theme_font_size_override("normal_font_size", 15)
 	theme_root.add_child(economy_label)
 	_refresh_economy()
 	notice_label = Label.new()
 	notice_label.position = Vector2(34, 174)
 	UIStyle.decorate_label(notice_label, 13, true)
+	notice_label.add_theme_color_override("font_color", Color("#64e8aa"))
 	theme_root.add_child(notice_label)
 	status_label = Label.new()
 	status_label.position = Vector2(34, 197)
-	status_label.text = "MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
+	status_label.text = "▣  MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
 	UIStyle.decorate_label(status_label, 13, true)
 	theme_root.add_child(status_label)
 	build_toggle = Button.new()
@@ -3653,23 +3665,42 @@ func _build_overlay() -> void:
 	for upgrade in EQUIPMENT_UPGRADES:
 		var upgrade_button := Button.new()
 		UIStyle.decorate_button(upgrade_button)
+		upgrade_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		upgrade_button.pressed.connect(_buy_equipment_upgrade.bind(str(upgrade["id"])))
 		goal_content.add_child(upgrade_button)
 		upgrade_buttons[str(upgrade["id"])] = upgrade_button
+	# Analytics is its own navigation destination, independent of Progression.
+	analytics_panel = PanelContainer.new()
+	analytics_panel.position = Vector2(20, 254)
+	analytics_panel.custom_minimum_size = Vector2(390, 0)
+	analytics_panel.size = Vector2(390, 460)
+	analytics_panel.visible = false
+	UIStyle.decorate_panel(analytics_panel)
+	theme_root.add_child(analytics_panel)
+	analytics_panel.add_to_group("nightshift_ui_blocker")
+	var analytics_scroll := ScrollContainer.new()
+	analytics_scroll.custom_minimum_size = Vector2(360, 430)
+	analytics_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	analytics_panel.add_child(analytics_scroll)
+	var analytics_content := VBoxContainer.new()
+	analytics_content.custom_minimum_size.x = 330
+	analytics_content.add_theme_constant_override("separation", 14)
+	analytics_scroll.add_child(analytics_content)
 	var analytics_heading := Label.new()
-	analytics_heading.text = "CLUB ANALYTICS  ·  LAST 20 NIGHTS"
-	UIStyle.decorate_section(analytics_heading)
-	progress_content.add_child(analytics_heading)
+	analytics_heading.text = "▥  CLUB ANALYTICS  ·  LAST 20 NIGHTS"
+	UIStyle.decorate_label(analytics_heading, 17)
+	analytics_heading.add_theme_color_override("font_color", Color("#f2a5ef"))
+	analytics_content.add_child(analytics_heading)
 	analytics_summary = Label.new()
-	UIStyle.decorate_label(analytics_summary, 13, true)
-	progress_content.add_child(analytics_summary)
+	UIStyle.decorate_label(analytics_summary, 15)
+	analytics_content.add_child(analytics_summary)
 	analytics_history = Label.new()
-	UIStyle.decorate_label(analytics_history, 12, true)
-	progress_content.add_child(analytics_history)
+	UIStyle.decorate_label(analytics_history, 13, true)
+	analytics_content.add_child(analytics_history)
 	analytics_insight = Label.new()
-	UIStyle.decorate_label(analytics_insight, 12, true)
+	UIStyle.decorate_label(analytics_insight, 13, true)
 	analytics_insight.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	progress_content.add_child(analytics_insight)
+	analytics_content.add_child(analytics_insight)
 	_refresh_club_analytics()
 	_refresh_progression()
 	var night_panel := PanelContainer.new()
