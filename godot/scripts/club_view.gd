@@ -34,6 +34,8 @@ var build_turn := 0
 var preview_root: Node3D
 var build_panel: PanelContainer
 var catalog_buttons: Dictionary = {}
+var catalog_icons: Dictionary = {}
+var catalog_captions: Dictionary = {}
 var catalog_info_label: Label
 var build_toggle: Button
 var help_label: Label
@@ -2371,8 +2373,15 @@ func _refresh_build_catalog() -> void:
 		var locked := club_level < required_level
 		var label := str(BUILD_NAMES.get(kind, kind.capitalize()))
 		var price := _build_price(kind)
-		button.text = "🔒 %s\nLVL %d" % [label, required_level] if locked else "%s\n€%d" % [label, price]
-		button.tooltip_text = ""
+		button.text = ""
+		var caption := catalog_captions.get(kind) as Label
+		if is_instance_valid(caption):
+			caption.text = "%s\n%s" % [label, "🔒 LVL %d" % required_level if locked else "€%d" % price]
+			caption.add_theme_color_override("font_color", Color("#8d859f") if locked else Color("#f1e6f8"))
+		var icon := catalog_icons.get(kind) as TextureRect
+		if is_instance_valid(icon):
+			icon.modulate = Color(0.46, 0.43, 0.54, 0.65) if locked else Color.WHITE
+		button.tooltip_text = "%s · Unlocks at level %d" % [label, required_level] if locked else "%s · €%d" % [label, price]
 		button.disabled = locked
 
 
@@ -3643,9 +3652,35 @@ func _build_overlay() -> void:
 	catalog_layout.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(98, 76)
-		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.custom_minimum_size = Vector2(98, 108)
 		UIStyle.decorate_button(button)
+		var icon_paths := {"dance_tile": "dance_tile", "speaker": "speaker", "dj": "dj", "bar": "bar", "sofa": "sofa", "wc": "wc", "table": "table", "stool": "stool", "plant2": "plant", "plant_big": "plant_big", "light": "light", "laser": "laser", "rail": "rail", "poster": "poster", "discoball": "discoball"}
+		var icon_path := "res://assets/ui/build_icons/%s.png" % str(icon_paths.get(kind, kind))
+		if ResourceLoader.exists(icon_path):
+			var icon := TextureRect.new()
+			icon.texture = load(icon_path) as Texture2D
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+			icon.offset_left = 8
+			icon.offset_top = 5
+			icon.offset_right = -8
+			icon.offset_bottom = 72
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			button.add_child(icon)
+			catalog_icons[kind] = icon
+		var caption := Label.new()
+		caption.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+		caption.offset_left = 2
+		caption.offset_right = -2
+		caption.offset_top = -37
+		caption.offset_bottom = -4
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		caption.add_theme_font_size_override("font_size", 11)
+		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		button.add_child(caption)
+		catalog_captions[kind] = caption
 		button.pressed.connect(_choose_kind.bind(kind))
 		button.mouse_entered.connect(_show_catalog_info.bind(kind))
 		button.focus_entered.connect(_show_catalog_info.bind(kind))
@@ -3653,8 +3688,32 @@ func _build_overlay() -> void:
 		catalog_buttons[kind] = button
 	_refresh_build_catalog()
 	var erase_button := Button.new()
-	erase_button.text = "ERASE  [X]"
+	erase_button.text = ""
+	erase_button.custom_minimum_size = Vector2(98, 108)
 	UIStyle.decorate_button(erase_button)
+	var erase_path := "res://assets/ui/build_icons/erase.png"
+	if ResourceLoader.exists(erase_path):
+		var erase_icon := TextureRect.new()
+		erase_icon.texture = load(erase_path) as Texture2D
+		erase_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		erase_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		erase_icon.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+		erase_icon.offset_left = 8
+		erase_icon.offset_top = 5
+		erase_icon.offset_right = -8
+		erase_icon.offset_bottom = 72
+		erase_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		erase_button.add_child(erase_icon)
+	var erase_caption := Label.new()
+	erase_caption.text = "ERASE [X]"
+	erase_caption.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	erase_caption.offset_top = -34
+	erase_caption.offset_bottom = -4
+	erase_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	erase_caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	erase_caption.add_theme_font_size_override("font_size", 11)
+	erase_caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	erase_button.add_child(erase_caption)
 	erase_button.pressed.connect(_enable_erase)
 	choices.add_child(erase_button)
 	catalog_info_label = Label.new()
