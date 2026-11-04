@@ -3053,14 +3053,29 @@ func _buy_expansion() -> void:
 	_notify("EAST WING OPEN!  Six new columns of club space.")
 
 
+func _fit_progression_panel() -> void:
+	if progression_panel == null:
+		return
+	var viewport_height := get_viewport_rect().size.y
+	var available := maxf(300.0, viewport_height - progression_panel.position.y - 24.0)
+	progression_panel.size.y = minf(570.0, available)
+
+
+func _perk_bold_font() -> Font:
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray(["Inter", "Arial", "Helvetica", "Sans"])
+	font.font_weight = 700
+	return font
+
+
 func _perk_card_style(state: String) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.set_corner_radius_all(12)
 	style.set_border_width_all(1)
 	style.content_margin_left = 18
 	style.content_margin_right = 12
-	style.content_margin_top = 10
-	style.content_margin_bottom = 10
+	style.content_margin_top = 5
+	style.content_margin_bottom = 5
 	match state:
 		"owned":
 			style.bg_color = Color("#12332f")
@@ -3102,7 +3117,8 @@ func _refresh_progression() -> void:
 		perk_buttons[i].add_theme_color_override("font_color", Color("#fff0fb"))
 		perk_buttons[i].add_theme_color_override("font_hover_color", Color("#ffffff"))
 		perk_buttons[i].add_theme_color_override("font_disabled_color", Color("#8fe4c3") if owned else Color("#a6a0be"))
-		perk_buttons[i].add_theme_font_size_override("font_size", 14)
+		perk_buttons[i].add_theme_font_size_override("font_size", 13)
+		perk_buttons[i].add_theme_font_override("font", _perk_bold_font())
 	if expansion_details != null:
 		expansion_details.text = "✓ EAST WING UNLOCKED\nYour club is now 22×16. Build more dance tiles, add bars and improve the venue to welcome more guests." if expanded else "▣ EXPAND YOUR CLUB  ·  16×16 → 22×16\nUnlock a larger floor for more guests and more revenue.\n%s  €%d / €%d cash\n%s  Reputation %d / 65\n%s  Level %d / 4\n%s" % ["✓" if cash >= EXPANSION_PRICE else "○", cash, EXPANSION_PRICE, "✓" if reputation >= 65 else "○", reputation, "✓" if club_level >= 4 else "○", club_level, "Ready! Click BUY EAST WING below." if _can_expand_club() else "Complete the requirements to unlock the purchase."]
 	if expansion_button != null:
@@ -3538,7 +3554,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(club_name_edit)
 	var confirm_name := Button.new()
 	confirm_name.text = "✓ OK"
-	confirm_name.position = Vector2(272, 108)
+	confirm_name.position = Vector2(272, 94)
 	confirm_name.custom_minimum_size = Vector2(52, 24)
 	confirm_name.size = Vector2(52, 24)
 	UIStyle.decorate_button(confirm_name, true)
@@ -3656,10 +3672,13 @@ func _build_overlay() -> void:
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
 	progression_panel.position = Vector2(20, 254)
-	progression_panel.anchor_bottom = 1.0
-	progression_panel.offset_bottom = -14
+	progression_panel.anchor_bottom = 0.0
+	progression_panel.offset_bottom = 0.0
 	progression_panel.custom_minimum_size = Vector2(440, 0)
-	progression_panel.size.x = 440
+	progression_panel.size = Vector2(440, 570)
+	# Keep the complete panel inside the viewport, including its bottom border.
+	get_viewport().size_changed.connect(_fit_progression_panel)
+	call_deferred("_fit_progression_panel")
 	progression_panel.visible = false
 	UIStyle.decorate_panel(progression_panel)
 	theme_root.add_child(progression_panel)
@@ -3702,7 +3721,7 @@ func _build_overlay() -> void:
 	perks_heading.add_theme_color_override("font_color", Color("#e6a7ef"))
 	progress_content.add_child(perks_heading)
 	var tabs := TabContainer.new()
-	tabs.custom_minimum_size = Vector2(306, 270)
+	tabs.custom_minimum_size = Vector2(306, 220)
 	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tabs.add_theme_color_override("font_selected_color", Color("#f7c0ef"))
 	tabs.add_theme_color_override("font_unselected_color", Color("#aaa4c2"))
@@ -3722,7 +3741,7 @@ func _build_overlay() -> void:
 			if option["branch"] != branch:
 				continue
 			var perk_button := Button.new()
-			perk_button.custom_minimum_size = Vector2(292, 76)
+			perk_button.custom_minimum_size = Vector2(292, 54)
 			perk_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			perk_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			perk_button.add_theme_font_size_override("font_size", 14)
