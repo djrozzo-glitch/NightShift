@@ -3299,6 +3299,32 @@ func _new_club() -> void:
 	_notify("NEW CLUB  |  €%d budget. Build DJ booth, 2 speakers, bar and restroom." % STARTING_CAPITAL)
 
 
+func _navigate_hud(index: int) -> void:
+	match index:
+		0:
+			build_panel.visible = false
+			progression_panel.visible = false
+		1:
+			if dj_picker != null:
+				dj_picker.grab_focus()
+				dj_picker.show_popup()
+		2:
+			_notify("FINANCES: open the night report after each party for revenue and expenses")
+		3:
+			progression_panel.visible = true
+			build_panel.visible = false
+			build_toggle.text = "BUILD  [B]"
+		4:
+			_notify("STAFF: bar and restroom staffing costs are included in each night")
+		5:
+			progression_panel.visible = true
+			build_panel.visible = false
+			build_toggle.text = "BUILD  [B]"
+			_notify("ANALYTICS: scroll down in PROGRESSION for the last 20 nights")
+		6:
+			_notify("SETTINGS: use CLUB MENU to save, load or start a new club")
+
+
 func _build_overlay() -> void:
 	var ui := CanvasLayer.new()
 	add_child(ui)
@@ -3307,6 +3333,34 @@ func _build_overlay() -> void:
 	theme_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(theme_root)
+	# Navigation strip stays above the world, leaving the center unobstructed.
+	var top_bar := PanelContainer.new()
+	top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	top_bar.offset_left = 0
+	top_bar.offset_right = 0
+	top_bar.offset_top = 0
+	top_bar.offset_bottom = 56
+	top_bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	UIStyle.decorate_panel(top_bar)
+	theme_root.add_child(top_bar)
+	top_bar.add_to_group("nightshift_ui_blocker")
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 10)
+	top_bar.add_child(top_row)
+	var brand := Label.new()
+	brand.text = "NIGHTSHIFT //"
+	brand.custom_minimum_size.x = 210
+	brand.add_theme_color_override("font_color", Color("#f2a5ff"))
+	brand.add_theme_font_size_override("font_size", 24)
+	top_row.add_child(brand)
+	var nav_items := ["⌂ CLUB", "♫ BOOKING", "€ FINANCES", "✦ UPGRADES", "♙ STAFF", "▥ ANALYTICS", "⚙ SETTINGS"]
+	for index in range(nav_items.size()):
+		var nav := Button.new()
+		nav.text = nav_items[index]
+		nav.custom_minimum_size = Vector2(94, 30)
+		UIStyle.decorate_button(nav, index == 0)
+		nav.pressed.connect(_navigate_hud.bind(index))
+		top_row.add_child(nav)
 	# Full-screen blackout above the scene, but below UI controls.
 	# Mouse input passes through so it cannot interfere with camera/UI.
 	var fade_layer := CanvasLayer.new()
@@ -3348,7 +3402,7 @@ func _build_overlay() -> void:
 	# Compact management dropdown; all actions stay in the game.
 	var manage_button := MenuButton.new()
 	manage_button.text = "☰  CLUB MENU"
-	manage_button.position = Vector2(20, 172)
+	manage_button.position = Vector2(20, 247)
 	manage_button.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(manage_button)
 	theme_root.add_child(manage_button)
@@ -3373,8 +3427,8 @@ func _build_overlay() -> void:
 	theme_root.add_child(new_confirmation)
 	new_confirmation.confirmed.connect(_new_club)
 	var header_panel := PanelContainer.new()
-	header_panel.position = Vector2(12, 12)
-	header_panel.custom_minimum_size = Vector2(480, 150)
+	header_panel.position = Vector2(16, 72)
+	header_panel.custom_minimum_size = Vector2(440, 158)
 	UIStyle.decorate_panel(header_panel)
 	header_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	theme_root.add_child(header_panel)
@@ -3419,14 +3473,14 @@ func _build_overlay() -> void:
 	theme_root.add_child(status_label)
 	build_toggle = Button.new()
 	build_toggle.text = "BUILD  [B]"
-	build_toggle.position = Vector2(20, 222)
+	build_toggle.position = Vector2(20, 292)
 	build_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(build_toggle, true)
 	build_toggle.pressed.connect(_toggle_build_panel)
 	theme_root.add_child(build_toggle)
 	build_toggle.add_to_group("nightshift_ui_blocker")
 	build_panel = PanelContainer.new()
-	build_panel.position = Vector2(20, 322)
+	build_panel.position = Vector2(20, 392)
 	build_panel.visible = false
 	UIStyle.decorate_panel(build_panel)
 	theme_root.add_child(build_panel)
@@ -3435,11 +3489,11 @@ func _build_overlay() -> void:
 	catalog_layout.add_theme_constant_override("separation", 8)
 	build_panel.add_child(catalog_layout)
 	var choices := GridContainer.new()
-	choices.columns = 2
+	choices.columns = 4
 	catalog_layout.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(142, 34)
+		button.custom_minimum_size = Vector2(98, 68)
 		UIStyle.decorate_button(button)
 		button.pressed.connect(_choose_kind.bind(kind))
 		button.mouse_entered.connect(_show_catalog_info.bind(kind))
@@ -3453,16 +3507,17 @@ func _build_overlay() -> void:
 	erase_button.pressed.connect(_enable_erase)
 	choices.add_child(erase_button)
 	catalog_info_label = Label.new()
-	catalog_info_label.custom_minimum_size = Vector2(300, 84)
+	catalog_info_label.custom_minimum_size = Vector2(410, 94)
 	catalog_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	catalog_info_label.add_theme_font_size_override("font_size", 12)
 	catalog_info_label.add_theme_color_override("font_color", Color("#d7c8dc"))
 	catalog_info_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	catalog_layout.add_child(catalog_info_label)
+	build_panel.custom_minimum_size.x = 438
 	_show_catalog_info("dance_tile")
 	var progression_toggle := Button.new()
 	progression_toggle.text = "★ PROGRESSION"
-	progression_toggle.position = Vector2(20, 272)
+	progression_toggle.position = Vector2(20, 342)
 	progression_toggle.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(progression_toggle, true)
 	progression_toggle.pressed.connect(func() -> void:
@@ -3473,7 +3528,7 @@ func _build_overlay() -> void:
 	theme_root.add_child(progression_toggle)
 	# Browser-style progression and perks, positioned under the build controls.
 	progression_panel = PanelContainer.new()
-	progression_panel.position = Vector2(20, 322)
+	progression_panel.position = Vector2(20, 392)
 	progression_panel.custom_minimum_size = Vector2(344, 0)
 	progression_panel.size = Vector2(344, 420)
 	progression_panel.visible = false
@@ -3603,7 +3658,7 @@ func _build_overlay() -> void:
 	night_controls.add_theme_constant_override("separation", 10)
 	night_panel.add_child(night_controls)
 	var heading := Label.new()
-	heading.text = "CLUB OPENING"
+	heading.text = "▣  CLUB OPENING"
 	UIStyle.decorate_label(heading, 18)
 	heading.add_theme_color_override("font_color", Color("#e2a2d9"))
 	night_controls.add_child(heading)
@@ -3700,7 +3755,7 @@ func _build_overlay() -> void:
 	_refresh_dj_card()
 	_refresh_prices()
 	start_night_button = Button.new()
-	start_night_button.text = "START NIGHT"
+	start_night_button.text = "START NIGHT  ▶"
 	UIStyle.decorate_button(start_night_button, true)
 	start_night_button.pressed.connect(_night_button_pressed)
 	start_night_button.custom_minimum_size = Vector2(255, 48)
@@ -3747,9 +3802,9 @@ func _build_overlay() -> void:
 	right_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	right_scroll.anchor_left = 1.0
 	right_scroll.anchor_right = 1.0
-	right_scroll.offset_left = -365
+	right_scroll.offset_left = -385
 	right_scroll.offset_right = -8
-	right_scroll.offset_top = 8
+	right_scroll.offset_top = 72
 	right_scroll.offset_bottom = -8
 	right_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	right_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -3798,13 +3853,13 @@ func _build_overlay() -> void:
 	_refresh_readiness()
 	var help_button := Button.new()
 	help_button.text = "?  HELP"
-	help_button.position = Vector2(200, 272)
+	help_button.position = Vector2(200, 342)
 	UIStyle.decorate_button(help_button)
 	help_button.pressed.connect(_toggle_help)
 	theme_root.add_child(help_button)
 	help_label = Label.new()
 	help_label.text = "Drag: rotate   Shift+drag: pan\nWheel/pinch or +/-: zoom\nR: rotate furniture / reset camera\nB: build   X: erase   Ctrl/Cmd+Z: undo"
-	help_label.position = Vector2(330, 272)
+	help_label.position = Vector2(320, 342)
 	help_label.visible = false
 	UIStyle.decorate_label(help_label, 13, true)
 	theme_root.add_child(help_label)
