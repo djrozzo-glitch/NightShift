@@ -2358,7 +2358,7 @@ func _refresh_build_catalog() -> void:
 		var locked := club_level < required_level
 		var label := str(BUILD_NAMES.get(kind, kind.capitalize()))
 		var price := _build_price(kind)
-		button.text = "🔒 %s  ·  LVL %d" % [label, required_level] if locked else "%s   €%d" % [label, price]
+		button.text = "🔒 %s\nLVL %d" % [label, required_level] if locked else "%s\n€%d" % [label, price]
 		button.tooltip_text = ""
 		button.disabled = locked
 
@@ -3349,15 +3349,17 @@ func _build_overlay() -> void:
 	top_bar.add_child(top_row)
 	var brand := Label.new()
 	brand.text = "NIGHTSHIFT //"
-	brand.custom_minimum_size.x = 210
+	brand.custom_minimum_size.x = 208
 	brand.add_theme_color_override("font_color", Color("#f2a5ff"))
-	brand.add_theme_font_size_override("font_size", 24)
+	brand.add_theme_font_size_override("font_size", 26)
+	brand.add_theme_color_override("font_shadow_color", Color(0.85, 0.15, 0.90, 0.7))
+	brand.add_theme_constant_override("shadow_offset_x", 2)
 	top_row.add_child(brand)
 	var nav_items := ["⌂ CLUB", "♫ BOOKING", "€ FINANCES", "✦ UPGRADES", "♙ STAFF", "▥ ANALYTICS", "⚙ SETTINGS"]
 	for index in range(nav_items.size()):
 		var nav := Button.new()
 		nav.text = nav_items[index]
-		nav.custom_minimum_size = Vector2(94, 30)
+		nav.custom_minimum_size = Vector2(94, 34)
 		UIStyle.decorate_button(nav, index == 0)
 		nav.pressed.connect(_navigate_hud.bind(index))
 		top_row.add_child(nav)
@@ -3402,7 +3404,7 @@ func _build_overlay() -> void:
 	# Compact management dropdown; all actions stay in the game.
 	var manage_button := MenuButton.new()
 	manage_button.text = "☰  CLUB MENU"
-	manage_button.position = Vector2(20, 247)
+	manage_button.position = Vector2(20, 251)
 	manage_button.custom_minimum_size = Vector2(166, 38)
 	UIStyle.decorate_button(manage_button)
 	theme_root.add_child(manage_button)
@@ -3428,7 +3430,7 @@ func _build_overlay() -> void:
 	new_confirmation.confirmed.connect(_new_club)
 	var header_panel := PanelContainer.new()
 	header_panel.position = Vector2(16, 72)
-	header_panel.custom_minimum_size = Vector2(440, 158)
+	header_panel.custom_minimum_size = Vector2(440, 162)
 	UIStyle.decorate_panel(header_panel)
 	header_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	theme_root.add_child(header_panel)
@@ -3437,11 +3439,11 @@ func _build_overlay() -> void:
 	title.text = "CLUB NAME"
 	UIStyle.decorate_label(title, 12)
 	title.add_theme_color_override("font_color", Color("#f4eafa"))
-	title.position = Vector2(30, 20)
+	title.position = Vector2(34, 84)
 	
 	theme_root.add_child(title)
 	club_name_edit = LineEdit.new()
-	club_name_edit.position = Vector2(30, 39)
+	club_name_edit.position = Vector2(34, 104)
 	club_name_edit.size = Vector2(270, 32)
 	club_name_edit.text = club_name
 	club_name_edit.max_length = 28
@@ -3454,20 +3456,20 @@ func _build_overlay() -> void:
 	if not missing_models.is_empty():
 		var warning := Label.new()
 		warning.text = "Missing GLB: " + ", ".join(missing_models)
-		warning.position = Vector2(300, 120)
+		warning.position = Vector2(280, 193)
 		warning.add_theme_color_override("font_color", Color("#ffb27c"))
 		theme_root.add_child(warning)
 	economy_label = Label.new()
-	economy_label.position = Vector2(30, 78)
+	economy_label.position = Vector2(34, 143)
 	UIStyle.decorate_label(economy_label, 15)
 	theme_root.add_child(economy_label)
 	_refresh_economy()
 	notice_label = Label.new()
-	notice_label.position = Vector2(30, 107)
+	notice_label.position = Vector2(34, 174)
 	UIStyle.decorate_label(notice_label, 13, true)
 	theme_root.add_child(notice_label)
 	status_label = Label.new()
-	status_label.position = Vector2(30, 130)
+	status_label.position = Vector2(34, 197)
 	status_label.text = "MODE: CAMERA   |   B: build   X: erase   Ctrl/Cmd+Z: undo"
 	UIStyle.decorate_label(status_label, 13, true)
 	theme_root.add_child(status_label)
@@ -3493,7 +3495,8 @@ func _build_overlay() -> void:
 	catalog_layout.add_child(choices)
 	for kind in BUILD_TYPES:
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(98, 68)
+		button.custom_minimum_size = Vector2(98, 76)
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		UIStyle.decorate_button(button)
 		button.pressed.connect(_choose_kind.bind(kind))
 		button.mouse_entered.connect(_show_catalog_info.bind(kind))
@@ -3863,6 +3866,8 @@ func _build_overlay() -> void:
 	help_label.visible = false
 	UIStyle.decorate_label(help_label, 13, true)
 	theme_root.add_child(help_label)
+	# Navigation must be drawn last so content cannot overlap the logo.
+	theme_root.move_child(top_bar, theme_root.get_child_count() - 1)
 
 func _make_sign_board(parent: Node3D, name: String, size: Vector2, position: Vector3) -> Node3D:
 	var board := Node3D.new()
