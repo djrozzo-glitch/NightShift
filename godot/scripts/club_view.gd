@@ -3795,6 +3795,65 @@ func _navigate_hud(index: int) -> void:
 			progression_panel.visible = false
 
 
+func _build_night_event_popup() -> void:
+	# Modal overlay sits above every menu and pauses the world until a choice.
+	night_event_layer = CanvasLayer.new()
+	night_event_layer.layer = 20
+	add_child(night_event_layer)
+	var backdrop := ColorRect.new()
+	night_event_layer.add_child(backdrop)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	backdrop.color = Color(0.015, 0.010, 0.035, 0.82)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	var centered := CenterContainer.new()
+	night_event_layer.add_child(centered)
+	centered.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	centered.mouse_filter = Control.MOUSE_FILTER_STOP
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(540, 0)
+	UIStyle.decorate_panel(panel)
+	centered.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 22)
+	margin.add_theme_constant_override("margin_right", 22)
+	margin.add_theme_constant_override("margin_top", 22)
+	margin.add_theme_constant_override("margin_bottom", 22)
+	panel.add_child(margin)
+	var contents := VBoxContainer.new()
+	contents.add_theme_constant_override("separation", 16)
+	margin.add_child(contents)
+	var kicker := Label.new()
+	kicker.text = "✦  NIGHTSHIFT  /  UNEXPECTED EVENT"
+	UIStyle.decorate_label(kicker, 13, true)
+	kicker.add_theme_color_override("font_color", Color("#e5a1f8"))
+	contents.add_child(kicker)
+	night_event_title = Label.new()
+	UIStyle.decorate_label(night_event_title, 25)
+	night_event_title.add_theme_color_override("font_color", Color("#fbeaf9"))
+	contents.add_child(night_event_title)
+	night_event_description = Label.new()
+	UIStyle.decorate_label(night_event_description, 16)
+	night_event_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	night_event_description.custom_minimum_size = Vector2(485, 80)
+	contents.add_child(night_event_description)
+	var prompt := Label.new()
+	prompt.text = "WHAT DO YOU DO?  //  CHOOSE ONE"
+	UIStyle.decorate_label(prompt, 12, true)
+	contents.add_child(prompt)
+	for i in range(2):
+		var decision := Button.new()
+		decision.custom_minimum_size.y = 76
+		UIStyle.decorate_button(decision, i == 0)
+		decision.pressed.connect(_resolve_night_event.bind(i))
+		contents.add_child(decision)
+		night_event_buttons.append(decision)
+	var footnote := Label.new()
+	footnote.text = "Night and music pause until you make a decision."
+	UIStyle.decorate_label(footnote, 11, true)
+	contents.add_child(footnote)
+	night_event_layer.visible = false
+
+
 func _build_overlay() -> void:
 	var ui := CanvasLayer.new()
 	add_child(ui)
@@ -3803,6 +3862,7 @@ func _build_overlay() -> void:
 	theme_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(theme_root)
+	_build_night_event_popup()
 	# Navigation strip stays above the world, leaving the center unobstructed.
 	var top_bar := PanelContainer.new()
 	top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
@@ -4431,13 +4491,8 @@ func _build_overlay() -> void:
 	UIStyle.decorate_button(night_pause_button)
 	night_pause_button.custom_minimum_size.y = 36
 	night_pause_button.pressed.connect(func() -> void:
-		night_paused = not night_paused
-		_set_guest_pause_visuals(night_paused)
-		if dj_player != null:
-			dj_player.stream_paused = night_paused
-		if dj_card_status != null and dj_player != null and dj_player.playing:
-			dj_card_status.text = ("Ⅱ  " if night_paused else "▶  ") + dj_track_paths[dj_track_index].get_file().get_basename() if dj_track_index >= 0 and dj_track_index < dj_track_paths.size() else dj_card_status.text
-		night_pause_button.text = "RESUME" if night_paused else "PAUSE"
+		if active_night_event.is_empty():
+			_set_night_paused(not night_paused)
 	)
 	speed_controls.add_child(night_pause_button)
 	night_speed_button = Button.new()
