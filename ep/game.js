@@ -536,7 +536,7 @@ function renderLineup(){
  for(const a of artists){
   const option=document.createElement('option');
   option.value=a.id;
-  option.textContent=a.name+' · €2.39';
+  option.textContent=a.name;
   select.appendChild(option);
  }
  select.value=artists.some(a=>a.id===selected)?selected:artists[0].id;
