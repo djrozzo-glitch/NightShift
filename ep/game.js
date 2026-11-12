@@ -480,7 +480,7 @@ const insideSign=makeTextPanel('NIGHT SHIFT',2.8,.72,{fontSize:86});
 insideSign.mesh.position.set(0,2.0,7.64);
 insideSign.mesh.rotation.y=Math.PI;
 stage.add(insideSign.mesh);
-let clubName=localStorage.getItem('nightshift-lite-club')||'ABLETON GYM';
+const clubName='THE PROMISE EP';
 function updateClubName(){
  for(const panel of [sign,insideSign]){
   panel.ctx.fillStyle='#130c22';panel.ctx.fillRect(0,0,1024,256);
@@ -490,9 +490,7 @@ function updateClubName(){
   panel.ctx.fillText(clubName.toUpperCase(),512,128,950);
   panel.texture.needsUpdate=true;
  }
- $('clubName').value=clubName;
 }
-$('saveClubName').onclick=()=>{const next=$('clubName').value.trim().slice(0,32);if(!next)return;clubName=next;localStorage.setItem('nightshift-lite-club',clubName);updateClubName();};
 updateClubName();
 
 const beams=[new THREE.PointLight(0xdd39ff,0,13,2),new THREE.PointLight(0x377dff,0,12,2)];
@@ -568,10 +566,10 @@ function setMusicVolume(nextValue){
  scWidget.setVolume(playerVolume);
 }
 $('musicVolume').addEventListener('input',event=>setMusicVolume(event.target.value));
-function syncTrack(){
+function syncTrack(keepParty=false){
  const artist=currentArtist();
  syncDJModel();
- updatePosterScreens('rozzo',false);
+ updatePosterScreens('rozzo',keepParty);
  $('trackLink').href=RELEASE_URL;
  $('trackLink').textContent='↗ BUY THE PROMISE EP ON BEATPORT';
  scStarted=false;scRequested=false;
@@ -584,13 +582,35 @@ releaseAudio.addEventListener('playing',()=>{
  scStarted=true;
  musicStatus.textContent='♫ '+currentArtist().name;
 });
+// The EP keeps playing: each completed track advances to the next.
+ // After Muralla, the party finishes and guests leave as usual.
 releaseAudio.addEventListener('ended',()=>{
- if(running&&scStarted)endParty('Track finished.');
+ if(!running||ending||!scStarted)return;
+ if(artists.findIndex(a=>a.id===$('dj').value)<artists.length-1)advanceTrack(false);
+ else endParty('The Promise EP finished.');
 });
 releaseAudio.addEventListener('error',()=>{
  musicStatus.textContent='Audio could not be loaded. Check the connection and try again.';
 });
 $('dj').addEventListener('change',()=>{updateFee();syncTrack();});
+function advanceTrack(wrap=true){
+ if(!running||ending)return;
+ const currentIndex=artists.findIndex(a=>a.id===$('dj').value);
+ const nextIndex=currentIndex+1;
+ if(nextIndex>=artists.length&&!wrap){endParty('The Promise EP finished.');return;}
+ $('dj').value=artists[nextIndex%artists.length].id;
+ updateFee();
+ // Track switches leave guests, lights, and party time intact.
+ syncTrack(true);
+ if(!paused){
+  scRequested=true;
+  scWidget.play();
+  $('stageStatus').textContent='Now playing: '+currentArtist().name;
+ }else{
+  musicStatus.textContent='Paused · '+currentArtist().name;
+ }
+}
+$('nextTrack').addEventListener('click',()=>advanceTrack(true));
 function getGuestCapacity(){return MAX_RELEASE_GUESTS;}
 function refreshBooking(){
  guestCapacity=getGuestCapacity();
@@ -896,7 +916,8 @@ $('openClub').onclick=()=>{
 };
 function updatePauseButton(){
  $('pause').disabled=!running||ending;
- $('pause').textContent=paused?'ПРОДОЛЖИТЬ':'ПАУЗА';
+ $('pause').textContent=paused?'RESUME':'PAUSE';
+ $('nextTrack').disabled=!running||ending;
 }
 function togglePause(){
  if(!running||ending)return;
@@ -992,7 +1013,7 @@ function endParty(message='Party finished.'){
  updatePosterScreens(nameToLabel[$('dj').value],false);
  scWidget?.pause();
  endMessage=message;
- $('play').disabled=true;$('pause').disabled=true;$('end').disabled=true;
+ $('play').disabled=true;$('pause').disabled=true;$('end').disabled=true;$('nextTrack').disabled=true;
  $('stageStatus').textContent='Party ending…';
  musicStatus.textContent='';
  guests.forEach((p,i)=>{
