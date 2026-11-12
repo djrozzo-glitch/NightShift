@@ -394,7 +394,7 @@ const posterBounds=name==='poster'?new THREE.Box3().setFromObject(obj):null;
 holder.position.set(x,.04,z);holder.rotation.y=rotation||0;holder.add(obj);stage.add(holder);loadedModels.set(name,holder);
  if(posterBounds)makePosterScreen(holder,posterBounds);
  if(['discoball','laser_new','light'].includes(name))addFixture(holder,obj,name);
-})).then(()=>{ready3d=true;$('loading').textContent='Клуб готов.';});
+})).then(()=>{ready3d=true;$('loading').textContent='';});
 const wallLoad=loadVenueModel('wall').then(g=>{
  for(const [x,z,rotation] of wallPieces){
   if(!g){block(1,1.55,.22,x,.7,z,dark);continue}
@@ -554,7 +554,7 @@ releaseAudio.preload='metadata';
 releaseAudio.volume=playerVolume/100;
 let scReady=true,scRequested=false,scStarted=false;
 const scWidget={
- play(){return releaseAudio.play().catch(err=>{musicStatus.textContent='Нажми «Начать вечеринку» ещё раз, чтобы разрешить звук.';console.warn('Audio playback:',err);});},
+ play(){return releaseAudio.play().catch(err=>{musicStatus.textContent='Tap START PARTY again to enable audio.';console.warn('Audio playback:',err);});},
  pause(){releaseAudio.pause();},
  setVolume(value){releaseAudio.volume=Math.max(0,Math.min(1,value/100));},
  getPaused(callback){callback(releaseAudio.paused);},
@@ -577,15 +577,15 @@ function syncTrack(){
  scStarted=false;scRequested=false;
  scWidget.load(artist.url);
  if($('curtain').style.display==='none'&&$('end').disabled)$('play').disabled=false;
- musicStatus.textContent='Ready: '+artist.name+' · Press START PARTY to play the full track.';
+ musicStatus.textContent='Ready: '+artist.name';
 }
 releaseAudio.addEventListener('playing',()=>{
  if(paused||ending){releaseAudio.pause();return;}
  scStarted=true;
- musicStatus.textContent='♫ Now playing: '+currentArtist().name+' · Minar Records';
+ musicStatus.textContent='♫ '+currentArtist().name';
 });
 releaseAudio.addEventListener('ended',()=>{
- if(running&&scStarted)endParty('The track has ended. The party is over.');
+ if(running&&scStarted)endParty('Track finished.');
 });
 releaseAudio.addEventListener('error',()=>{
  musicStatus.textContent='Audio could not be loaded. Check the connection and try again.';
@@ -640,7 +640,7 @@ function startGuestPreload(){
   readyGuestVariants.add(i);
   if(running&&!paused&&!ending&&!guestsReady){
    guestsReady=true;guestClock=0;
-   $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. Ожидается до '+guestCapacity+' гостей.';
+   $('stageStatus').textContent='Now playing: '+nameToLabel[$('dj').value]';
    addGuest();
   }
  }));
@@ -891,7 +891,7 @@ function removeGuests(){for(const p of guests)cleanGuest(p);guests.length=0;rese
 $('openClub').onclick=()=>{
  opened=true;$('curtain').style.display='none';
  $('play').disabled=false;
- $('stageStatus').textContent='Club open. Choose a track and start the party!';
+ $('stageStatus').textContent='';
  startGuestPreload();
 };
 function updatePauseButton(){
@@ -913,8 +913,8 @@ function togglePause(){
    if(actorAssets[p.variant]?.idle)actorState(p,'idle');
    else if(p.activeItem?.action)p.activeItem.action.paused=true;
   }
-  $('stageStatus').textContent='Пауза · свет включён, гости отдыхают. Нажми «Продолжить».';
-  musicStatus.textContent='Музыка на паузе.';
+  $('stageStatus').textContent='Paused';
+  musicStatus.textContent='Paused';
  }else{
   // SoundCloud PLAY must be issued synchronously in the Resume button's
   // trusted click handler, before any scene work, for browser media policies.
@@ -948,7 +948,7 @@ function togglePause(){
     }
    },900);
   }
-  $('stageStatus').textContent='Вечеринка продолжается · '+nameToLabel[$('dj').value]+' за пультом.';
+  $('stageStatus').textContent='Now playing: '+nameToLabel[$('dj').value]';
  }
  updatePauseButton();
 }
@@ -985,16 +985,16 @@ function completeParty(){
   $('dj').disabled=false;$('play').disabled=false;
  }
 }
-let endMessage='Вечеринка закончилась. Все гости вышли.';
-function endParty(message='Вечеринка завершена. Все гости вышли.'){
+let endMessage='Party finished.';
+function endParty(message='Party finished.'){
  if(ending||(!running&&!paused))return;
  ending=true;running=false;paused=false;guestsReady=false;scRequested=false;scStarted=false;
  updatePosterScreens(nameToLabel[$('dj').value],false);
  scWidget?.pause();
  endMessage=message;
  $('play').disabled=true;$('pause').disabled=true;$('end').disabled=true;
- $('stageStatus').textContent='Lights on. Guests are heading to the exit…';
- musicStatus.textContent='Playback stopped.';
+ $('stageStatus').textContent='Party ending…';
+ musicStatus.textContent='';
  guests.forEach((p,i)=>{
   releaseSpot(p);p.chatPartner=null;p.pausedAnimation=null;
   p.entryPending=false;p.state='exit';p.activity='exit';
@@ -1035,9 +1035,9 @@ $('play').onclick=async()=>{
  removeGuests();
  $('dj').disabled=true;$('play').disabled=true;$('end').disabled=false;
  updatePauseButton();
- $('stageStatus').textContent='Загружаю анимации гостей… После загрузки они начнут входить через дверь.';
+ $('stageStatus').textContent='Starting the party…';
  scRequested=true;
- musicStatus.textContent='Starting the selected track…';
+ musicStatus.textContent='';
  if(scWidget)scWidget.play();
  else musicStatus.textContent='Audio player unavailable.';
  // Download may already be underway while the player selects the DJ.
@@ -1045,7 +1045,7 @@ $('play').onclick=async()=>{
  startGuestPreload();
  if(readyGuestVariants.size){
   guestsReady=true;guestClock=0;
-  $('stageStatus').textContent='Вечеринка идёт · '+nameToLabel[$('dj').value]+' за пультом. Ожидается до '+guestCapacity+' гостей.';
+  $('stageStatus').textContent='Now playing: '+nameToLabel[$('dj').value]';
   addGuest();
  }
 };
