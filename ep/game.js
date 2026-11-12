@@ -577,12 +577,12 @@ function syncTrack(){
  scStarted=false;scRequested=false;
  scWidget.load(artist.url);
  if($('curtain').style.display==='none'&&$('end').disabled)$('play').disabled=false;
- musicStatus.textContent='Ready: '+artist.name';
+ musicStatus.textContent='Ready: '+artist.name;
 }
 releaseAudio.addEventListener('playing',()=>{
  if(paused||ending){releaseAudio.pause();return;}
  scStarted=true;
- musicStatus.textContent='♫ '+currentArtist().name';
+ musicStatus.textContent='♫ '+currentArtist().name;
 });
 releaseAudio.addEventListener('ended',()=>{
  if(running&&scStarted)endParty('Track finished.');
@@ -640,7 +640,7 @@ function startGuestPreload(){
   readyGuestVariants.add(i);
   if(running&&!paused&&!ending&&!guestsReady){
    guestsReady=true;guestClock=0;
-   $('stageStatus').textContent='Now playing: '+nameToLabel[$('dj').value]';
+   $('stageStatus').textContent='Now playing: '+nameToLabel[$('dj').value];
    addGuest();
   }
  }));
@@ -948,7 +948,7 @@ function togglePause(){
     }
    },900);
   }
-  $('stageStatus').textContent='Now playing: '+nameToLabel[$('dj').value]';
+  $('stageStatus').textContent='Now playing: '+nameToLabel[$('dj').value];
  }
  updatePauseButton();
 }
@@ -1045,7 +1045,7 @@ $('play').onclick=async()=>{
  startGuestPreload();
  if(readyGuestVariants.size){
   guestsReady=true;guestClock=0;
-  $('stageStatus').textContent='Now playing: '+nameToLabel[$('dj').value]';
+  $('stageStatus').textContent='Now playing: '+nameToLabel[$('dj').value];
   addGuest();
  }
 };
